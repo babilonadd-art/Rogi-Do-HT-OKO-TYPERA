@@ -1,0 +1,41 @@
+name: Rogi Do HT OKO TYPERA
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rogi-do-ht-oko-typera
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja bibliotek
+        run: pip install -r requirements.txt
+      - name: Skan i rozliczanie
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python Main.py
+      - name: Zapis bazy typów
+        run: |
+          if [ -f okotypera_rogi.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_rogi.db
+            git diff --cached --quiet || git commit -m "Update picks database"
+            git push
+          fi
