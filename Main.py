@@ -18,6 +18,8 @@ MIN_TEAM_AVG=2.2
 MIN_COMBINED_AVG=5.5
 MIN_HIT_RATE=0.60
 HT_CORNERS_LINE=4.5
+MIN_ODDS=1.90
+MAX_ODDS=3.50
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/125 Safari/537.36","Accept":"application/json"})
@@ -155,7 +157,8 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
                 continue
             if meta.get("offer_state_id",1) not in (1,"1"):
                 continue
-            if price<=1.0:
+            if not MIN_ODDS <= price <= MAX_ODDS:
+                logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
                 continue
             return price
     return None
