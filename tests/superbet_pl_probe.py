@@ -70,3 +70,14 @@ print("FOOTBALL_EVENTS", len(football), "FUTURE", len(future))
 print("ALL_CORNER_MARKETS_FOUND", len(corner_market_hits))
 print("ALL_CORNER_MARKET_SAMPLES", short(corner_market_hits[:60], 30000))
 print("PROBE_FINISHED")
+
+
+# Competition hierarchy used by Superbet's own frontend for tournament names.
+try:
+    struct_response = s.get(BASE + "/v2/pl-PL/struct", timeout=40)
+    struct_response.raise_for_status()
+    structure = struct_response.json()
+    print("STRUCT_TOP_KEYS", list(structure)[:30] if isinstance(structure, dict) else type(structure).__name__)
+    print("STRUCT_SAMPLE", short(structure, 12000))
+except Exception as exc:
+    print("STRUCT_ERROR", type(exc).__name__, str(exc)[:200])
