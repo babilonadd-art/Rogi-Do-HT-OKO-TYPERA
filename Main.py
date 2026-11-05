@@ -215,21 +215,72 @@ def dates(a,b):
         yield d.isoformat(); d+=timedelta(days=1)
 
 def settle(c,now):
-    rows=c.execute("SELECT event_id,league,home,away FROM picks WHERE status='PENDING' AND start_ts<?",(now-35*60,)).fetchall()
+    # Check every pending pick on each workflow run. Wins are settled as soon
+    # as the fifth first-half corner is visible; losses at confirmed half-time.
+    rows=c.execute("SELECT event_id,league,home,away FROM picks WHERE status='PENDING'").fetchall()
     for eid,league,home,away in rows:
         ev=api(f"/event/{eid}").get("event",{})
-        status=ev.get("status",{}).get("type","")
-        if status not in ("finished","canceled","postponed"): continue
-        if status=="finished":
-            stats=first_half_corners(eid)
-            if stats is None:
-                logging.info("Statystyki HT jeszcze niedostępne: %s",eid); continue
-            n=sum(stats); won=n>=5
-            msg=f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n💰 Stawka: {STAKE} zł"
-            c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
-        else:
-            msg=f"⚠️ Mecz {status.upper()}\n🏆 {league}\n⚽ {home} – {away}\nTyp anulowany — bez rozliczenia."
+        status_obj=ev.get("status") or {}
+        status=str(status_obj.get("type","")).lower()
+        description=str(status_obj.get("description","")).lower()
+        period_obj=ev.get("period") or {}
+        period=" ".join(str(v).lower() for v in period_obj.values()) if isinstance(period_obj,dict) else str(period_obj).lower()
+        phase=description+" "+period
+        is_first_half=any(x in phase for x in ("1st half","first half","1 poł","pierwsza poł"))
+        is_halftime=any(x in phase for x in ("halftime","half-time","half time","break","przerwa")) or status in ("halftime","halftimebreak")
+        if status in ("canceled","postponed"):
+            msg=f"⚠️ Mecz {status.upper()}\\n🏆 {league}\\n⚽ {home} – {away}\\nTyp anulowany — bez rozliczenia."
             c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE event_id=?",(datetime.now(TZ).isoformat(),eid))
+        else:
+            stats_payload=api(f"/event/{eid}/statistics").get("statistics",{})
+            stat_blocks=stats_payload if isinstance(stats_payload,list) else stats_payload.get("statistics",[])
+            if isinstance(stat_blocks,dict):
+                stat_blocks=[stat_blocks]
+            first_half_stats=None
+            current_stats=None
+            for stat_block in stat_blocks:
+                p=str(stat_block.get("period","")).upper()
+                if p not in ("1ST","1H","FIRST_HALF","1","ALL",""):
+                    continue
+                for group in stat_block.get("groups",[]):
+                    for item in group.get("statisticsItems",[]):
+                        if "corner" not in str(item.get("name","")).lower() and "roż" not in str(item.get("name","")).lower():
+                            continue
+                        try:
+                            pair=(int(float(item["home"])),int(float(item["away"])))
+                        except (KeyError,ValueError,TypeError):
+                            continue
+                        if p in ("1ST","1H","FIRST_HALF","1"):
+                            first_half_stats=pair
+                        else:
+                            current_stats=pair
+            if status=="finished":
+                stats=first_half_corners(eid) or first_half_stats
+                if stats is None:
+                    logging.info("Statystyki HT jeszcze niedostępne: %s",eid)
+                    continue
+                n=sum(stats)
+                won=n>=5
+            elif is_first_half:
+                stats=first_half_stats or current_stats
+                if stats is None:
+                    logging.info("Brak bieżących statystyk rożnych HT: %s",eid)
+                    continue
+                n=sum(stats)
+                if n<5:
+                    continue
+                won=True
+            elif is_halftime:
+                stats=first_half_stats or current_stats
+                if stats is None:
+                    logging.info("Brak statystyk po przerwie: %s",eid)
+                    continue
+                n=sum(stats)
+                won=n>=5
+            else:
+                continue
+            msg=f"📊 ROZLICZENIE — ROGI DO HT\\n\\n🏆 {league}\\n⚽ {home} – {away}\\n🚩 Rożne do przerwy: {n}\\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\\n💰 Stawka: {STAKE} zł"
+            c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
         c.commit()
         if not send(msg):
             logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
