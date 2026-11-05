@@ -250,121 +250,110 @@ def resend_tips_with_corrected_league(c,events):
             logging.info("Wysłano korektę nazwy ligi dla event %s: %s",eid,league)
         time.sleep(.2)
 
-def first_half_corners(event_id):
-    root=api(f"/event/{event_id}/statistics").get("statistics",{})
-    blocks=root if isinstance(root,list) else root.get("statistics",[root] if isinstance(root,dict) else [])
-    for b in blocks:
-        if str(b.get("period","")).upper() not in ("1ST","1H","FIRST_HALF","1"): continue
-        for g in b.get("groups",[]):
-            for item in g.get("statisticsItems",[]):
-                if "corner" in str(item.get("name","")).lower():
-                    try: return int(float(item["home"])),int(float(item["away"]))
-                    except (KeyError,ValueError,TypeError): pass
+def superbet_live_event(event_id):
+    """Fetch one event directly from Superbet, independently of whether its markets remain open."""
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events",[])
+    if not events:
+        logging.info("Superbet: brak danych live dla event %s",event_id)
+        return None
+    return events[0]
+
+def _corner_pair_from_object(obj):
+    """Read a home/away corner pair only when Superbet explicitly labels it as corners."""
+    if not isinstance(obj,dict):
+        return None
+    label=" ".join(str(obj.get(k,"")) for k in ("name","label","type","statistic","key","description")).lower()
+    if not any(x in label for x in ("corner","corners","rzut rożny","rzuty rożne","rożne")):
+        return None
+    home=next((obj[k] for k in ("home","home_value","homeTeam","home_team","home_team_value") if k in obj),None)
+    away=next((obj[k] for k in ("away","away_value","awayTeam","away_team","away_team_value") if k in obj),None)
+    try:
+        return int(float(home)),int(float(away))
+    except (TypeError,ValueError):
+        return None
+
+def superbet_ht_corners(event):
+    """Return (home, away, is_first_half) from explicit Superbet in-play corner stats."""
+    root=event.get("inplay_stats") or {}
+    found=[]
+    def walk(node,path=(),period_hint=""):
+        if isinstance(node,dict):
+            period=str(node.get("period") or node.get("period_name") or node.get("period_label") or period_hint).lower()
+            pair=_corner_pair_from_object(node)
+            if pair is not None:
+                label=" ".join(path+(period,))
+                is_ht=any(x in label for x in ("1h","1st","first half","first_half","1 poł","pierwsza poł"))
+                found.append((pair,is_ht,label))
+            # Some feeds expose the stat as separate home/away corner keys.
+            keys={str(k).lower():v for k,v in node.items()}
+            home_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("home" in k or "host" in k)),None)
+            away_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("away" in k or "guest" in k)),None)
+            if home_key and away_key:
+                try:
+                    pair=(int(float(keys[home_key])),int(float(keys[away_key])))
+                    label=" ".join(path+(period,home_key,away_key))
+                    is_ht=any(x in label for x in ("1h","1st","first half","first_half","1 poł","pierwsza poł"))
+                    found.append((pair,is_ht,label))
+                except (TypeError,ValueError):
+                    pass
+            for key,value in node.items():
+                walk(value,path+(str(key).lower(),),period)
+        elif isinstance(node,list):
+            for item in node:
+                walk(item,path,period_hint)
+    walk(root)
+    # Prefer explicit first-half values; never mistake full-match totals for HT totals.
+    ht=[item for item in found if item[1]]
+    if ht:
+        return ht[-1][0][0],ht[-1][0][1],True
     return None
 
-def history(team_id):
-    events=api(f"/team/{team_id}/events/last/0").get("events",[])
-    out=[]
-    for e in events:
-        if e.get("status",{}).get("type")!="finished": continue
-        stats=first_half_corners(e.get("id"))
-        if stats:
-            if e.get("homeTeam",{}).get("id")==team_id: out.append(stats[0])
-            elif e.get("awayTeam",{}).get("id")==team_id: out.append(stats[1])
-        if len(out)>=HISTORY: break
-        time.sleep(.15)
-    return out
-
-def dates(a,b):
-    d=a.date()
-    while d<=b.date():
-        yield d.isoformat(); d+=timedelta(days=1)
+def superbet_event_phase(event):
+    meta=event.get("inplay_stats_metadata") or {}
+    labels=" ".join(str(meta.get(k,"")) for k in ("event_status_label","period_status","status")).lower()
+    if any(x in labels for x in ("1h","1st","first half","1 poł")):
+        return "FIRST_HALF"
+    if any(x in labels for x in ("ht","half-time","halftime","break","przerwa")):
+        return "HALFTIME"
+    if any(x in labels for x in ("2h","2nd","second half","2 poł")):
+        return "SECOND_HALF"
+    if any(x in labels for x in ("ft","finished","ended","full time")):
+        return "FINISHED"
+    return "UNKNOWN"
 
 def settle(c,now):
-    # Settle Over 4.5 HT as soon as the fifth corner is recorded in the first half.
+    # Superbet is the sole source for live settlement; market availability is irrelevant.
     rows=c.execute("SELECT event_id,league,home,away FROM picks WHERE status='PENDING'").fetchall()
     for eid,league,home,away in rows:
-        ev=api(f"/event/{eid}").get("event",{})
-        status_obj=ev.get("status") or {}
-        status=str(status_obj.get("type","")).lower()
-        status_code=status_obj.get("code")
-        description=str(status_obj.get("description","")).lower()
-        period_obj=ev.get("period") or {}
-        period=" ".join(str(v).lower() for v in period_obj.values()) if isinstance(period_obj,dict) else str(period_obj).lower()
-        phase=description+" "+period
-        # SofaScore status codes: 6 = first half, 7 = half-time, 8 = second half, 100 = finished.
-        is_first_half=(status_code==6 or str(status_code)=="6" or
-                       any(x in phase for x in ("1st half","first half","1 poł","pierwsza poł")))
-        is_halftime=(status_code==7 or str(status_code)=="7" or
-                     any(x in phase for x in ("halftime","half-time","half time","break","przerwa")) or
-                     status in ("halftime","halftimebreak"))
-        is_second_half=(status_code==8 or str(status_code)=="8" or
-                        any(x in phase for x in ("2nd half","second half","2 poł","druga poł")))
-        if status in ("canceled","postponed"):
-            msg=f"⚠️ Mecz {status.upper()}\n🏆 {league}\n⚽ {home} – {away}\nTyp anulowany — bez rozliczenia."
-            c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE event_id=?",(datetime.now(TZ).isoformat(),eid))
-        else:
-            stats_payload=api(f"/event/{eid}/statistics").get("statistics",{})
-            stat_blocks=stats_payload if isinstance(stats_payload,list) else stats_payload.get("statistics",[])
-            if isinstance(stat_blocks,dict):
-                stat_blocks=[stat_blocks]
-            first_half_stats=None
-            current_stats=None
-            for stat_block in stat_blocks:
-                p=str(stat_block.get("period","")).upper()
-                if p not in ("1ST","1H","FIRST_HALF","1","ALL",""):
-                    continue
-                for group in stat_block.get("groups",[]):
-                    for item in group.get("statisticsItems",[]):
-                        if "corner" not in str(item.get("name","")).lower() and "roż" not in str(item.get("name","")).lower():
-                            continue
-                        try:
-                            pair=(int(float(item["home"])),int(float(item["away"])))
-                        except (KeyError,ValueError,TypeError):
-                            continue
-                        if p in ("1ST","1H","FIRST_HALF","1"):
-                            first_half_stats=pair
-                        else:
-                            current_stats=pair
-            if status=="finished":
-                stats=first_half_corners(eid) or first_half_stats
-                if stats is None:
-                    logging.info("Statystyki HT jeszcze niedostępne: %s",eid)
-                    continue
-                n=sum(stats)
-                won=n>=5
-            elif is_first_half:
-                # During the first half, ALL/current corner stats are the HT total so far.
-                stats=first_half_stats if first_half_stats is not None else current_stats
-                if stats is None:
-                    logging.info("Brak bieżących statystyk rożnych HT: %s",eid)
-                    continue
-                n=sum(stats)
-                if n<5:
-                    continue
-                won=True
-            elif is_halftime:
-                stats=first_half_stats if first_half_stats is not None else current_stats
-                if stats is None:
-                    logging.info("Brak statystyk po przerwie: %s",eid)
-                    continue
-                n=sum(stats)
-                won=n>=5
-            elif is_second_half:
-                # Never use ALL stats in the second half: they include second-half corners.
-                stats=first_half_corners(eid) or first_half_stats
-                if stats is None:
-                    logging.info("Brak potwierdzonych statystyk pierwszej połowy: %s",eid)
-                    continue
-                n=sum(stats)
-                won=n>=5
-            else:
-                continue
-            msg=f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n💰 Stawka: {STAKE} zł"
-            c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
+        event=superbet_live_event(eid)
+        if not event:
+            continue
+        phase=superbet_event_phase(event)
+        stats=superbet_ht_corners(event)
+        if phase=="UNKNOWN":
+            logging.info("Superbet: faza meczu nieznana dla %s — bez rozliczenia",eid)
+            continue
+        if stats is None:
+            logging.info("Superbet: brak jednoznacznych statystyk rożnych HT dla %s (faza %s)",eid,phase)
+            continue
+        home_corners,away_corners,_=stats
+        n=home_corners+away_corners
+        if phase=="FIRST_HALF" and n<5:
+            continue
+        if phase not in ("FIRST_HALF","HALFTIME","SECOND_HALF","FINISHED"):
+            continue
+        won=n>=5
+        msg=(f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n"
+             f"🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n"
+             f"💰 Stawka: {STAKE} zł")
+        c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",
+                  ("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
         c.commit()
         if not send(msg):
             logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
+        else:
+            logging.info("Rozliczono typ Superbet event %s: %s rożnych HT — %s",eid,n,"WON" if won else "LOST")
         time.sleep(.2)
 
 def watch_pending_picks(c,duration_seconds=270,interval_seconds=5):
