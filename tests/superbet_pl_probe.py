@@ -1,45 +1,66 @@
-import json
+import re
 import requests
+from urllib.parse import urljoin
 
 BASE = "https://production-superbet-offer-pl.freetls.fastly.net"
-URLS = [
-    f"{BASE}/v2/pl-PL/struct",
-    f"{BASE}/subscription/v2/pl-PL/structure",
-]
+SITE = "https://superbet.pl/"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+    "Accept": "text/html,application/json,*/*",
     "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
     "Origin": "https://superbet.pl",
-    "Referer": "https://superbet.pl/",
+    "Referer": SITE,
 }
 
-def summarize(value, depth=0):
-    if depth > 3:
-        return type(value).__name__
-    if isinstance(value, dict):
-        result = {}
-        for key, item in list(value.items())[:30]:
-            if isinstance(item, (dict, list)):
-                result[str(key)] = summarize(item, depth + 1)
-            else:
-                result[str(key)] = item
-        return result
-    if isinstance(value, list):
-        return {"length": len(value), "sample": [summarize(x, depth + 1) for x in value[:2]]}
-    return value
+s = requests.Session()
+s.headers.update(HEADERS)
 
-for url in URLS:
-    print(f"\\nREQUEST {url}")
+def short(value, limit=500):
+    return re.sub(r"\\s+", " ", value)[:limit]
+
+print("FETCH SITE")
+r = s.get(SITE, timeout=30)
+print("SITE", r.status_code, len(r.content), r.url)
+r.raise_for_status()
+
+scripts = re.findall(r'<script[^>]+src=["\\']([^"\\']+)', r.text, re.I)
+print("SCRIPT_COUNT", len(scripts))
+seen = set()
+for src in scripts:
+    url = urljoin(SITE, src)
+    if url in seen:
+        continue
+    seen.add(url)
     try:
-        response = requests.get(url, headers=HEADERS, timeout=25)
-        print(f"HTTP {response.status_code}; content-type={response.headers.get('content-type')}; bytes={len(response.content)}")
-        response.raise_for_status()
-        try:
-            payload = response.json()
-            print(json.dumps(summarize(payload), ensure_ascii=False)[:12000])
-        except ValueError:
-            print(response.text[:5000])
+        js = s.get(url, timeout=30)
+        print("\\nBUNDLE", js.status_code, len(js.content), url)
+        if not js.ok or len(js.content) > 20_000_000:
+            continue
+        body = js.text
+        patterns = [
+            r'["\\']([^"\\']{0,100}(?:production-superbet-offer-pl|/v[0-9]+/pl-PL/)[^"\\']{0,180})["\\']',
+            r'["\\']([^"\\']{0,100}(?:offerState|sportId|eventId|tournamentId)[^"\\']{0,180})["\\']',
+        ]
+        found = set()
+        for pattern in patterns:
+            found.update(re.findall(pattern, body, re.I))
+        for item in sorted(found):
+            print("MATCH", short(item, 280))
     except Exception as exc:
-        print(f"PROBE_ERROR {type(exc).__name__}: {exc}")
-print("\\nPROBE_FINISHED")
+        print("BUNDLE_ERROR", type(exc).__name__, str(exc)[:200])
+
+print("\\nSTRUCTURE_CHECK")
+for path in ("/v2/pl-PL/struct",):
+    try:
+        x = s.get(BASE + path, timeout=30)
+        print(path, x.status_code, len(x.content))
+        data = x.json().get("data", {})
+        print("ROOT_KEYS", list(data.keys()))
+        tree = data.get("marketTree", [])
+        for sport in tree:
+            if str(sport.get("sportId")) == "5":
+                print("FOOTBALL_MARKET_TREE", short(str(sport), 3500))
+    except Exception as exc:
+        print("STRUCT_ERROR", type(exc).__name__, str(exc)[:200])
+
+print("\\nDISCOVERY_FINISHED")
