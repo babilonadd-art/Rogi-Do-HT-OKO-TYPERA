@@ -175,6 +175,13 @@ def send(msg):
 def db_open():
     c=sqlite3.connect(DB)
     c.execute("""CREATE TABLE IF NOT EXISTS picks(event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,sent_at TEXT,status TEXT DEFAULT 'PENDING',ht_corners INTEGER,settled_at TEXT)""")
+    columns={row[1] for row in c.execute("PRAGMA table_info(picks)").fetchall()}
+    if "odds" not in columns:
+        c.execute("ALTER TABLE picks ADD COLUMN odds REAL")
+    c.execute("""CREATE TABLE IF NOT EXISTS monthly_reports(month TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
+    c.execute("UPDATE picks SET odds=1.92 WHERE event_id=15562733 AND odds IS NULL")
+    c.execute("UPDATE picks SET odds=1.97 WHERE event_id=14572637 AND odds IS NULL")
+    c.commit()
     return c
 
 def first_half_corners(event_id):
@@ -218,12 +225,55 @@ def settle(c,now):
             if stats is None:
                 logging.info("Statystyki HT jeszcze niedostępne: %s",eid); continue
             n=sum(stats); won=n>=5
-            msg=f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'WYGRANY ✅' if won else 'PRZEGRANY ❌'}\n💰 Stawka: {STAKE} zł"
+            msg=f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n💰 Stawka: {STAKE} zł"
             c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
         else:
             msg=f"⚠️ Mecz {status.upper()}\n🏆 {league}\n⚽ {home} – {away}\nTyp anulowany — bez rozliczenia."
             c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE event_id=?",(datetime.now(TZ).isoformat(),eid))
-        c.commit(); send(msg); time.sleep(.2)
+        c.commit()
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
+        time.sleep(.2)
+
+def send_monthly_reports(c,local):
+    current_month=local.strftime("%Y-%m")
+    months=c.execute("SELECT DISTINCT substr(sent_at,1,7) FROM picks WHERE substr(sent_at,1,7)<? ORDER BY 1",(current_month,)).fetchall()
+    for (month,) in months:
+        if c.execute("SELECT 1 FROM monthly_reports WHERE month=?",(month,)).fetchone():
+            continue
+        pending=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,7)=? AND status='PENDING'",(month,)).fetchone()[0]
+        if pending:
+            logging.info("Raport %s czeka na rozliczenie %s typów",month,pending)
+            continue
+        rows=c.execute("SELECT status,odds FROM picks WHERE substr(sent_at,1,7)=?",(month,)).fetchall()
+        wins=sum(1 for status,_ in rows if status=="WON")
+        losses=sum(1 for status,_ in rows if status=="LOST")
+        voids=sum(1 for status,_ in rows if status=="VOID")
+        decided=wins+losses
+        accuracy=(wins/decided*100) if decided else 0.0
+        priced=[(status,float(odds)) for status,odds in rows if status in ("WON","LOST") and odds is not None and float(odds)>1.0]
+        missing=sum(1 for status,odds in rows if status in ("WON","LOST") and (odds is None or float(odds)<=1.0))
+        turnover=len(priced)*STAKE
+        profit=sum(STAKE*(odds-1) if status=="WON" else -STAKE for status,odds in priced)
+        yield_pct=(profit/turnover*100) if turnover else 0.0
+        result="ZYSK" if profit>0 else ("STRATA" if profit<0 else "NA ZERO")
+        msg=(f"📅 MIESIĘCZNY BILANS — {month}\\n\\n"
+             f"📊 Rozliczone typy: {decided}\\n"
+             f"🟢 Wygrane: {wins}\\n🔴 Przegrane: {losses}\\n"
+             f"⚪ Anulowane: {voids}\\n"
+             f"🎯 Skuteczność: {accuracy:.1f}%\\n"
+             f"📈 Yield: {yield_pct:+.2f}%\\n"
+             f"💰 Stawka: {STAKE} zł / typ\\n"
+             f"💵 Obrót z kursami: {turnover:.2f} zł\\n"
+             f"🏦 Wynik: {profit:+.2f} zł ({result})")
+        if missing:
+            msg+=f"\\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
+        if send(msg):
+            c.execute("INSERT OR IGNORE INTO monthly_reports(month,sent_at) VALUES(?,?)",(month,local.isoformat()))
+            c.commit()
+            logging.info("Wysłano miesięczny raport %s",month)
+        else:
+            logging.error("Nie udało się wysłać miesięcznego raportu %s",month)
 
 def main():
     if not TOKEN or not CHAT:
@@ -234,6 +284,7 @@ def main():
     ts=int(now.timestamp())
     settle(c,ts)
     local=datetime.now(TZ)
+    send_monthly_reports(c,local)
     key=local.date().isoformat()
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
     if count>=MAX_DAILY:
@@ -292,8 +343,8 @@ def main():
              f"💹 Kurs Superbet: {price:.2f}\n"
              f"💰 Stawka: {STAKE} zł")
         if send(msg):
-            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status) VALUES(?,?,?,?,?,?,'PENDING')",
-                      (event_id,league,home,away,st,local.isoformat()))
+            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds) VALUES(?,?,?,?,?,?,'PENDING',?)",
+                      (event_id,league,home,away,st,local.isoformat(),price))
             c.commit()
             count+=1
             sent+=1
