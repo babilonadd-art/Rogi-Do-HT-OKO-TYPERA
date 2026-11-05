@@ -91,6 +91,28 @@ def team_similarity(a,b):
     if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
     return SequenceMatcher(None,x,y).ratio()
 
+def extract_league_name(event):
+    """Resolve the competition name from Superbet's event/fixture metadata."""
+    fixture=event.get("fixture") or {}
+    containers=[fixture,event]
+    for parent in list(containers):
+        for key in ("tournament","league","competition","championship"):
+            value=parent.get(key)
+            if isinstance(value,dict):
+                containers.append(value)
+    for parent in containers:
+        for key in ("tournament_name","league_name","competition_name","championship_name"):
+            value=parent.get(key)
+            if isinstance(value,str) and value.strip():
+                return value.strip()
+        for key in ("tournament","league","competition","championship"):
+            value=parent.get(key)
+            if isinstance(value,dict):
+                name=value.get("name") or value.get("title") or value.get("label")
+                if isinstance(name,str) and name.strip():
+                    return name.strip()
+    return "Liga niepodana przez Superbet"
+
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
     for event in events:
@@ -410,7 +432,7 @@ def main():
     for st,event_id,home,away,price,fx in available:
         if count>=MAX_DAILY:
             break
-        league=str(fx.get("tournament_name") or fx.get("league_name") or "Superbet — liga")
+        league=extract_league_name(listed)
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
         msg=("🎯 OKOTYPERA — ROGI DO HT\n\n"
              f"🏆 {league}\n⚽ {home} – {away}\n"
