@@ -15,6 +15,10 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
 MAX_DAILY=10
+# Jednorazowe odblokowanie dzisiejszego limitu: zachowujemy historię 10 wcześniejszych typów.
+RESET_BASELINE_DATE="2026-11-05"
+RESET_BASELINE_COUNT=10
+TAX_RATE=0.12
 FT_CORNERS_LINE=9.5
 MIN_ODDS=1.70
 MAX_ODDS=2.50
@@ -319,7 +323,10 @@ def resend_tips_with_corrected_league(c,events):
              f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n\n"
              f"📌 Typ: Over {FT_CORNERS_LINE:.1f} rzutów rożnych FT\n"
              f"💹 Kurs Superbet: {float(odds):.2f}\n"
-             f"💰 Stawka: {STAKE} zł")
+             f"💰 Stawka: {STAKE} zł\n"
+             f"💸 Podatek 12%: {STAKE*TAX_RATE:.2f} zł\n"
+             f"💵 Możliwa wypłata po podatku: {STAKE*(1-TAX_RATE)*float(odds):.2f} zł\n"
+             f"📈 Możliwy zysk: {STAKE*(1-TAX_RATE)*float(odds)-STAKE:.2f} zł")
         if send(msg):
             c.execute("UPDATE picks SET league=?,league_corrected_at=? WHERE event_id=?",
                       (league,datetime.now(TZ).isoformat(),eid))
@@ -549,6 +556,9 @@ def main():
     send_monthly_reports(c,local)
     key=local.date().isoformat()
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
+    # Jednorazowy reset licznika na 05.11.2026 bez kasowania typów ani historii.
+    reset_baseline=RESET_BASELINE_COUNT if key==RESET_BASELINE_DATE else 0
+    count=max(0,count-reset_baseline)
     if count>=MAX_DAILY:
         logging.info("Dzienny limit osiągnięty: %s/%s — rozliczenie ponowi harmonogram co 5 minut",count,MAX_DAILY)
         c.close()
@@ -631,12 +641,18 @@ def main():
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
+        tax=STAKE*TAX_RATE
+        payout=STAKE*(1-TAX_RATE)*price
+        profit=payout-STAKE
         msg=(f"🎯 ROGI FT\n"
              f"🏆 {league}\n"
              f"⚽ {home} – {away}\n"
              f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\n"
              f"Over {FT_CORNERS_LINE:.1f} rożnych @{price:.2f}\n"
-             f"Stawka: {STAKE} zł")
+             f"Stawka: {STAKE} zł\n"
+             f"Podatek 12%: {tax:.2f} zł\n"
+             f"Możliwa wypłata po podatku: {payout:.2f} zł\n"
+             f"Możliwy zysk: {profit:.2f} zł")
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'FT')",
                       (event_id,league,home,away,st,local.isoformat(),price))
