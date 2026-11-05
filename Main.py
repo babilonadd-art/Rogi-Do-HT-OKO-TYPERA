@@ -102,64 +102,44 @@ def team_similarity(a,b):
     return SequenceMatcher(None,x,y).ratio()
 
 def extract_league_name(event):
-    """Read full competition label from Superbet fixture/event metadata."""
-    explicit_names = {
-        "tournamentname", "leaguename", "competitionname", "championshipname",
-        "categoryname", "tournamenttitle", "leaguetitle", "competitiontitle",
-    }
-    competition_keys = {
-        "tournament", "league", "competition", "championship", "category",
-    }
-    seen = set()
+    """Resolve the competition name from Superbet's event/fixture metadata."""
+    fixture=event.get("fixture") or {}
+    containers=[fixture,event]
+    for parent in list(containers):
+        for key in ("tournament","league","competition","championship"):
+            value=parent.get(key)
+            if isinstance(value,dict):
+                containers.append(value)
+    for parent in containers:
+        for key in ("tournament_name","league_name","competition_name","championship_name"):
+            value=parent.get(key)
+            if isinstance(value,str) and value.strip():
+                return value.strip()
+        for key in ("tournament","league","competition","championship"):
+            value=parent.get(key)
+            if isinstance(value,dict):
+                name=value.get("name") or value.get("title") or value.get("label")
+                if isinstance(name,str) and name.strip():
+                    return name.strip()
+    return ""
 
-    def walk(node, depth=0):
-        if depth > 6:
-            return ""
-        if isinstance(node, dict):
-            marker = id(node)
-            if marker in seen:
-                return ""
-            seen.add(marker)
-
-            # First pass: explicit full-name fields anywhere in the Superbet payload.
-            for key, value in node.items():
-                normalized = re.sub(r"[^a-z]", "", str(key).lower())
-                if normalized in explicit_names and isinstance(value, str) and value.strip():
-                    return value.strip()
-
-            # Second pass: inspect objects explicitly named as competition/category.
-            for key, value in node.items():
-                normalized = re.sub(r"[^a-z]", "", str(key).lower())
-                if normalized in competition_keys:
-                    if isinstance(value, str) and value.strip():
-                        return value.strip()
-                    if isinstance(value, dict):
-                        for label_key in ("name", "title", "label", "display_name", "displayName"):
-                            label = value.get(label_key)
-                            if isinstance(label, str) and label.strip():
-                                return label.strip()
-                        found = walk(value, depth + 1)
-                        if found:
-                            return found
-
-            # Superbet may wrap fixture/category data in nested objects or arrays.
-            for value in node.values():
-                if isinstance(value, (dict, list)):
-                    found = walk(value, depth + 1)
-                    if found:
-                        return found
-        elif isinstance(node, list):
-            for value in node:
-                found = walk(value, depth + 1)
-                if found:
-                    return found
-        return ""
-
-    return walk(event)
 def resolve_full_league(event,home,away,start_ts):
-    """Use the full competition name supplied by Superbet only; no external league lookup."""
+    """Use Superbet competition metadata first; query SofaScore only as a fallback."""
     league=extract_league_name(event)
-    return league.strip() if isinstance(league,str) and league.strip() else ""
+    if league and league!="Liga niepodana przez Superbet":
+        return league
+    match=sofascore_event_for_pick(home,away,start_ts)
+    if match:
+        unique=match.get("uniqueTournament") or {}
+        tournament=match.get("tournament") or {}
+        category=match.get("category") or {}
+        name=unique.get("name") or tournament.get("name")
+        country=category.get("name")
+        if name and country and country.lower() not in name.lower():
+            return f"{name} — {country}"
+        if name:
+            return name
+    return ""
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
@@ -185,16 +165,15 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
-    """Return the verified FT Over 9.5 price together with the detailed Superbet event."""
+def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
+    """Fetch Superbet's actual pre-match full-match total-corners price."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
-    events=payload.get("events") or payload.get("data") or []
-    if isinstance(events,dict):
-        events=list(events.values())
+    events=payload.get("events",[])
     if not events:
         return None
     event=events[0]
     fixture=event.get("fixture",{})
+    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
         return None
@@ -206,7 +185,7 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
         # Full-match total only; exclude half and team-specific markets.
         if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
             continue
-        if not re.fullmatch(r"(?:cały mecz\s*[-–:]\s*)?liczba rzutów rożnych(?:\s*[-–:]\s*cały mecz)?",market_name):
+        if not re.fullmatch(r"(?:cały mecz\s*-\s*)?liczba rzutów rożnych(?:\s*-\s*cały mecz)?",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -233,14 +212,9 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
             if not MIN_ODDS <= price <= MAX_ODDS:
                 logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
                 continue
-            return price,event
+            return price
     return None
 
-
-def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Compatibility wrapper used by tests and other callers."""
-    result=superbet_ft_event_data(event_id,line)
-    return result[0] if result else None
 
 # Open Matchday: darmowe, dzienne CSV z historią rożnych 1. połowy.
 # Splity HT są dostępne tylko dla 10 wskazanych lig; bez próbki bot nie typuje.
@@ -569,20 +543,14 @@ def main():
     logging.info("Do sprawdzenia kursów Superbet: %d meczów",len(candidates))
     def inspect_candidate(item):
         listed,event_id,st,home,away=item
-        market_data=superbet_ft_event_data(event_id,FT_CORNERS_LINE)
-        if market_data is None:
+        price=superbet_ft_over_odds(event_id,FT_CORNERS_LINE)
+        if price is None:
             return None
-        price,detailed_event=market_data
-        # The list endpoint has sparse fixture metadata. Use the detailed event
-        # returned with the market; Superbet exposes competition labels there.
-        league=resolve_full_league(detailed_event,home,away,st)
+        league=resolve_full_league(listed,home,away,st)
         if not league:
-            league=resolve_full_league(listed,home,away,st)
-        if not league:
-            logging.warning("Pominięto %s - %s: brak nazwy ligi także w szczegółach Superbet; fixture_keys=%s event_keys=%s",
-                            home,away,list((detailed_event.get("fixture") or {}).keys()),list(detailed_event.keys()))
+            logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
             return None
-        logging.info("KWALIFIKACJA O%.1f FT: %s - %s | %s @ %.2f",FT_CORNERS_LINE,home,away,league,price)
+        logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
         return (price,st,event_id,home,away,price,league)
 
     available=[]
