@@ -358,26 +358,89 @@ def superbet_event_phase(event):
             if str(value)=="2": return "SECOND_HALF"
     return "UNKNOWN"
 
+
+def sofascore_event_for_pick(home,away,start_ts):
+    """Find the matching SofaScore fixture by teams and kickoff date (Superbet IDs are not SofaScore IDs)."""
+    kickoff=datetime.fromtimestamp(int(start_ts),timezone.utc).astimezone(TZ)
+    dates={kickoff.date().isoformat(),(kickoff.date()-timedelta(days=1)).isoformat()}
+    best=None
+    for day in dates:
+        payload=api(f"/sport/football/scheduled-events/{day}")
+        for item in payload.get("events",[]):
+            h=(item.get("homeTeam") or {}).get("name","")
+            a=(item.get("awayTeam") or {}).get("name","")
+            ts=item.get("startTimestamp")
+            if not h or not a or not ts or abs(int(ts)-int(start_ts))>4*3600:
+                continue
+            direct=team_similarity(home,h)+team_similarity(away,a)
+            reverse=team_similarity(home,a)+team_similarity(away,h)
+            score=max(direct,reverse)
+            if score>=1.45 and (best is None or score>best[0]):
+                best=(score,item)
+    return best[1] if best else None
+
+def sofascore_ht_corners(home,away,start_ts):
+    event=sofascore_event_for_pick(home,away,start_ts)
+    if not event:
+        logging.warning("SofaScore: nie znaleziono meczu %s - %s do rozliczenia",home,away)
+        return None,None
+    event_id=event.get("id")
+    payload=api(f"/event/{event_id}/statistics")
+    stats=payload.get("statistics") or []
+    if isinstance(stats,dict):
+        stats=[stats]
+    for period in stats:
+        period_name=str(period.get("period","")).lower().replace("_","")
+        if period_name not in ("1h","firsthalf","first_half","1sthalf"):
+            continue
+        for group in period.get("groups",[]):
+            for item in group.get("statisticsItems",[]):
+                name=str(item.get("name","")).lower()
+                if "corner" not in name and "roż" not in name:
+                    continue
+                try:
+                    h=int(float(item.get("home")))
+                    a=int(float(item.get("away")))
+                    logging.info("SofaScore: rożne HT %s:%s dla %s - %s",h,a,home,away)
+                    return h,a
+                except (TypeError,ValueError):
+                    continue
+    logging.warning("SofaScore: brak statystyk rożnych HT dla %s - %s (event %s)",home,away,event_id)
+    return None,None
+
 def settle(c,now):
-    # Superbet is the sole source for live settlement; market availability is irrelevant.
-    rows=c.execute("SELECT event_id,league,home,away FROM picks WHERE status='PENDING'").fetchall()
-    for eid,league,home,away in rows:
+    # Prefer Superbet live stats; fall back to SofaScore fixture/statistics when Superbet omits HT data.
+    rows=c.execute("SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING'").fetchall()
+    for eid,league,home,away,start_ts in rows:
         event=superbet_live_event(eid)
-        if not event:
-            continue
-        phase=superbet_event_phase(event)
-        stats=superbet_ht_corners(event)
-        if phase=="UNKNOWN":
-            logging.info("Superbet: faza meczu nieznana dla %s — bez rozliczenia",eid)
-            continue
-        if stats is None:
-            logging.info("Superbet: brak jednoznacznych statystyk rożnych HT dla %s (faza %s)",eid,phase)
-            continue
-        home_corners,away_corners,_=stats
+        phase=superbet_event_phase(event) if event else "UNKNOWN"
+        stats=superbet_ht_corners(event) if event else None
+        if stats is not None:
+            home_corners,away_corners,_=stats
+        else:
+            sh,sa=sofascore_ht_corners(home,away,start_ts)
+            if sh is None or sa is None:
+                logging.info("Brak wiarygodnych statystyk HT dla %s — pozostaje PENDING",eid)
+                continue
+            home_corners,away_corners=sh,sa
+            # SofaScore's first-half statistics are only final once the first half has ended.
+            if event and phase=="FIRST_HALF":
+                n_live=home_corners+away_corners
+                if n_live<5:
+                    continue
+            elif not event:
+                # Historical/finished SofaScore fixture: use only when the fixture has ended or is at half-time/later.
+                ss_event=sofascore_event_for_pick(home,away,start_ts)
+                status=((ss_event or {}).get("status") or {}).get("type","").lower()
+                if status not in ("finished","inprogress","notstarted"):
+                    logging.info("SofaScore: nieznany status meczu %s — bez rozliczenia",eid)
+                    continue
+                if status=="notstarted":
+                    continue
         n=home_corners+away_corners
         if phase=="FIRST_HALF" and n<5:
             continue
-        if phase not in ("FIRST_HALF","HALFTIME","SECOND_HALF","FINISHED"):
+        if phase not in ("FIRST_HALF","HALFTIME","SECOND_HALF","FINISHED","UNKNOWN"):
             continue
         won=n>=5
         msg=(f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n"
