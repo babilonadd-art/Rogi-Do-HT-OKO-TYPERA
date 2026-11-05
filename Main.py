@@ -200,11 +200,41 @@ def db_open():
     columns={row[1] for row in c.execute("PRAGMA table_info(picks)").fetchall()}
     if "odds" not in columns:
         c.execute("ALTER TABLE picks ADD COLUMN odds REAL")
+    if "league_corrected_at" not in columns:
+        c.execute("ALTER TABLE picks ADD COLUMN league_corrected_at TEXT")
     c.execute("""CREATE TABLE IF NOT EXISTS monthly_reports(month TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
     c.execute("UPDATE picks SET odds=1.92 WHERE event_id=15562733 AND odds IS NULL")
     c.execute("UPDATE picks SET odds=1.97 WHERE event_id=14572637 AND odds IS NULL")
     c.commit()
     return c
+
+def resend_tips_with_corrected_league(c,events):
+    """Re-send already-issued picks once if Superbet now exposes their real competition name."""
+    by_id={str(e.get("event_id")):e for e in events if e.get("event_id") is not None}
+    rows=c.execute("""SELECT event_id,home,away,start_ts,odds,league FROM picks
+                      WHERE status='PENDING' AND league_corrected_at IS NULL""").fetchall()
+    for eid,home,away,start_ts,odds,old_league in rows:
+        event=by_id.get(str(eid))
+        if not event:
+            continue
+        league=extract_league_name(event)
+        if not league or league=="Liga niepodana przez Superbet":
+            continue
+        if league==old_league or old_league not in ("Superbet — liga","Liga niepodana przez Superbet","liga"):
+            continue
+        kickoff=datetime.fromtimestamp(start_ts,timezone.utc).astimezone(TZ)
+        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\\n\\n"
+             f"🏆 {league}\\n⚽ {home} – {away}\\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
+             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\\n"
+             f"💹 Kurs Superbet: {float(odds):.2f}\\n"
+             f"💰 Stawka: {STAKE} zł")
+        if send(msg):
+            c.execute("UPDATE picks SET league=?,league_corrected_at=? WHERE event_id=?",
+                      (league,datetime.now(TZ).isoformat(),eid))
+            c.commit()
+            logging.info("Wysłano korektę nazwy ligi dla event %s: %s",eid,league)
+        time.sleep(.2)
 
 def first_half_corners(event_id):
     root=api(f"/event/{event_id}/statistics").get("statistics",{})
@@ -401,6 +431,7 @@ def main():
     # Superbet is the source of fixtures and prices; don't discard niche leagues
     # because a second provider has no matching fixture or historical statistics.
     sb_events=superbet_football_events(start,end)
+    resend_tips_with_corrected_league(c,sb_events)
     logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
     available=[]
     checked=0
