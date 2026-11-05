@@ -38,6 +38,23 @@ def event_payload(market_name, odds, market_status=1, inplay="NOT_STARTED",
 
 
 class SuperbetFTMarketTests(unittest.TestCase):
+    def test_extracts_league_from_superbet_category_metadata(self):
+        event = {
+            "fixture": {
+                "category": {"name": "UEFA Europa League"},
+                "event_name": "Home·Away",
+            }
+        }
+        self.assertEqual(Main.extract_league_name(event), "UEFA Europa League")
+
+    def test_extracts_league_from_nested_camel_case_field(self):
+        event = {
+            "fixture": {
+                "competition": {"displayName": "Brazilian Serie A"}
+            }
+        }
+        self.assertEqual(Main.extract_league_name(event), "Brazilian Serie A")
+
     @patch("Main.superbet_api")
     def test_reads_prematch_full_time_over_95_price(self, api):
         api.return_value = event_payload(
