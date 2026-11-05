@@ -72,3 +72,5 @@ class SuperbetHTMarketTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# Regression suite for the observed Superbet Poland HT-corners market payload.
