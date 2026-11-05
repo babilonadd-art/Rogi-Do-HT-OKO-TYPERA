@@ -215,19 +215,25 @@ def dates(a,b):
         yield d.isoformat(); d+=timedelta(days=1)
 
 def settle(c,now):
-    # Check every pending pick on each workflow run. Wins are settled as soon
-    # as the fifth first-half corner is visible; losses at confirmed half-time.
+    # Settle Over 4.5 HT as soon as the fifth corner is recorded in the first half.
     rows=c.execute("SELECT event_id,league,home,away FROM picks WHERE status='PENDING'").fetchall()
     for eid,league,home,away in rows:
         ev=api(f"/event/{eid}").get("event",{})
         status_obj=ev.get("status") or {}
         status=str(status_obj.get("type","")).lower()
+        status_code=status_obj.get("code")
         description=str(status_obj.get("description","")).lower()
         period_obj=ev.get("period") or {}
         period=" ".join(str(v).lower() for v in period_obj.values()) if isinstance(period_obj,dict) else str(period_obj).lower()
         phase=description+" "+period
-        is_first_half=any(x in phase for x in ("1st half","first half","1 poł","pierwsza poł"))
-        is_halftime=any(x in phase for x in ("halftime","half-time","half time","break","przerwa")) or status in ("halftime","halftimebreak")
+        # SofaScore status codes: 6 = first half, 7 = half-time, 8 = second half, 100 = finished.
+        is_first_half=(status_code==6 or str(status_code)=="6" or
+                       any(x in phase for x in ("1st half","first half","1 poł","pierwsza poł")))
+        is_halftime=(status_code==7 or str(status_code)=="7" or
+                     any(x in phase for x in ("halftime","half-time","half time","break","przerwa")) or
+                     status in ("halftime","halftimebreak"))
+        is_second_half=(status_code==8 or str(status_code)=="8" or
+                        any(x in phase for x in ("2nd half","second half","2 poł","druga poł")))
         if status in ("canceled","postponed"):
             msg=f"⚠️ Mecz {status.upper()}\n🏆 {league}\n⚽ {home} – {away}\nTyp anulowany — bez rozliczenia."
             c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE event_id=?",(datetime.now(TZ).isoformat(),eid))
@@ -262,7 +268,8 @@ def settle(c,now):
                 n=sum(stats)
                 won=n>=5
             elif is_first_half:
-                stats=first_half_stats or current_stats
+                # During the first half, ALL/current corner stats are the HT total so far.
+                stats=first_half_stats if first_half_stats is not None else current_stats
                 if stats is None:
                     logging.info("Brak bieżących statystyk rożnych HT: %s",eid)
                     continue
@@ -271,9 +278,17 @@ def settle(c,now):
                     continue
                 won=True
             elif is_halftime:
-                stats=first_half_stats or current_stats
+                stats=first_half_stats if first_half_stats is not None else current_stats
                 if stats is None:
                     logging.info("Brak statystyk po przerwie: %s",eid)
+                    continue
+                n=sum(stats)
+                won=n>=5
+            elif is_second_half:
+                # Never use ALL stats in the second half: they include second-half corners.
+                stats=first_half_corners(eid) or first_half_stats
+                if stats is None:
+                    logging.info("Brak potwierdzonych statystyk pierwszej połowy: %s",eid)
                     continue
                 n=sum(stats)
                 won=n>=5
