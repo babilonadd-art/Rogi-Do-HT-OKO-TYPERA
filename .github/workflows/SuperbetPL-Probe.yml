@@ -6,7 +6,7 @@ on:
     paths:
       - "Main.py"
       - "tests/superbet_pl_probe.py"
-      - "tests/test_superbet_ht_market.py"
+      - "tests/test_superbet_ft_market.py"
       - ".github/workflows/SuperbetPL-Probe.yml"
 
 permissions:
@@ -27,5 +27,5 @@ jobs:
         run: python -m py_compile Main.py
       - name: Discover Superbet PL offer endpoints
         run: python tests/superbet_pl_probe.py
-      - name: Verify HT corner market schema and price extraction
-        run: python tests/test_superbet_ht_market.py
+      - name: Verify FT Over 9.5 corner market schema and price extraction
+        run: python tests/test_superbet_ft_market.py
