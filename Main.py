@@ -123,20 +123,23 @@ def extract_league_name(event):
     return ""
 
 def resolve_full_league(event,home,away,start_ts):
-    league=extract_league_name(event)
-    if league:
-        return league
+    """Always resolve the competition independently; Superbet is only fallback."""
     match=sofascore_event_for_pick(home,away,start_ts)
-    if not match:
-        return ""
-    tournament=match.get("tournament") or {}
-    unique=match.get("uniqueTournament") or {}
-    category=match.get("category") or {}
-    name=unique.get("name") or tournament.get("name")
-    country=category.get("name")
-    if name and country and country.lower() not in name.lower():
-        return f"{name} ({country})"
-    return name or ""
+    if match:
+        unique=match.get("uniqueTournament") or {}
+        tournament=match.get("tournament") or {}
+        category=match.get("category") or {}
+        name=unique.get("name") or tournament.get("name")
+        country=category.get("name")
+        if name and country and country.lower() not in name.lower():
+            return f"{name} — {country}"
+        if name:
+            return name
+    # Second fallback: competition metadata supplied by Superbet.
+    league=extract_league_name(event)
+    if league and league!="Liga niepodana przez Superbet":
+        return league
+    return ""
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
