@@ -6,6 +6,7 @@ on:
     paths:
       - "Main.py"
       - "tests/superbet_pl_probe.py"
+      - "tests/test_superbet_ht_market.py"
       - ".github/workflows/SuperbetPL-Probe.yml"
 
 permissions:
