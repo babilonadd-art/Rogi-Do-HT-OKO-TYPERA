@@ -14,8 +14,8 @@ CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
 MAX_DAILY=10
 FT_CORNERS_LINE=9.5
-MIN_ODDS=1.90
-MAX_ODDS=3.50
+MIN_ODDS=1.70
+MAX_ODDS=2.50
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({
