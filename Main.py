@@ -202,11 +202,11 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
     if inplay not in (None,"","NOT_STARTED"):
         return None
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
+        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
         # Full-match total only; exclude half and team-specific markets.
         if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
             continue
-        if not re.fullmatch(r"(?:cały mecz\\s*[-–:]\\s*)?liczba rzutów rożnych(?:\\s*[-–:]\\s*cały mecz)?",market_name):
+        if not re.fullmatch(r"(?:cały mecz\s*[-–:]\s*)?liczba rzutów rożnych(?:\s*[-–:]\s*cały mecz)?",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -220,7 +220,7 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower()
-            if not re.search(r"\\bpowyżej\\b",label):
+            if not re.search(r"\bpowyżej\b",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
