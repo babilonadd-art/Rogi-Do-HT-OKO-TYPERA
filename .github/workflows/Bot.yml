@@ -2,6 +2,10 @@ name: Rogi Do HT OKO TYPERA
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "Main.py"
+      - ".github/workflows/Bot.yml"
   schedule:
     - cron: "*/30 * * * *"
 
