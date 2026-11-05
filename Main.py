@@ -124,22 +124,9 @@ def extract_league_name(event):
     return ""
 
 def resolve_full_league(event,home,away,start_ts):
-    """Use Superbet competition metadata first; query SofaScore only as a fallback."""
+    """Use the full competition name supplied by Superbet only; no external league lookup."""
     league=extract_league_name(event)
-    if league and league!="Liga niepodana przez Superbet":
-        return league
-    match=sofascore_event_for_pick(home,away,start_ts)
-    if match:
-        unique=match.get("uniqueTournament") or {}
-        tournament=match.get("tournament") or {}
-        category=match.get("category") or {}
-        name=unique.get("name") or tournament.get("name")
-        country=category.get("name")
-        if name and country and country.lower() not in name.lower():
-            return f"{name} — {country}"
-        if name:
-            return name
-    return ""
+    return league.strip() if isinstance(league,str) and league.strip() else ""
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
