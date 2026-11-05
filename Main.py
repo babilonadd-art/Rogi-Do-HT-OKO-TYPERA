@@ -314,11 +314,11 @@ def resend_tips_with_corrected_league(c,events):
         if league==old_league or old_league not in ("Superbet — liga","Liga niepodana przez Superbet","liga"):
             continue
         kickoff=datetime.fromtimestamp(start_ts,timezone.utc).astimezone(TZ)
-        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\\n\\n"
-             f"🏆 {league}\\n⚽ {home} – {away}\\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
-             f"📌 Typ: Over {FT_CORNERS_LINE:.1f} rzutów rożnych FT\\n"
-             f"💹 Kurs Superbet: {float(odds):.2f}\\n"
+        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\n\n"
+             f"🏆 {league}\n⚽ {home} – {away}\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n\n"
+             f"📌 Typ: Over {FT_CORNERS_LINE:.1f} rzutów rożnych FT\n"
+             f"💹 Kurs Superbet: {float(odds):.2f}\n"
              f"💰 Stawka: {STAKE} zł")
         if send(msg):
             c.execute("UPDATE picks SET league=?,league_corrected_at=? WHERE event_id=?",
@@ -478,8 +478,8 @@ def settle(c,now):
             finished=(phase=="FINISHED" or str(status.get("type","")).lower()=="finished" or any(x in desc for x in ("finished","ended","full time")))
             if not finished: continue
         won=total>=10
-        msg=(f"📊 ROZLICZENIE — ROGI FT\\n\\n🏆 {league}\\n⚽ {home} – {away}\\n"
-             f"🚩 Rożne w całym meczu: {total}\\n🎯 Over 9.5 FT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\\n"
+        msg=(f"📊 ROZLICZENIE — ROGI FT\n\n🏆 {league}\n⚽ {home} – {away}\n"
+             f"🚩 Rożne w całym meczu: {total}\n🎯 Over 9.5 FT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n"
              f"💰 Stawka: {STAKE} zł")
         c.execute("UPDATE picks SET status=?,ft_corners=?,settled_at=? WHERE event_id=?",
                   ("WON" if won else "LOST",total,datetime.now(TZ).isoformat(),eid))
@@ -519,17 +519,17 @@ def send_monthly_reports(c,local):
         profit=sum(STAKE*(odds-1) if status=="WON" else -STAKE for status,odds in priced)
         yield_pct=(profit/turnover*100) if turnover else 0.0
         result="ZYSK" if profit>0 else ("STRATA" if profit<0 else "NA ZERO")
-        msg=(f"📅 MIESIĘCZNY BILANS — {month}\\n\\n"
-             f"📊 Rozliczone typy: {decided}\\n"
-             f"🟢 Wygrane: {wins}\\n🔴 Przegrane: {losses}\\n"
-             f"⚪ Anulowane: {voids}\\n"
-             f"🎯 Skuteczność: {accuracy:.1f}%\\n"
-             f"📈 Yield: {yield_pct:+.2f}%\\n"
-             f"💰 Stawka: {STAKE} zł / typ\\n"
-             f"💵 Obrót z kursami: {turnover:.2f} zł\\n"
+        msg=(f"📅 MIESIĘCZNY BILANS — {month}\n\n"
+             f"📊 Rozliczone typy: {decided}\n"
+             f"🟢 Wygrane: {wins}\n🔴 Przegrane: {losses}\n"
+             f"⚪ Anulowane: {voids}\n"
+             f"🎯 Skuteczność: {accuracy:.1f}%\n"
+             f"📈 Yield: {yield_pct:+.2f}%\n"
+             f"💰 Stawka: {STAKE} zł / typ\n"
+             f"💵 Obrót z kursami: {turnover:.2f} zł\n"
              f"🏦 Wynik: {profit:+.2f} zł ({result})")
         if missing:
-            msg+=f"\\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
+            msg+=f"\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
         if send(msg):
             c.execute("INSERT OR IGNORE INTO monthly_reports(month,sent_at) VALUES(?,?)",(month,local.isoformat()))
             c.commit()
@@ -631,11 +631,11 @@ def main():
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        msg=(f"🎯 ROGI FT\\n"
-             f"🏆 {league}\\n"
-             f"⚽ {home} – {away}\\n"
-             f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\\n"
-             f"Over {FT_CORNERS_LINE:.1f} rożnych @{price:.2f}\\n"
+        msg=(f"🎯 ROGI FT\n"
+             f"🏆 {league}\n"
+             f"⚽ {home} – {away}\n"
+             f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\n"
+             f"Over {FT_CORNERS_LINE:.1f} rożnych @{price:.2f}\n"
              f"Stawka: {STAKE} zł")
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'FT')",
