@@ -552,6 +552,8 @@ def main():
     # Superbet is the source of fixtures and prices; don't discard niche leagues
     # because a second provider has no matching fixture or historical statistics.
     sb_events=superbet_football_events(start,end)
+    # Load the official competition dictionary once before parallel event checks.
+    superbet_tournament_names()
     resend_tips_with_corrected_league(c,sb_events)
     logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
     # Skanuj kursy równolegle: sekwencyjne odpytanie każdego z setek meczów
