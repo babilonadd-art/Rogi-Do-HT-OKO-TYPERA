@@ -129,9 +129,9 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
     if inplay not in (None,"","NOT_STARTED"):
         return None
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
+        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
         # This is the match total market, not either team's individual corner total.
-        if not re.fullmatch(r"1\\.?\\s*połowa\\s*-\\s*liczba rzutów rożnych",market_name):
+        if not re.fullmatch(r"1\.?\s*połowa\s*-\s*liczba rzutów rożnych",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -145,7 +145,7 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower()
-            if not re.search(r"\\bpowyżej\\b",label):
+            if not re.search(r"\bpowyżej\b",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
