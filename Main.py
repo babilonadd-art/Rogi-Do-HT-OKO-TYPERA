@@ -14,8 +14,8 @@ SENT_IDS_FILE="sent_event_ids.json"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
-MAX_DAILY=10
-# Jednorazowe odblokowanie dzisiejszego limitu: zachowujemy historię 10 wcześniejszych typów.
+MAX_DAILY=20
+# Jednorazowy reset dzisiejszego licznika: pomijamy 20 wcześniejszych typów, aby umożliwić test do 20 nowych wysyłek.
 RESET_BASELINE_DATE="2026-11-05"
 RESET_BASELINE_COUNT=20
 TAX_RATE=0.12
