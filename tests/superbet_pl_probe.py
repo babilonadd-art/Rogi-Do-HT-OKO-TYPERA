@@ -1,4 +1,3 @@
-import json
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -15,62 +14,66 @@ HEADERS = {
 s = requests.Session()
 s.headers.update(HEADERS)
 
-def short(value, limit=1500):
+def short(value, limit=1800):
     return re.sub(r"\s+", " ", str(value))[:limit]
 
 now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 start = now.isoformat().replace("+00:00", "Z")
 end = (now + timedelta(days=2)).isoformat().replace("+00:00", "Z")
-print("FETCH_EVENTS", start, end)
 r = s.get(BASE + "/v3/pl-PL/events", params={"startDate": start, "endDate": end}, timeout=60)
-print("HTTP", r.status_code, "BYTES", len(r.content))
+print("EVENT_LIST", r.status_code, len(r.content))
 r.raise_for_status()
 events = r.json().get("events", [])
-print("TOTAL_EVENTS", len(events))
-sports = Counter(str(e.get("fixture", {}).get("sport_id")) for e in events)
-print("SPORT_COUNTS", dict(sports))
 football = [e for e in events if str(e.get("fixture", {}).get("sport_id")) == "5"]
-print("FOOTBALL_EVENTS", len(football))
-print("FOOTBALL_SAMPLE", short([
-    {
-        "id": e.get("event_id"),
-        "name": e.get("fixture", {}).get("event_name"),
-        "date": e.get("fixture", {}).get("utc_date"),
-        "tournament": e.get("fixture", {}).get("tournament_id"),
-        "markets": len(e.get("markets", [])),
-    } for e in football[:8]
+print("TOTAL_EVENTS", len(events), "FOOTBALL", len(football))
+future = [
+    e for e in football
+    if e.get("fixture", {}).get("utc_date", "") > datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+]
+print("FUTURE_FOOTBALL", len(future))
+print("FUTURE_SAMPLE", short([
+    {"id":e.get("event_id"),"match":e.get("fixture",{}).get("event_name"),
+     "kickoff":e.get("fixture",{}).get("utc_date"),"market_count":e.get("inplay_stats_metadata",{}).get("market_count"),
+     "markets_returned":len(e.get("markets",[]))}
+    for e in future[:12]
 ], 3000))
 
-corner_markets = []
-all_market_names = Counter()
-for ev in football:
-    fx = ev.get("fixture", {})
-    for market in ev.get("markets", []):
-        name = str(market.get("name", ""))
-        all_market_names[name] += 1
-        if re.search(r"corner|corners|rożn|rzut.{0,5}rożn", name, re.I):
-            odds = []
-            for odd in market.get("odds", []):
-                meta = odd.get("metadata", {})
-                if odd.get("status") == 1:
-                    odds.append({
-                        "name": meta.get("name"),
-                        "info": meta.get("info"),
-                        "line": meta.get("special_bet_value"),
-                        "price": odd.get("price"),
-                        "status": odd.get("status"),
-                        "offer_state_id": meta.get("offer_state_id"),
-                    })
-            corner_markets.append({
-                "event_id": ev.get("event_id"),
-                "match": fx.get("event_name"),
-                "kickoff": fx.get("utc_date"),
-                "market_id": market.get("id"),
-                "market_name": name,
-                "odds": odds[:16],
-            })
-print("CORNER_MARKET_COUNT", len(corner_markets))
-print("CORNER_MARKET_EXAMPLES", short(corner_markets[:25], 12000))
-print("TOP_FOOTBALL_MARKET_NAMES", short(all_market_names.most_common(100), 5000))
+market_counts = Counter()
+corner_hits = []
+for listed in future[:18]:
+    eid = listed.get("event_id")
+    fx = listed.get("fixture", {})
+    try:
+        detail = s.get(BASE + "/v3/pl-PL/events", params={"events": str(eid)}, timeout=30)
+        print("DETAIL", eid, detail.status_code, len(detail.content))
+        detail.raise_for_status()
+        full = detail.json().get("events", [])
+        if not full:
+            continue
+        ev = full[0]
+        markets = ev.get("markets", [])
+        print("DETAIL_MARKETS", eid, len(markets), "match", fx.get("event_name"))
+        for market in markets:
+            name = str(market.get("name", ""))
+            market_counts[name] += 1
+            if re.search(r"corner|corners|rożn|rzut.{0,5}rożn", name, re.I):
+                odds = []
+                for odd in market.get("odds", []):
+                    meta = odd.get("metadata", {})
+                    if odd.get("status") == 1 and odd.get("display", True):
+                        odds.append({
+                            "name":meta.get("name"),"info":meta.get("info"),
+                            "line":meta.get("special_bet_value"),"price":odd.get("price"),
+                            "offer_state_id":meta.get("offer_state_id"),
+                        })
+                corner_hits.append({
+                    "id":eid,"match":fx.get("event_name"),"kickoff":fx.get("utc_date"),
+                    "market_id":market.get("id"),"name":name,"odds":odds[:20]
+                })
+    except Exception as exc:
+        print("DETAIL_ERROR", eid, type(exc).__name__, str(exc)[:200])
 
+print("CORNER_HITS", len(corner_hits))
+print("CORNER_EXAMPLES", short(corner_hits[:30], 12000))
+print("COMMON_MARKETS", short(market_counts.most_common(100), 5000))
 print("PROBE_FINISHED")
