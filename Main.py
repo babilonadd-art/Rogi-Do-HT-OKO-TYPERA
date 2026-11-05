@@ -204,6 +204,23 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
+def superbet_prematch_event_url(event,home,away,event_id):
+    """Build the pre-match Superbet football event page for this fixture."""
+    fixture=(event or {}).get("fixture") or {}
+    for key in ("url","event_url","eventUrl","slug","seo_url","seoUrl"):
+        value=fixture.get(key) or (event or {}).get(key)
+        if isinstance(value,str) and value.strip():
+            value=value.strip()
+            if value.startswith(("https://","http://")):
+                return value
+            if value.startswith("/"):
+                return "https://superbet.pl"+value
+    def slug_part(value):
+        value=unicodedata.normalize("NFKD",str(value or "")).encode("ascii","ignore").decode().lower()
+        return re.sub(r"-+","-",re.sub(r"[^a-z0-9]+","-",value)).strip("-")
+    slug=slug_part(home)+"-vs-"+slug_part(away)+"-"+str(int(event_id))
+    return "https://superbet.pl/kursy/pilka-nozna/"+slug
+
 def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
     """Return (price, detailed Superbet event) for a pre-match FT corners offer."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
@@ -644,11 +661,13 @@ def main():
         tax=STAKE*TAX_RATE
         payout=STAKE*(1-TAX_RATE)*price
         profit=payout-STAKE
+        prematch_url=superbet_prematch_event_url(detailed_event or listed,home,away,event_id)
         msg=(f"🎯 ROGI FT\n"
              f"🏆 {league}\n"
              f"⚽ {home} – {away}\n"
              f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\n"
              f"Over {FT_CORNERS_LINE:.1f} rożnych – kurs {price:.2f}\n"
+             f"🔗 Superbet PRE-MATCH: {prematch_url}\n"
              f"Stawka: {STAKE} zł\n"
              f"Podatek 12%: {tax:.2f} zł\n"
              f"Możliwa wypłata po podatku: {payout:.2f} zł\n"
