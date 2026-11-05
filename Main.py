@@ -301,6 +301,15 @@ def settle(c,now):
             logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
         time.sleep(.2)
 
+def watch_pending_picks(c,duration_seconds=240,interval_seconds=15):
+    """Poll live first-half corner counts frequently so a winning pick settles in-play."""
+    deadline=time.monotonic()+duration_seconds
+    while time.monotonic()<deadline:
+        settle(c,int(datetime.now(timezone.utc).timestamp()))
+        remaining=deadline-time.monotonic()
+        if remaining>0:
+            time.sleep(min(interval_seconds,remaining))
+
 def send_monthly_reports(c,local):
     current_month=local.strftime("%Y-%m")
     months=c.execute("SELECT DISTINCT substr(sent_at,1,7) FROM picks WHERE substr(sent_at,1,7)<? ORDER BY 1",(current_month,)).fetchall()
@@ -354,7 +363,8 @@ def main():
     key=local.date().isoformat()
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
     if count>=MAX_DAILY:
-        logging.info("Dzienny limit osiągnięty: %s/%s",count,MAX_DAILY)
+        logging.info("Dzienny limit osiągnięty: %s/%s — monitoruję nierozliczone typy",count,MAX_DAILY)
+        watch_pending_picks(c)
         c.close()
         return
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
@@ -426,6 +436,7 @@ def main():
              f"🎯 Potwierdzone rynki Over {HT_CORNERS_LINE:.1f} HT: {len(available)}\n"
              "ℹ️ Nie wysłano typu, bo nie znaleziono aktywnego kursu. Nie generuję fikcyjnych typów.")
     logging.info("Skan zakończony — wysłano %s typów",sent)
+    watch_pending_picks(c)
     c.close()
 
 if __name__=="__main__": main()
