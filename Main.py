@@ -102,29 +102,38 @@ def team_similarity(a,b):
     return SequenceMatcher(None,x,y).ratio()
 
 def extract_league_name(event):
-    """Resolve the competition name from Superbet's event/fixture metadata."""
+    """Resolve full competition name from Superbet fixture/event metadata."""
+    if not isinstance(event,dict):
+        return ""
     fixture=event.get("fixture") or {}
     containers=[fixture,event]
-    for parent in list(containers):
-        for key in ("tournament","league","competition","championship"):
+    # Superbet payloads use both snake_case and camelCase names, and nest
+    # competition details under category/tournament/competition objects.
+    keys=("tournament","league","competition","championship","category",
+          "sport_category","sportCategory","tournament_info","tournamentInfo")
+    seen=set()
+    while containers:
+        parent=containers.pop(0)
+        if not isinstance(parent,dict) or id(parent) in seen:
+            continue
+        seen.add(id(parent))
+        for key in keys:
             value=parent.get(key)
             if isinstance(value,dict):
                 containers.append(value)
-    for parent in containers:
-        for key in ("tournament_name","league_name","competition_name","championship_name"):
+        for key in ("tournament_name","tournamentName","league_name","leagueName",
+                    "competition_name","competitionName","championship_name",
+                    "championshipName","displayName","display_name","name","title","label"):
             value=parent.get(key)
             if isinstance(value,str) and value.strip():
+                # Do not mistake a fixture/event title for a competition name.
+                if key in ("name","title","label") and parent is fixture:
+                    continue
                 return value.strip()
-        for key in ("tournament","league","competition","championship"):
-            value=parent.get(key)
-            if isinstance(value,dict):
-                name=value.get("name") or value.get("title") or value.get("label")
-                if isinstance(name,str) and name.strip():
-                    return name.strip()
     return ""
 
 def resolve_full_league(event,home,away,start_ts):
-    """Use Superbet competition metadata first; query SofaScore only as a fallback."""
+    """Use Superbet competition metadata first, SofaScore only if absent."""
     league=extract_league_name(event)
     if league and league!="Liga niepodana przez Superbet":
         return league
@@ -165,27 +174,25 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Fetch Superbet's actual pre-match full-match total-corners price."""
+def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
+    """Return (price, detailed Superbet event) for a pre-match FT corners offer."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
-        return None
+        return (None,None)
     event=events[0]
     fixture=event.get("fixture",{})
-    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
-        return None
+        return (None,event)
     inplay=(event.get("inplay_stats_metadata") or {}).get("status")
     if inplay not in (None,"","NOT_STARTED"):
-        return None
+        return (None,event)
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
-        # Full-match total only; exclude half and team-specific markets.
+        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
         if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
             continue
-        if not re.fullmatch(r"(?:cały mecz\s*-\s*)?liczba rzutów rożnych(?:\s*-\s*cały mecz)?",market_name):
+        if not re.fullmatch(r"(?:cały mecz\\s*-\\s*)?liczba rzutów rożnych(?:\\s*-\\s*cały mecz)?",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -199,7 +206,7 @@ def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower()
-            if not re.search(r"\bpowyżej\b",label):
+            if not re.search(r"\\bpowyżej\\b",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
@@ -212,8 +219,13 @@ def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
             if not MIN_ODDS <= price <= MAX_ODDS:
                 logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
                 continue
-            return price
-    return None
+            return (price,event)
+    return (None,event)
+
+def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
+    """Compatibility wrapper returning only the pre-match FT Over 9.5 price."""
+    price,_event=superbet_ft_event_data(event_id,line)
+    return price
 
 
 # Open Matchday: darmowe, dzienne CSV z historią rożnych 1. połowy.
