@@ -12,8 +12,6 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
 MAX_DAILY=2
-MIN_LEAD_HOURS=3
-LOOKAHEAD_HOURS=48
 HISTORY=8
 MIN_SAMPLE=5
 MIN_TEAM_AVG=2.2
@@ -212,7 +210,14 @@ def main():
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
     if count>=MAX_DAILY:
         logging.info("Dzienny limit osiągnięty: %s/%s",count,MAX_DAILY); c.close(); return
-    start=now+timedelta(hours=MIN_LEAD_HOURS); end=now+timedelta(hours=LOOKAHEAD_HOURS)
+    # Skanuj wszystkie pozostałe mecze z bieżącego dnia w strefie Europe/Warsaw.
+    # Kursy pobieramy wyłącznie dla spotkań, które jeszcze się nie rozpoczęły.
+    day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
+    day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
+    start=max(now,day_start.astimezone(timezone.utc))
+    end=day_end.astimezone(timezone.utc)
+    if start>=end:
+        logging.info("Brak pozostałych godzin dzisiejszego dnia do skanowania"); c.close(); return
     sb_events=superbet_football_events(start,end)
     if not sb_events:
         logging.warning("Superbet nie zwrócił przedmeczowych meczów piłkarskich — bez nowych typów")
