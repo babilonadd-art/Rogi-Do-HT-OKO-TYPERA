@@ -1,4 +1,4 @@
-import os, time, sqlite3, logging, re, unicodedata
+import os, time, sqlite3, logging, re, unicodedata, csv, io
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -198,6 +198,95 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
                 continue
             return price
     return None
+
+
+# Open Matchday: darmowe, dzienne CSV z historią rożnych 1. połowy.
+# Splity HT są dostępne tylko dla 10 wskazanych lig; bez próbki bot nie typuje.
+MATCHDAY_BASE="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/data"
+MATCHDAY_SEASON="2627"
+MATCHDAY_LEAGUES={
+    "premierleague":"ENG_1_premier-league",
+    "laliga":"ESP_1_la-liga",
+    "bundesliga":"GER_1_bundesliga",
+    "seriea":"ITA_1_serie-a",
+    "ligue1":"FRA_1_ligue-1",
+    "eredivisie":"NED_1_eredivisie",
+    "primeiraliga":"POR_1_primeira-liga",
+    "belgianproleague":"BEL_1_pro-league",
+    "jupilerproleague":"BEL_1_pro-league",
+    "superlig":"TUR_1_super-lig",
+    "superleaguegreece":"GRE_1_super-league",
+    "superleague1":"GRE_1_super-league",
+}
+_matchday_cache={}
+
+def matchday_folder(league):
+    key=normalized_team(league)
+    for alias,folder in MATCHDAY_LEAGUES.items():
+        if key==alias or alias in key:
+            return folder
+    return None
+
+def load_matchday_results(league):
+    folder=matchday_folder(league)
+    if not folder:
+        logging.info("Open Matchday: brak splitów rożnych HT dla ligi %s",league)
+        return None
+    if folder in _matchday_cache:
+        return _matchday_cache[folder]
+    url=f"{MATCHDAY_BASE}/{folder}/results_{MATCHDAY_SEASON}.csv"
+    try:
+        response=requests.get(url,headers={"User-Agent":"OkoTypera/1.0","Accept":"text/csv"},timeout=25)
+        response.raise_for_status()
+        rows=list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
+        _matchday_cache[folder]=rows
+        logging.info("Open Matchday: pobrano %s historycznych meczów dla %s",len(rows),league)
+        return rows
+    except Exception as exc:
+        logging.warning("Open Matchday: nie udało się pobrać historii %s: %s",league,exc)
+        return None
+
+def recent_team_ht_corner_history(team,rows,fixture_date):
+    matched=[]
+    for row in rows:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            home_c=int(row["home_corners_1h"])
+            away_c=int(row["away_corners_1h"])
+        except (KeyError,TypeError,ValueError):
+            continue
+        hsim=team_similarity(team,row.get("home",""))
+        assim=team_similarity(team,row.get("away",""))
+        if hsim>=0.82 and hsim>assim+0.04:
+            matched.append((match_date,home_c,away_c,home_c+away_c))
+        elif assim>=0.82 and assim>hsim+0.04:
+            matched.append((match_date,away_c,home_c,home_c+away_c))
+    matched.sort(key=lambda item:item[0],reverse=True)
+    return matched[:HISTORY]
+
+def evaluate_matchday_quality(league,home,away,start_ts):
+    rows=load_matchday_results(league)
+    if rows is None:
+        return None,"brak danych Open Matchday dla ligi"
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    home_history=recent_team_ht_corner_history(home,rows,fixture_date)
+    away_history=recent_team_ht_corner_history(away,rows,fixture_date)
+    if len(home_history)<MIN_SAMPLE or len(away_history)<MIN_SAMPLE:
+        return None,(f"za mała próba: {home} {len(home_history)}/{HISTORY}, "
+                     f"{away} {len(away_history)}/{HISTORY}")
+    home_avg=sum(x[1] for x in home_history)/len(home_history)
+    away_avg=sum(x[1] for x in away_history)/len(away_history)
+    combined=[x[3] for x in home_history]+[x[3] for x in away_history]
+    combined_avg=sum(combined)/len(combined)
+    hit_rate=sum(1 for total in combined if total>HT_CORNERS_LINE)/len(combined)
+    passed=(home_avg>=MIN_TEAM_AVG and away_avg>=MIN_TEAM_AVG
+            and combined_avg>=MIN_COMBINED_AVG and hit_rate>=MIN_HIT_RATE)
+    detail=(f"próba {len(home_history)}+{len(away_history)}, "
+            f"średnie rożne HT drużyn {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, over 4.5 w {hit_rate*100:.0f}%")
+    return passed,detail
 
 def send(msg):
     if not TOKEN or not CHAT:
@@ -538,6 +627,9 @@ def main():
     logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
     available=[]
     checked=0
+    market_candidates=0
+    history_rejected=0
+    history_unavailable=0
     for listed in sb_events:
         fx=listed.get("fixture",{})
         event_id=listed.get("event_id")
@@ -558,15 +650,25 @@ def main():
         checked+=1
         price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
         if price is not None:
-            available.append((st,int(event_id),home,away,price,fx))
-            logging.info("Znaleziono O%.1f HT: %s - %s @ %.2f",HT_CORNERS_LINE,home,away,price)
+            market_candidates+=1
+            league=extract_league_name(listed)
+            quality,quality_detail=evaluate_matchday_quality(league,home,away,st)
+            if quality is None:
+                history_unavailable+=1
+                logging.info("ODRZUCONO — brak wiarygodnej historii: %s - %s (%s)",home,away,quality_detail)
+                continue
+            if not quality:
+                history_rejected+=1
+                logging.info("ODRZUCONO — filtr jakości: %s - %s (%s)",home,away,quality_detail)
+                continue
+            available.append((st,int(event_id),home,away,price,fx,league,quality_detail))
+            logging.info("KWALIFIKACJA O%.1f HT: %s - %s @ %.2f | %s",HT_CORNERS_LINE,home,away,price,quality_detail)
 
     available.sort(key=lambda x:x[0])
     sent=0
-    for st,event_id,home,away,price,fx in available:
+    for st,event_id,home,away,price,fx,league,quality_detail in available:
         if count>=MAX_DAILY:
             break
-        league=extract_league_name(listed)
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
         msg=("🎯 OKOTYPERA — ROGI DO HT\n\n"
              f"🏆 {league}\n⚽ {home} – {away}\n"
@@ -586,11 +688,14 @@ def main():
         time.sleep(.3)
 
     if sent==0:
-        send("🤖 ROGI DO HT — RAPORT SKANU\n\n"
-             f"📅 {local:%d.%m.%Y}\n"
-             f"🔎 Mecze Superbet sprawdzone: {checked}\n"
-             f"🎯 Potwierdzone rynki Over {HT_CORNERS_LINE:.1f} HT: {len(available)}\n"
-             "ℹ️ Nie wysłano typu, bo nie znaleziono aktywnego kursu. Nie generuję fikcyjnych typów.")
+        send("🤖 ROGI DO HT — RAPORT SKANU\\n\\n"
+             f"📅 {local:%d.%m.%Y}\\n"
+             f"🔎 Mecze Superbet sprawdzone: {checked}\\n"
+             f"💹 Rynki Over {HT_CORNERS_LINE:.1f} HT z kursem: {market_candidates}\\n"
+             f"📊 Odrzucone przez filtr historii: {history_rejected}\\n"
+             f"⚠️ Brak wiarygodnej historii: {history_unavailable}\\n"
+             f"✅ Mecze spełniające wszystkie kryteria: {len(available)}\\n"
+             "ℹ️ Bot nie dobija do limitu — bez potwierdzonej jakości nie wysyła typu.")
     logging.info("Skan zakończony — wysłano %s typów",sent)
     watch_pending_picks(c)
     c.close()
