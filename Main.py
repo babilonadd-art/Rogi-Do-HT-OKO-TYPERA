@@ -114,27 +114,48 @@ def superbet_event_for_match(home,away,start_ts,events):
     return best[1] if best else None
 
 def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
+    """Fetch and validate the actual Superbet PL pre-match total HT-corners price."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
         return None
-    for market in events[0].get("markets",[]):
-        name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
-        if not re.fullmatch(r"1\.?\s*połowa\s*-\s*liczba rzutów rożnych",name):
+    event=events[0]
+    fixture=event.get("fixture",{})
+    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
+    offer_states=fixture.get("offer_state_status") or {}
+    if offer_states and offer_states.get("1") not in (1,"1"):
+        return None
+    inplay=(event.get("inplay_stats_metadata") or {}).get("status")
+    if inplay not in (None,"","NOT_STARTED"):
+        return None
+    for market in event.get("markets",[]):
+        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
+        # This is the match total market, not either team's individual corner total.
+        if not re.fullmatch(r"1\\.?\\s*połowa\\s*-\\s*liczba rzutów rożnych",market_name):
+            continue
+        if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
         for odd in market.get("odds",[]):
-            meta=odd.get("metadata",{})
+            meta=odd.get("metadata") or {}
             try:
-                odd_line=float(meta.get("special_bet_value"))
+                odd_line=float(meta.get("special_bet_value",odd.get("special_bet_value")))
                 price=float(odd.get("price"))
             except (TypeError,ValueError):
                 continue
-            label=(str(meta.get("name",""))+" "+str(meta.get("info",""))).lower()
-            if abs(odd_line-float(line))>0.001 or "powyżej" not in label:
+            label=" ".join(str(x or "") for x in (
+                odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
+            )).lower()
+            if not re.search(r"\\bpowyżej\\b",label):
                 continue
-            if odd.get("status")!=1 or not odd.get("display",False):
+            if abs(odd_line-float(line))>0.001:
                 continue
-            if meta.get("offer_state_id") not in (1,"1") or price<=1.0:
+            if odd.get("status") not in (1,"1","ACTIVE","active"):
+                continue
+            if odd.get("display") is False:
+                continue
+            if meta.get("offer_state_id",1) not in (1,"1"):
+                continue
+            if price<=1.0:
                 continue
             return price
     return None
