@@ -26,3 +26,5 @@ jobs:
         run: python -m py_compile Main.py
       - name: Discover Superbet PL offer endpoints
         run: python tests/superbet_pl_probe.py
+      - name: Verify HT corner market schema and price extraction
+        run: python tests/test_superbet_ht_market.py
