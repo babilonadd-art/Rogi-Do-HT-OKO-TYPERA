@@ -56,6 +56,21 @@ class SuperbetFTMarketTests(unittest.TestCase):
         self.assertEqual(Main.extract_league_name(event), "Brazilian Serie A")
 
     @patch("Main.superbet_api")
+    def test_returns_detailed_event_with_ft_price_for_league_lookup(self, api):
+        payload = event_payload(
+            "Liczba rzutów rożnych",
+            [selection("Powyżej 9.5", price=2.05)],
+        )
+        payload["events"][0]["fixture"]["category"] = {"name": "UEFA Europa League"}
+        api.return_value = payload
+        result = Main.superbet_ft_event_data(123)
+        self.assertEqual(result[0], 2.05)
+        self.assertEqual(
+            Main.extract_league_name(result[1]),
+            "UEFA Europa League",
+        )
+
+    @patch("Main.superbet_api")
     def test_reads_prematch_full_time_over_95_price(self, api):
         api.return_value = event_payload(
             "Liczba rzutów rożnych",
