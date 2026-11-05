@@ -17,6 +17,7 @@ MAX_DAILY=10
 FT_CORNERS_LINE=9.5
 MIN_ODDS=1.70
 MAX_ODDS=2.50
+SB_TOURNAMENT_NAMES = None
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({
@@ -101,8 +102,27 @@ def team_similarity(a,b):
     if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
     return SequenceMatcher(None,x,y).ratio()
 
+def superbet_tournament_names():
+    """Load Superbet's official Polish tournament-name map once per run."""
+    global SB_TOURNAMENT_NAMES
+    if SB_TOURNAMENT_NAMES is not None:
+        return SB_TOURNAMENT_NAMES
+    SB_TOURNAMENT_NAMES={}
+    payload=superbet_api("/v2/pl-PL/struct")
+    data=payload.get("data") or {}
+    for item in data.get("tournaments",[]) or []:
+        if not isinstance(item,dict):
+            continue
+        tournament_id=str(item.get("id","")).strip()
+        names=item.get("localNames") or {}
+        name=names.get("pl-PL") or names.get("en-GB") or names.get("en")
+        if tournament_id and isinstance(name,str) and name.strip():
+            SB_TOURNAMENT_NAMES[tournament_id]=name.strip()
+    logging.info("Superbet: załadowano %d nazw turniejów",len(SB_TOURNAMENT_NAMES))
+    return SB_TOURNAMENT_NAMES
+
 def extract_league_name(event):
-    """Resolve full competition name from Superbet fixture/event metadata."""
+    """Resolve full competition name from Superbet's own event and structure data."""
     if not isinstance(event,dict):
         return ""
     fixture=event.get("fixture") or {}
@@ -130,6 +150,11 @@ def extract_league_name(event):
                 if key in ("name","title","label") and parent is fixture:
                     continue
                 return value.strip()
+    tournament_id=fixture.get("tournament_id") or fixture.get("tournamentId")
+    if tournament_id:
+        name=superbet_tournament_names().get(str(tournament_id))
+        if name:
+            return name
     return ""
 
 def resolve_full_league(event,home,away,start_ts):
