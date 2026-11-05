@@ -1,0 +1,21 @@
+name: Betclic Polska — test połączenia
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja testowego klienta
+        run: pip install "git+https://github.com/TapsHTS/betclic-api.git"
+      - name: Test polskiej oferty
+        run: python tests/betclic_pl_probe.py
