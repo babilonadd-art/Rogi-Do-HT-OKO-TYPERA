@@ -189,10 +189,10 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
     if inplay not in (None,"","NOT_STARTED"):
         return (None,event)
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
+        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
         if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
             continue
-        if not re.fullmatch(r"(?:cały mecz\\s*-\\s*)?liczba rzutów rożnych(?:\\s*-\\s*cały mecz)?",market_name):
+        if not re.fullmatch(r"(?:cały mecz\s*-\s*)?liczba rzutów rożnych(?:\s*-\s*cały mecz)?",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -206,7 +206,7 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower()
-            if not re.search(r"\\bpowyżej\\b",label):
+            if not re.search(r"\bpowyżej\b",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
@@ -555,14 +555,18 @@ def main():
     logging.info("Do sprawdzenia kursów Superbet: %d meczów",len(candidates))
     def inspect_candidate(item):
         listed,event_id,st,home,away=item
-        price=superbet_ft_over_odds(event_id,FT_CORNERS_LINE)
+        price,detailed_event=superbet_ft_event_data(event_id,FT_CORNERS_LINE)
         if price is None:
             return None
-        league=resolve_full_league(listed,home,away,st)
+        # The detailed Superbet response may contain competition metadata
+        # omitted from the daily fixture list. Prefer it, then use SofaScore.
+        league=resolve_full_league(detailed_event or listed,home,away,st)
+        if not league:
+            league=resolve_full_league(listed,home,away,st)
         if not league:
             logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
             return None
-        logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
+        logging.info("KWALIFIKACJA O%.1f FT: %s - %s | %s @ %.2f",FT_CORNERS_LINE,home,away,league,price)
         return (price,st,event_id,home,away,price,league)
 
     available=[]
