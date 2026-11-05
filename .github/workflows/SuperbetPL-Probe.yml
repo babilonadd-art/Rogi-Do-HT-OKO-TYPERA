@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - "Main.py"
       - "tests/superbet_pl_probe.py"
       - ".github/workflows/SuperbetPL-Probe.yml"
 
@@ -21,5 +22,7 @@ jobs:
           python-version: "3.12"
       - name: Install requests
         run: pip install "requests>=2.31,<3"
+      - name: Check bot syntax
+        run: python -m py_compile Main.py
       - name: Discover Superbet PL offer endpoints
         run: python tests/superbet_pl_probe.py
