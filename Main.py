@@ -661,7 +661,7 @@ def main():
         tax=STAKE*TAX_RATE
         payout=STAKE*(1-TAX_RATE)*price
         profit=payout-STAKE
-        prematch_url=superbet_prematch_event_url(detailed_event or listed,home,away,event_id)
+        prematch_url=superbet_prematch_event_url(None,home,away,event_id)
         msg=(f"🎯 ROGI FT\n"
              f"🏆 {league}\n"
              f"⚽ {home} – {away}\n"
