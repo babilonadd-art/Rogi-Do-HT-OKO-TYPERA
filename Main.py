@@ -124,7 +124,10 @@ def extract_league_name(event):
     return ""
 
 def resolve_full_league(event,home,away,start_ts):
-    """Always resolve the competition independently; Superbet is only fallback."""
+    """Use Superbet competition metadata first; query SofaScore only as a fallback."""
+    league=extract_league_name(event)
+    if league and league!="Liga niepodana przez Superbet":
+        return league
     match=sofascore_event_for_pick(home,away,start_ts)
     if match:
         unique=match.get("uniqueTournament") or {}
@@ -136,10 +139,6 @@ def resolve_full_league(event,home,away,start_ts):
             return f"{name} — {country}"
         if name:
             return name
-    # Second fallback: competition metadata supplied by Superbet.
-    league=extract_league_name(event)
-    if league and league!="Liga niepodana przez Superbet":
-        return league
     return ""
 
 def superbet_event_for_match(home,away,start_ts,events):
@@ -501,8 +500,7 @@ def main():
     key=local.date().isoformat()
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
     if count>=MAX_DAILY:
-        logging.info("Dzienny limit osiągnięty: %s/%s — monitoruję nierozliczone typy",count,MAX_DAILY)
-        watch_pending_picks(c)
+        logging.info("Dzienny limit osiągnięty: %s/%s — rozliczenie ponowi harmonogram co 5 minut",count,MAX_DAILY)
         c.close()
         return
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
@@ -594,7 +592,8 @@ def main():
         time.sleep(.3)
 
     logging.info("Skan zakończony — wysłano %s typów",sent)
-    watch_pending_picks(c)
+    # GitHub Actions uruchamia skan co 5 minut; nie blokuj joba dodatkowym
+    # 270-sekundowym pollingiem, który powodował nakładanie i anulowanie runów.
     c.close()
 
 if __name__=="__main__": main()
