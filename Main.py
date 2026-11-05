@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 API="https://www.sofascore.com/api/v1"
 API_FALLBACK="https://www.sofascore.com/api/v1"
@@ -205,21 +206,29 @@ def superbet_event_for_match(home,away,start_ts,events):
     return best[1] if best else None
 
 def superbet_prematch_event_url(event,home,away,event_id):
-    """Build the pre-match Superbet football event page for this fixture."""
+    """Build a pre-match Superbet event URL opened on the corners market."""
     fixture=(event or {}).get("fixture") or {}
+    url=None
     for key in ("url","event_url","eventUrl","slug","seo_url","seoUrl"):
         value=fixture.get(key) or (event or {}).get(key)
         if isinstance(value,str) and value.strip():
             value=value.strip()
             if value.startswith(("https://","http://")):
-                return value
+                url=value
+                break
             if value.startswith("/"):
-                return "https://superbet.pl"+value
-    def slug_part(value):
-        value=unicodedata.normalize("NFKD",str(value or "")).encode("ascii","ignore").decode().lower()
-        return re.sub(r"-+","-",re.sub(r"[^a-z0-9]+","-",value)).strip("-")
-    slug=slug_part(home)+"-vs-"+slug_part(away)+"-"+str(int(event_id))
-    return "https://superbet.pl/kursy/pilka-nozna/"+slug
+                url="https://superbet.pl"+value
+                break
+    if not url:
+        def slug_part(value):
+            value=unicodedata.normalize("NFKD",str(value or "")).encode("ascii","ignore").decode().lower()
+            return re.sub(r"-+","-",re.sub(r"[^a-z0-9]+","-",value)).strip("-")
+        slug=slug_part(home)+"-vs-"+slug_part(away)+"-"+str(int(event_id))
+        url="https://superbet.pl/kursy/pilka-nozna/"+slug
+    parts=urlsplit(url)
+    query=dict(parse_qsl(parts.query,keep_blank_values=True))
+    query["marketGroup"]="111"
+    return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
 
 def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
     """Return (price, detailed Superbet event) for a pre-match FT corners offer."""
