@@ -41,7 +41,8 @@ jobs:
           if [ -f okotypera_rogi.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add okotypera_rogi.db
-            git diff --cached --quiet || git commit -m "Update picks database"
+            git add okotypera_rogi.db sent_event_ids.json
+            git diff --cached --quiet || git commit -m "Update picks database and sent IDs"
+            git pull --rebase origin main
             git push
           fi
