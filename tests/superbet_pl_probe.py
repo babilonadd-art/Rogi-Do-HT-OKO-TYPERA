@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime, timedelta, timezone
 import requests
 from urllib.parse import urljoin
 
@@ -7,7 +8,7 @@ BASE = "https://production-superbet-offer-pl.freetls.fastly.net"
 SITE = "https://superbet.pl/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
-    "Accept": "text/html,application/json,*/*",
+    "Accept": "application/json,text/event-stream,*/*",
     "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
     "Origin": "https://superbet.pl",
     "Referer": SITE,
@@ -15,70 +16,70 @@ HEADERS = {
 s = requests.Session()
 s.headers.update(HEADERS)
 
-def short(value, limit=1800):
+def short(value, limit=2200):
     return re.sub(r"\s+", " ", str(value))[:limit]
 
-print("FETCH SITE")
+print("FETCH SITE CONFIG")
 page = s.get(SITE, timeout=30)
 print("SITE", page.status_code, len(page.content))
 page.raise_for_status()
-scripts = re.findall(r"<script[^>]+src=['\\\"]([^'\\\"]+)", page.text, re.I)
-print("SCRIPT_COUNT", len(scripts))
-for src in scripts:
+for src in re.findall(r"<script[^>]+src=['\\\"]([^'\\\"]+)", page.text, re.I):
     url = urljoin(SITE, src)
-    try:
+    if url.endswith("/fetchConfig/app"):
         js = s.get(url, timeout=30)
-        print("\nBUNDLE", js.status_code, len(js.content), url)
-        if url.endswith("/fetchConfig/app"):
-            print("APP_CONFIG_BODY", short(js.text, 12000))
-        if not js.ok or len(js.content) > 20_000_000:
-            continue
-        for hit in sorted(set(re.findall(r"""["']([^"']{0,120}(?:production-superbet-offer-pl|subscription|events|eventDetails|event-detail|offerState)[^"']{0,180})["']""", js.text, re.I))):
-            print("BUNDLE_MATCH", short(hit, 350))
-    except Exception as exc:
-        print("BUNDLE_ERROR", type(exc).__name__, str(exc)[:180])
+        print("APP_CONFIG", js.status_code, len(js.content))
+        for key in ("offerServer", "offerV3RestEventByDateEnabled", "offerV3RestEventByIdEnabled", "offerV3SseCountEnabled"):
+            m = re.search(r'"' + re.escape(key) + r'"\\s*:\\s*("[^"]*"|true|false)', js.text)
+            if m:
+                print("CONFIG", key, m.group(1))
 
-print("\nCANDIDATE_EVENT_ENDPOINTS")
-paths = [
-    "/v3/subscription/pl-PL/events/live/count",
-    "/v3/subscription/pl-PL/events/prematch/count",
-    "/v3/subscription/pl-PL/events/pre-match/count",
-    "/v3/subscription/pl-PL/events/count",
-    "/v3/subscription/pl-PL/events/prematch",
-    "/v3/subscription/pl-PL/events/pre-match",
-    "/v3/pl-PL/events/prematch",
-    "/v3/pl-PL/events",
-    "/v3/pl-PL/events/prematch? sportId=5",
-    "/v2/pl-PL/events",
-    "/v2/pl-PL/events/prematch",
+print("\nV3_EVENT_BY_DATE")
+today = datetime.now(timezone.utc).date()
+dates = [today + timedelta(days=i) for i in range(0, 3)]
+tested = [
+    ("/v3/pl-PL/events", {"startDate": dates[0].isoformat(), "sportId": "5"}),
+    ("/v3/pl-PL/events", {"startDate": dates[0].isoformat()}),
+    ("/v3/pl-PL/events", {"startDate": dates[0].isoformat(), "endDate": dates[-1].isoformat(), "sportId": "5"}),
+    ("/v3/pl-PL/events", {"startDate": dates[0].isoformat(), "sport": "5"}),
 ]
-for path in paths:
+event_ids = []
+for path, params in tested:
     try:
-        x = s.get(BASE + path.replace("? ", "?"), timeout=20, stream=True)
-        chunk = next(x.iter_content(1800), b"")
-        print("ENDPOINT", path, x.status_code, x.headers.get("content-type"), "sample=", short(chunk.decode("utf-8","replace"), 500))
-        x.close()
+        x = s.get(BASE + path, params=params, timeout=25)
+        print("REQUEST", x.url, "STATUS", x.status_code, "TYPE", x.headers.get("content-type"), "BYTES", len(x.content))
+        print("BODY", short(x.text, 1000))
+        if x.ok and "json" in x.headers.get("content-type", ""):
+            data = x.json()
+            print("JSON_KEYS", list(data) if isinstance(data, dict) else type(data).__name__)
+            if isinstance(data, dict):
+                for k,v in data.items():
+                    if isinstance(v, list):
+                        print("ARRAY", k, len(v), "SAMPLE", short(v[:1], 2500))
+                        if k.lower() in ("events", "data", "items"):
+                            for ev in v[:5]:
+                                if isinstance(ev, dict):
+                                    eid = ev.get("id") or ev.get("eventId") or ev.get("event_id")
+                                    if eid is not None:
+                                        event_ids.append(str(eid))
+            elif isinstance(data, list):
+                print("ARRAY_LEN", len(data), "SAMPLE", short(data[:1], 2500))
     except Exception as exc:
-        print("ENDPOINT_ERROR", path, type(exc).__name__, str(exc)[:160])
+        print("REQUEST_ERROR", type(exc).__name__, str(exc)[:200])
 
-print("\nSTRUCTURE_AND_CORNER_MARKETS")
-resp = s.get(BASE + "/v2/pl-PL/struct", timeout=30)
-print("STRUCT", resp.status_code, len(resp.content))
-resp.raise_for_status()
-data = resp.json().get("data", {})
-print("ROOT_KEYS", list(data))
-for key in ("sports", "outcomes", "tournaments", "categories"):
-    value = data.get(key)
-    print("COLLECTION", key, "type", type(value).__name__, "keys", list(value)[:10] if isinstance(value,dict) else len(value) if isinstance(value,list) else None)
-    if isinstance(value,dict):
-        for k,v in value.items():
-            if isinstance(v,list):
-                print("SAMPLE", key, k, short(v[:2]))
-                break
-for key, value in data.items():
-    blob = json.dumps(value, ensure_ascii=False)
-    if re.search(r"corner|rożn|corners", blob, re.I):
-        print("CORNER_MATCH_IN", key)
-        print("CORNER_DATA", short(blob, 4000))
+print("\nV3_EVENT_BY_ID")
+for eid in list(dict.fromkeys(event_ids))[:3]:
+    try:
+        x = s.get(BASE + "/v3/pl-PL/events", params={"events": eid}, timeout=20)
+        print("EVENT_ID_REQUEST", eid, x.status_code, x.headers.get("content-type"), len(x.content), short(x.text, 3000))
+    except Exception as exc:
+        print("EVENT_ID_ERROR", eid, type(exc).__name__, str(exc)[:180])
+
+print("\nLIVE_COUNT_REFERENCE")
+try:
+    x = s.get(BASE + "/v3/subscription/pl-PL/events/live/count", timeout=15, stream=True)
+    print("LIVE_COUNT", x.status_code, x.headers.get("content-type"), short(next(x.iter_content(500), b"").decode("utf-8","replace"), 500))
+    x.close()
+except Exception as exc:
+    print("LIVE_COUNT_ERROR", type(exc).__name__, str(exc)[:180])
 
 print("\nDISCOVERY_FINISHED")
