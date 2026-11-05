@@ -185,15 +185,16 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Fetch Superbet's actual pre-match full-match total-corners price."""
+def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
+    """Return the verified FT Over 9.5 price together with the detailed Superbet event."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
-    events=payload.get("events",[])
+    events=payload.get("events") or payload.get("data") or []
+    if isinstance(events,dict):
+        events=list(events.values())
     if not events:
         return None
     event=events[0]
     fixture=event.get("fixture",{})
-    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
         return None
@@ -201,11 +202,11 @@ def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
     if inplay not in (None,"","NOT_STARTED"):
         return None
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
+        market_name=re.sub(r"\\s+"," ",str(market.get("name","")).strip().lower())
         # Full-match total only; exclude half and team-specific markets.
         if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
             continue
-        if not re.fullmatch(r"(?:cały mecz\s*-\s*)?liczba rzutów rożnych(?:\s*-\s*cały mecz)?",market_name):
+        if not re.fullmatch(r"(?:cały mecz\\s*[-–:]\\s*)?liczba rzutów rożnych(?:\\s*[-–:]\\s*cały mecz)?",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -219,7 +220,7 @@ def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower()
-            if not re.search(r"\bpowyżej\b",label):
+            if not re.search(r"\\bpowyżej\\b",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
@@ -232,9 +233,14 @@ def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
             if not MIN_ODDS <= price <= MAX_ODDS:
                 logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
                 continue
-            return price
+            return price,event
     return None
 
+
+def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
+    """Compatibility wrapper used by tests and other callers."""
+    result=superbet_ft_event_data(event_id,line)
+    return result[0] if result else None
 
 # Open Matchday: darmowe, dzienne CSV z historią rożnych 1. połowy.
 # Splity HT są dostępne tylko dla 10 wskazanych lig; bez próbki bot nie typuje.
@@ -563,14 +569,20 @@ def main():
     logging.info("Do sprawdzenia kursów Superbet: %d meczów",len(candidates))
     def inspect_candidate(item):
         listed,event_id,st,home,away=item
-        price=superbet_ft_over_odds(event_id,FT_CORNERS_LINE)
-        if price is None:
+        market_data=superbet_ft_event_data(event_id,FT_CORNERS_LINE)
+        if market_data is None:
             return None
-        league=resolve_full_league(listed,home,away,st)
+        price,detailed_event=market_data
+        # The list endpoint has sparse fixture metadata. Use the detailed event
+        # returned with the market; Superbet exposes competition labels there.
+        league=resolve_full_league(detailed_event,home,away,st)
         if not league:
-            logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
+            league=resolve_full_league(listed,home,away,st)
+        if not league:
+            logging.warning("Pominięto %s - %s: brak nazwy ligi także w szczegółach Superbet; fixture_keys=%s event_keys=%s",
+                            home,away,list((detailed_event.get("fixture") or {}).keys()),list(detailed_event.keys()))
             return None
-        logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
+        logging.info("KWALIFIKACJA O%.1f FT: %s - %s | %s @ %.2f",FT_CORNERS_LINE,home,away,league,price)
         return (price,st,event_id,home,away,price,league)
 
     available=[]
