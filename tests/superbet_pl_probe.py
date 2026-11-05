@@ -15,7 +15,7 @@ HEADERS = {
 s = requests.Session()
 s.headers.update(HEADERS)
 
-def short(value, limit=2500):
+def short(value, limit=1800):
     return re.sub(r"\s+", " ", str(value))[:limit]
 
 print("FETCH SITE")
@@ -38,7 +38,30 @@ for src in scripts:
     except Exception as exc:
         print("BUNDLE_ERROR", type(exc).__name__, str(exc)[:180])
 
-print("\nSTRUCTURE_AND_MARKET_LABELS")
+print("\nCANDIDATE_EVENT_ENDPOINTS")
+paths = [
+    "/v3/subscription/pl-PL/events/live/count",
+    "/v3/subscription/pl-PL/events/prematch/count",
+    "/v3/subscription/pl-PL/events/pre-match/count",
+    "/v3/subscription/pl-PL/events/count",
+    "/v3/subscription/pl-PL/events/prematch",
+    "/v3/subscription/pl-PL/events/pre-match",
+    "/v3/pl-PL/events/prematch",
+    "/v3/pl-PL/events",
+    "/v3/pl-PL/events/prematch? sportId=5",
+    "/v2/pl-PL/events",
+    "/v2/pl-PL/events/prematch",
+]
+for path in paths:
+    try:
+        x = s.get(BASE + path.replace("? ", "?"), timeout=20, stream=True)
+        chunk = next(x.iter_content(1800), b"")
+        print("ENDPOINT", path, x.status_code, x.headers.get("content-type"), "sample=", short(chunk.decode("utf-8","replace"), 500))
+        x.close()
+    except Exception as exc:
+        print("ENDPOINT_ERROR", path, type(exc).__name__, str(exc)[:160])
+
+print("\nSTRUCTURE_AND_CORNER_MARKETS")
 resp = s.get(BASE + "/v2/pl-PL/struct", timeout=30)
 print("STRUCT", resp.status_code, len(resp.content))
 resp.raise_for_status()
@@ -46,23 +69,16 @@ data = resp.json().get("data", {})
 print("ROOT_KEYS", list(data))
 for key in ("sports", "outcomes", "tournaments", "categories"):
     value = data.get(key)
-    if isinstance(value, dict):
-        print(key.upper(), "keys", list(value)[:12], "length", value.get("length"))
-        items = value.get("data") or value.get("items") or value.get("list")
-        if isinstance(items, list):
-            print(key.upper(), "sample", short(items[:2]))
-    elif isinstance(value, list):
-        print(key.upper(), "sample", short(value[:2]))
-
+    print("COLLECTION", key, "type", type(value).__name__, "keys", list(value)[:10] if isinstance(value,dict) else len(value) if isinstance(value,list) else None)
+    if isinstance(value,dict):
+        for k,v in value.items():
+            if isinstance(v,list):
+                print("SAMPLE", key, k, short(v[:2]))
+                break
 for key, value in data.items():
     blob = json.dumps(value, ensure_ascii=False)
-    if re.search(r"corner|rożn|corners|kick", blob, re.I):
+    if re.search(r"corner|rożn|corners", blob, re.I):
         print("CORNER_MATCH_IN", key)
-        if isinstance(value, dict):
-            for subkey, subval in value.items():
-                if re.search(r"corner|rożn|corners|kick", json.dumps(subval, ensure_ascii=False), re.I):
-                    print("CORNER_SUBTREE", key, subkey, short(subval, 5000))
-        else:
-            print("CORNER_DATA", short(value, 5000))
+        print("CORNER_DATA", short(blob, 4000))
 
 print("\nDISCOVERY_FINISHED")
