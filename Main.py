@@ -229,7 +229,7 @@ def settle(c,now):
         is_first_half=any(x in phase for x in ("1st half","first half","1 poł","pierwsza poł"))
         is_halftime=any(x in phase for x in ("halftime","half-time","half time","break","przerwa")) or status in ("halftime","halftimebreak")
         if status in ("canceled","postponed"):
-            msg=f"⚠️ Mecz {status.upper()}\\n🏆 {league}\\n⚽ {home} – {away}\\nTyp anulowany — bez rozliczenia."
+            msg=f"⚠️ Mecz {status.upper()}\n🏆 {league}\n⚽ {home} – {away}\nTyp anulowany — bez rozliczenia."
             c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE event_id=?",(datetime.now(TZ).isoformat(),eid))
         else:
             stats_payload=api(f"/event/{eid}/statistics").get("statistics",{})
@@ -279,7 +279,7 @@ def settle(c,now):
                 won=n>=5
             else:
                 continue
-            msg=f"📊 ROZLICZENIE — ROGI DO HT\\n\\n🏆 {league}\\n⚽ {home} – {away}\\n🚩 Rożne do przerwy: {n}\\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\\n💰 Stawka: {STAKE} zł"
+            msg=f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n💰 Stawka: {STAKE} zł"
             c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
         c.commit()
         if not send(msg):
