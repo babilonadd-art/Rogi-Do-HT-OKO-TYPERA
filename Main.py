@@ -224,69 +224,88 @@ def settle(c,now):
 
 def main():
     if not TOKEN or not CHAT:
-        logging.error("Dodaj sekrety TELEGRAM_BOT_TOKEN i TELEGRAM_CHAT_ID w Settings → Secrets and variables → Actions"); return
-    c=db_open(); now=datetime.now(timezone.utc); ts=int(now.timestamp())
+        logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
+        return
+    c=db_open()
+    now=datetime.now(timezone.utc)
+    ts=int(now.timestamp())
     settle(c,ts)
-    local=datetime.now(TZ); key=local.date().isoformat()
+    local=datetime.now(TZ)
+    key=local.date().isoformat()
     count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
     if count>=MAX_DAILY:
-        logging.info("Dzienny limit osiągnięty: %s/%s",count,MAX_DAILY); c.close(); return
-    # Skanuj wszystkie pozostałe mecze z bieżącego dnia w strefie Europe/Warsaw.
-    # Kursy pobieramy wyłącznie dla spotkań, które jeszcze się nie rozpoczęły.
+        logging.info("Dzienny limit osiągnięty: %s/%s",count,MAX_DAILY)
+        c.close()
+        return
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
     start=max(now,day_start.astimezone(timezone.utc))
     end=day_end.astimezone(timezone.utc)
     if start>=end:
-        logging.info("Brak pozostałych godzin dzisiejszego dnia do skanowania"); c.close(); return
+        logging.info("Brak pozostałych godzin dzisiejszego dnia")
+        c.close()
+        return
+
+    # Superbet is the source of fixtures and prices; don't discard niche leagues
+    # because a second provider has no matching fixture or historical statistics.
     sb_events=superbet_football_events(start,end)
-    if not sb_events:
-        logging.warning("Superbet nie zwrócił przedmeczowych meczów piłkarskich — bez nowych typów")
-    events=[]
-    for day in dates(start,end):
-        events.extend(api(f"/sport/football/scheduled-events/{day}").get("events",[])); time.sleep(.2)
-    unique={}
-    for e in events:
-        eid=e.get("id"); st=e.get("startTimestamp")
-        if not eid or not st or not int(start.timestamp())<=st<=int(end.timestamp()): continue
-        if e.get("status",{}).get("type") not in ("notstarted",""): continue
-        if c.execute("SELECT 1 FROM picks WHERE event_id=?",(eid,)).fetchone(): continue
-        h=e.get("homeTeam",{}); a=e.get("awayTeam",{})
-        if h.get("id") and a.get("id"): unique[eid]=(st,e)
-    odds_cache={}
-    for eid,(st,e) in sorted(unique.items(),key=lambda x:x[1][0]):
-        if count>=MAX_DAILY: break
-        h=e["homeTeam"]; a=e["awayTeam"]
-        hh=history(h["id"]); ah=history(a["id"])
-        if len(hh)<MIN_SAMPLE or len(ah)<MIN_SAMPLE:
-            logging.info("Pominięto %s — za mało danych",eid); continue
-        avh=sum(hh)/len(hh); ava=sum(ah)/len(ah)
-        hit=sum(x>=3 for x in hh+ah)/len(hh+ah)
-        combined=avh+ava
-        if avh<MIN_TEAM_AVG or ava<MIN_TEAM_AVG or combined<MIN_COMBINED_AVG or hit<MIN_HIT_RATE: continue
-        sb_event=superbet_event_for_match(h.get("name",""),a.get("name",""),st,sb_events)
-        if not sb_event:
-            logging.info("Pominięto %s — brak pewnego dopasowania meczu w Superbet",eid); continue
-        sb_id=sb_event.get("event_id")
-        if sb_id not in odds_cache:
-            odds_cache[sb_id]=superbet_ht_over_odds(sb_id)
-        price=odds_cache[sb_id]
-        if price is None:
-            logging.info("Pominięto %s — brak aktywnego kursu Over %.1f rożnych HT w Superbet",eid,HT_CORNERS_LINE); continue
-        league=e.get("tournament",{}).get("name") or e.get("uniqueTournament",{}).get("name") or "Liga nieznana"
+    logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
+    available=[]
+    checked=0
+    for listed in sb_events:
+        fx=listed.get("fixture",{})
+        event_id=listed.get("event_id")
+        if not event_id:
+            continue
+        try:
+            st=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
+        except Exception:
+            continue
+        if not int(start.timestamp())<=st<=int(end.timestamp()):
+            continue
+        parts=str(fx.get("event_name","")).split("·",1)
+        if len(parts)!=2:
+            continue
+        home,away=(x.strip() for x in parts)
+        if c.execute("SELECT 1 FROM picks WHERE event_id=?",(int(event_id),)).fetchone():
+            continue
+        checked+=1
+        price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
+        if price is not None:
+            available.append((st,int(event_id),home,away,price,fx))
+            logging.info("Znaleziono O%.1f HT: %s - %s @ %.2f",HT_CORNERS_LINE,home,away,price)
+
+    available.sort(key=lambda x:x[0])
+    sent=0
+    for st,event_id,home,away,price,fx in available:
+        if count>=MAX_DAILY:
+            break
+        league=str(fx.get("tournament_name") or fx.get("league_name") or "Superbet — liga")
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        left=(st-ts)/3600
         msg=("🎯 OKOTYPERA — ROGI DO HT\n\n"
-             f"🏆 {league}\n⚽ {h.get('name')} – {a.get('name')}\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n⏳ Do meczu: {left:.1f} godz.\n\n"
-             "📌 Typ: Over 4.5 rzutów rożnych do HT\n"
+             f"🏆 {league}\n⚽ {home} – {away}\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n\n"
+             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\n"
              f"💹 Kurs Superbet: {price:.2f}\n"
-             f"📊 Średnia 1H obu drużyn: {combined:.1f}\n📈 Próba: {len(hh)} + {len(ah)} meczów\n💰 Stawka: {STAKE} zł")
+             f"💰 Stawka: {STAKE} zł")
         if send(msg):
-            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status) VALUES(?,?,?,?,?,?,'PENDING')",(eid,league,h.get("name","?"),a.get("name","?"),st,local.isoformat()))
-            c.commit(); count+=1; logging.info("Wysłano typ %s, Superbet event %s, kurs %.2f",eid,sb_id,price)
+            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status) VALUES(?,?,?,?,?,?,'PENDING')",
+                      (event_id,league,home,away,st,local.isoformat()))
+            c.commit()
+            count+=1
+            sent+=1
+            logging.info("Wysłano typ Superbet event %s kurs %.2f",event_id,price)
+        else:
+            logging.error("Nie udało się wysłać typu do Telegrama dla event %s",event_id)
         time.sleep(.3)
-    logging.info("Skan zakończony — %s/%s typów dziś",count,MAX_DAILY)
+
+    if sent==0:
+        send("🤖 ROGI DO HT — RAPORT SKANU\n\n"
+             f"📅 {local:%d.%m.%Y}\n"
+             f"🔎 Mecze Superbet sprawdzone: {checked}\n"
+             f"🎯 Potwierdzone rynki Over {HT_CORNERS_LINE:.1f} HT: {len(available)}\n"
+             "ℹ️ Nie wysłano typu, bo nie znaleziono aktywnego kursu. Nie generuję fikcyjnych typów.")
+    logging.info("Skan zakończony — wysłano %s typów",sent)
     c.close()
 
 if __name__=="__main__": main()
