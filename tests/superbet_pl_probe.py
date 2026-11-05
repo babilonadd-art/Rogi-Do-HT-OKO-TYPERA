@@ -29,8 +29,8 @@ future = [
     if e.get("fixture", {}).get("utc_date", "") > datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 ]
 print("FOOTBALL_EVENTS", len(football), "FUTURE", len(future))
-ht_corner_hits = []
-for listed in future[:24]:
+corner_market_hits = []
+for listed in future[:40]:
     eid = listed.get("event_id")
     fx = listed.get("fixture", {})
     try:
@@ -42,12 +42,12 @@ for listed in future[:24]:
         ev = full[0]
         for market in ev.get("markets", []):
             name = str(market.get("name", ""))
-            if re.search(r"1\.?\s*połowa.*rzut.{0,5}rożn|1\.?\s*połowa.*rożn", name, re.I):
+            if re.search(r"rożn|rożnych|rzutów rożnych", name, re.I):
                 odds = []
                 for odd in market.get("odds", []):
                     meta = odd.get("metadata", {})
                     odds.append({
-                        "name": meta.get("name"),
+                        "name": meta.get("name") or odd.get("name"),
                         "info": meta.get("info"),
                         "line": meta.get("special_bet_value"),
                         "price": odd.get("price"),
@@ -55,7 +55,7 @@ for listed in future[:24]:
                         "display": odd.get("display"),
                         "offer_state_id": meta.get("offer_state_id"),
                     })
-                ht_corner_hits.append({
+                corner_market_hits.append({
                     "event_id": eid,
                     "match": fx.get("event_name"),
                     "kickoff": fx.get("utc_date"),
@@ -66,6 +66,7 @@ for listed in future[:24]:
     except Exception as exc:
         print("DETAIL_ERROR", eid, type(exc).__name__, str(exc)[:150])
 
-print("HT_CORNER_MARKETS_FOUND", len(ht_corner_hits))
-print("HT_CORNER_MARKET_SAMPLES", short(ht_corner_hits[:24], 16000))
+print("FOOTBALL_EVENTS", len(football), "FUTURE", len(future))
+print("ALL_CORNER_MARKETS_FOUND", len(corner_market_hits))
+print("ALL_CORNER_MARKET_SAMPLES", short(corner_market_hits[:60], 30000))
 print("PROBE_FINISHED")
