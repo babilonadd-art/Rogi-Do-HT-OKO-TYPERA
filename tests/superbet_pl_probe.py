@@ -78,6 +78,10 @@ try:
     struct_response.raise_for_status()
     structure = struct_response.json()
     print("STRUCT_TOP_KEYS", list(structure)[:30] if isinstance(structure, dict) else type(structure).__name__)
-    print("STRUCT_SAMPLE", short(structure, 12000))
+    print("STRUCT_DATA_KEYS", list(structure.get("data", {})) if isinstance(structure, dict) else [])
+    data = structure.get("data", {}) if isinstance(structure, dict) else {}
+    print("STRUCT_TOURNAMENT_COUNT", len(data.get("tournaments", [])) if isinstance(data, dict) and isinstance(data.get("tournaments"), list) else "missing")
+    print("STRUCT_TOURNAMENT_SAMPLE", short(data.get("tournaments", [])[:8] if isinstance(data, dict) else [], 5000))
+    print("STRUCT_CATEGORY_SAMPLE", short(data.get("categories", [])[:4] if isinstance(data, dict) else [], 2000))
 except Exception as exc:
     print("STRUCT_ERROR", type(exc).__name__, str(exc)[:200])
