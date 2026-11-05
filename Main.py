@@ -577,3 +577,5 @@ def main():
     c.close()
 
 if __name__=="__main__": main()
+
+# Manual activation: trigger the scheduled FT corners scan via GitHub Actions push.
