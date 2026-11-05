@@ -391,7 +391,7 @@ def sofascore_ht_corners(home,away,start_ts):
         stats=[stats]
     for period in stats:
         period_name=str(period.get("period","")).lower().replace("_","")
-        if period_name not in ("1h","firsthalf","first_half","1sthalf"):
+        if period_name not in ("1h","1st","first","firsthalf","first_half","1sthalf"):
             continue
         for group in period.get("groups",[]):
             for item in group.get("statisticsItems",[]):
@@ -431,11 +431,12 @@ def settle(c,now):
             elif not event:
                 # Historical/finished SofaScore fixture: use only when the fixture has ended or is at half-time/later.
                 ss_event=sofascore_event_for_pick(home,away,start_ts)
-                status=((ss_event or {}).get("status") or {}).get("type","").lower()
-                if status not in ("finished","inprogress","notstarted"):
-                    logging.info("SofaScore: nieznany status meczu %s — bez rozliczenia",eid)
-                    continue
-                if status=="notstarted":
+                ss_status=(ss_event or {}).get("status") or {}
+                status=str(ss_status.get("type","")).lower()
+                description=str(ss_status.get("description","")).lower()
+                second_half_or_later=any(term in description for term in ("2nd half","second half","halftime","half time","finished","ended","full time"))
+                if status!="finished" and not (status=="inprogress" and second_half_or_later):
+                    logging.info("SofaScore: mecz %s nie zakończył HT (status=%s, opis=%s) — bez rozliczenia",eid,status,description)
                     continue
         n=home_corners+away_corners
         if phase=="FIRST_HALF" and n<5:
