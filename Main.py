@@ -635,7 +635,7 @@ def main():
             logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
             return None
         logging.info("KWALIFIKACJA O%.1f FT: %s - %s | %s @ %.2f",FT_CORNERS_LINE,home,away,league,price)
-        return (price,st,event_id,home,away,price,league)
+        return (price,st,event_id,home,away,price,league,detailed_event or listed)
 
     available=[]
     checked=len(candidates)
@@ -654,14 +654,14 @@ def main():
 
     available.sort(key=lambda x:(x[0],x[1]))
     sent=0
-    for price,st,event_id,home,away,fx,league in available:
+    for price,st,event_id,home,away,fx,league,event_data in available:
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
         tax=STAKE*TAX_RATE
         payout=STAKE*(1-TAX_RATE)*price
         profit=payout-STAKE
-        prematch_url=superbet_prematch_event_url(None,home,away,event_id)
+        prematch_url=superbet_prematch_event_url(event_data,home,away,event_id)
         msg=(f"🎯 ROGI FT\n"
              f"🏆 {league}\n"
              f"⚽ {home} – {away}\n"
