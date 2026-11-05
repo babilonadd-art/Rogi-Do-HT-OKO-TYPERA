@@ -7,7 +7,7 @@ on:
       - "Main.py"
       - ".github/workflows/Bot.yml"
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
