@@ -648,7 +648,7 @@ def main():
              f"🏆 {league}\n"
              f"⚽ {home} – {away}\n"
              f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\n"
-             f"Over {FT_CORNERS_LINE:.1f} rożnych @{price:.2f}\n"
+             f"Over {FT_CORNERS_LINE:.1f} rożnych – kurs {price:.2f}\n"
              f"Stawka: {STAKE} zł\n"
              f"Podatek 12%: {tax:.2f} zł\n"
              f"Możliwa wypłata po podatku: {payout:.2f} zł\n"
