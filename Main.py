@@ -1,4 +1,4 @@
-import os, time, sqlite3, logging, re, unicodedata, csv, io
+import os, time, sqlite3, logging, re, unicodedata, csv, io, json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
@@ -10,6 +10,7 @@ API_FALLBACK="https://www.sofascore.com/api/v1"
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
+SENT_IDS_FILE="sent_event_ids.json"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
@@ -265,6 +266,18 @@ def send(msg):
         if not r.ok: logging.error("Telegram %s %s",r.status_code,r.text[:250])
         return r.ok
     except Exception as e: logging.error("Telegram: %s",e); return False
+
+def load_sent_event_ids():
+    try:
+        with open(SENT_IDS_FILE,"r",encoding="utf-8") as handle:
+            values=json.load(handle)
+        return {int(value) for value in values}
+    except (FileNotFoundError,ValueError,TypeError):
+        return set()
+
+def save_sent_event_ids(event_ids):
+    with open(SENT_IDS_FILE,"w",encoding="utf-8") as handle:
+        json.dump(sorted({int(value) for value in event_ids}),handle,ensure_ascii=False)
 
 def db_open():
     c=sqlite3.connect(DB)
@@ -559,6 +572,7 @@ def main():
     # Skanuj kursy równolegle: sekwencyjne odpytanie każdego z setek meczów
     # powodowało przekroczenie limitu czasu GitHub Actions.
     existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
+    existing_ids.update(load_sent_event_ids())
     candidates=[]
     for listed in sb_events:
         fx=listed.get("fixture",{})
@@ -627,6 +641,8 @@ def main():
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'FT')",
                       (event_id,league,home,away,st,local.isoformat(),price))
             c.commit()
+            existing_ids.add(int(event_id))
+            save_sent_event_ids(existing_ids)
             count+=1
             sent+=1
             logging.info("Wysłano typ Superbet event %s kurs %.2f",event_id,price)
