@@ -1,4 +1,5 @@
 import os, time, sqlite3, logging, re, unicodedata, csv, io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -52,7 +53,7 @@ def api(path):
 
 def superbet_api(path,params=None):
     try:
-        r=sb.get(SUPERBET_API+path,params=params,timeout=45)
+        r=sb.get(SUPERBET_API+path,params=params,timeout=20)
         if r.status_code in (403,404,429):
             logging.warning("Superbet HTTP %s %s",r.status_code,path); return {}
         r.raise_for_status()
@@ -518,9 +519,10 @@ def main():
     sb_events=superbet_football_events(start,end)
     resend_tips_with_corrected_league(c,sb_events)
     logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
-    available=[]
-    checked=0
-    market_candidates=0
+    # Skanuj kursy równolegle: sekwencyjne odpytanie każdego z setek meczów
+    # powodowało przekroczenie limitu czasu GitHub Actions.
+    existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
+    candidates=[]
     for listed in sb_events:
         fx=listed.get("fixture",{})
         event_id=listed.get("event_id")
@@ -535,19 +537,38 @@ def main():
         parts=str(fx.get("event_name","")).split("·",1)
         if len(parts)!=2:
             continue
-        home,away=(x.strip() for x in parts)
-        if c.execute("SELECT 1 FROM picks WHERE event_id=?",(int(event_id),)).fetchone():
+        if int(event_id) in existing_ids:
             continue
-        checked+=1
+        home,away=(x.strip() for x in parts)
+        candidates.append((listed,int(event_id),st,home,away))
+
+    logging.info("Do sprawdzenia kursów Superbet: %d meczów",len(candidates))
+    def inspect_candidate(item):
+        listed,event_id,st,home,away=item
         price=superbet_ft_over_odds(event_id,FT_CORNERS_LINE)
-        if price is not None:
-            market_candidates+=1
-            league=resolve_full_league(listed,home,away,st)
-            if not league:
-                logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
-                continue
-            available.append((price,st,int(event_id),home,away,price,league))
-            logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
+        if price is None:
+            return None
+        league=resolve_full_league(listed,home,away,st)
+        if not league:
+            logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
+            return None
+        logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
+        return (price,st,event_id,home,away,price,league)
+
+    available=[]
+    checked=len(candidates)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures=[pool.submit(inspect_candidate,item) for item in candidates]
+        for future in as_completed(futures):
+            try:
+                result=future.result()
+                if result is not None:
+                    available.append(result)
+            except Exception:
+                logging.exception("Błąd podczas sprawdzania kursu jednego z meczów")
+    market_candidates=len(available)
+    logging.info("Skan kursów zakończony: sprawdzono %d meczów, znaleziono %d kandydatów z kursem O%.1f FT",
+                 checked,market_candidates,FT_CORNERS_LINE)
 
     available.sort(key=lambda x:(x[0],x[1]))
     sent=0
