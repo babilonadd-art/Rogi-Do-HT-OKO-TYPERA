@@ -120,7 +120,23 @@ def extract_league_name(event):
                 name=value.get("name") or value.get("title") or value.get("label")
                 if isinstance(name,str) and name.strip():
                     return name.strip()
-    return "Liga niepodana przez Superbet"
+    return ""
+
+def resolve_full_league(event,home,away,start_ts):
+    league=extract_league_name(event)
+    if league:
+        return league
+    match=sofascore_event_for_pick(home,away,start_ts)
+    if not match:
+        return ""
+    tournament=match.get("tournament") or {}
+    unique=match.get("uniqueTournament") or {}
+    category=match.get("category") or {}
+    name=unique.get("name") or tournament.get("name")
+    country=category.get("name")
+    if name and country and country.lower() not in name.lower():
+        return f"{name} ({country})"
+    return name or ""
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
@@ -523,7 +539,10 @@ def main():
         price=superbet_ft_over_odds(event_id,FT_CORNERS_LINE)
         if price is not None:
             market_candidates+=1
-            league=extract_league_name(listed)
+            league=resolve_full_league(listed,home,away,st)
+            if not league:
+                logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
+                continue
             available.append((price,st,int(event_id),home,away,price,league))
             logging.info("KWALIFIKACJA O%.1f FT: %s - %s @ %.2f",FT_CORNERS_LINE,home,away,price)
 
@@ -533,12 +552,12 @@ def main():
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        msg=("🎯 OKOTYPERA — ROGI FT\\n\\n"
-             f"🏆 {league}\\n⚽ {home} – {away}\\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
-             f"📌 Typ: Over {FT_CORNERS_LINE:.1f} rzutów rożnych FT\\n"
-             f"💹 Kurs Superbet: {price:.2f}\n"
-             f"💰 Stawka: {STAKE} zł")
+        msg=(f"🎯 ROGI FT\\n"
+             f"🏆 {league}\\n"
+             f"⚽ {home} – {away}\\n"
+             f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\\n"
+             f"Over {FT_CORNERS_LINE:.1f} rożnych @{price:.2f}\\n"
+             f"Stawka: {STAKE} zł")
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'FT')",
                       (event_id,league,home,away,st,local.isoformat(),price))
