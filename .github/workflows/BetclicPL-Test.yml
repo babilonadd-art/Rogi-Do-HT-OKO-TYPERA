@@ -2,6 +2,10 @@ name: Betclic Polska — test połączenia
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'tests/betclic_pl_probe.py'
+      - '.github/workflows/BetclicPL-Test.yml'
 
 permissions:
   contents: read
