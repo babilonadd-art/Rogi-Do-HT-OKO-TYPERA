@@ -251,41 +251,59 @@ def resend_tips_with_corrected_league(c,events):
         time.sleep(.2)
 
 def superbet_live_event(event_id):
-    """Fetch one event directly from Superbet, independently of whether its markets remain open."""
+    """Fetch one event directly from Superbet, independently of market availability."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
-    events=payload.get("events",[])
+    events=payload.get("events") or payload.get("data") or []
+    if isinstance(events,dict):
+        events=list(events.values())
     if not events:
-        logging.info("Superbet: brak danych live dla event %s",event_id)
+        logging.info("Superbet: brak danych live dla event %s; pola odpowiedzi=%s",event_id,list(payload)[:12])
         return None
     return events[0]
 
+def _first_value(obj,keys):
+    for key in keys:
+        if key in obj and obj[key] is not None:
+            value=obj[key]
+            if isinstance(value,dict):
+                value=value.get("value",value.get("current",value.get("total")))
+            if value is not None:
+                return value
+    return None
+
 def _corner_pair_from_object(obj):
-    """Read a home/away corner pair only when Superbet explicitly labels it as corners."""
+    """Read a home/away corner pair only from an explicitly named corner statistic."""
     if not isinstance(obj,dict):
         return None
-    label=" ".join(str(obj.get(k,"")) for k in ("name","label","type","statistic","key","description")).lower()
-    if not any(x in label for x in ("corner","corners","rzut rożny","rzuty rożne","rożne")):
+    label=" ".join(str(obj.get(k,"")) for k in ("name","label","type","statistic","key","description","title","code")).lower()
+    if not any(x in label for x in ("corner","corners","corner kick","rzut rożny","rzuty rożne","rożne")):
         return None
-    home=next((obj[k] for k in ("home","home_value","homeTeam","home_team","home_team_value") if k in obj),None)
-    away=next((obj[k] for k in ("away","away_value","awayTeam","away_team","away_team_value") if k in obj),None)
+    home=_first_value(obj,("home","home_value","homeTeam","home_team","home_team_value","homeValue","team1","participant1"))
+    away=_first_value(obj,("away","away_value","awayTeam","away_team","away_team_value","awayValue","team2","participant2"))
     try:
         return int(float(home)),int(float(away))
     except (TypeError,ValueError):
         return None
 
 def superbet_ht_corners(event):
-    """Return (home, away, is_first_half) from explicit Superbet in-play corner stats."""
-    root=event.get("inplay_stats") or {}
+    """Return only an explicitly identified first-half corner score; never use match totals."""
+    roots=[]
+    for key in ("inplay_stats","statistics","stats","event_stats","live_statistics"):
+        value=event.get(key)
+        if value is not None:
+            roots.append((key,value))
     found=[]
+    period_terms=("1h","1st","first half","first_half","first-half","period 1","period_1","half 1","1 poł","pierwsza poł","1. poł")
+    def is_first_half(label):
+        label=label.lower()
+        return any(term in label for term in period_terms)
     def walk(node,path=(),period_hint=""):
         if isinstance(node,dict):
-            period=str(node.get("period") or node.get("period_name") or node.get("period_label") or period_hint).lower()
+            period=str(node.get("period") or node.get("period_name") or node.get("period_label") or node.get("half") or period_hint).lower()
+            here=" ".join(path+(period,str(node.get("name","")),str(node.get("label",""))))
             pair=_corner_pair_from_object(node)
-            if pair is not None:
-                label=" ".join(path+(period,))
-                is_ht=any(x in label for x in ("1h","1st","first half","first_half","1 poł","pierwsza poł"))
-                found.append((pair,is_ht,label))
-            # Some feeds expose the stat as separate home/away corner keys.
+            if pair is not None and is_first_half(here):
+                found.append((pair,here))
             keys={str(k).lower():v for k,v in node.items()}
             home_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("home" in k or "host" in k)),None)
             away_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("away" in k or "guest" in k)),None)
@@ -293,33 +311,51 @@ def superbet_ht_corners(event):
                 try:
                     pair=(int(float(keys[home_key])),int(float(keys[away_key])))
                     label=" ".join(path+(period,home_key,away_key))
-                    is_ht=any(x in label for x in ("1h","1st","first half","first_half","1 poł","pierwsza poł"))
-                    found.append((pair,is_ht,label))
+                    if is_first_half(label):
+                        found.append((pair,label))
                 except (TypeError,ValueError):
                     pass
+            # Handle arrays of named stats and nested home/away value objects.
             for key,value in node.items():
                 walk(value,path+(str(key).lower(),),period)
         elif isinstance(node,list):
             for item in node:
                 walk(item,path,period_hint)
-    walk(root)
-    # Prefer explicit first-half values; never mistake full-match totals for HT totals.
-    ht=[item for item in found if item[1]]
-    if ht:
-        return ht[-1][0][0],ht[-1][0][1],True
+    for root_name,root in roots:
+        walk(root,(root_name,))
+    if found:
+        # If duplicate representations exist, use the most deeply labelled first-half record.
+        pair,label=max(found,key=lambda item:len(item[1]))
+        logging.info("Superbet: odczytano rożne HT %s:%s (%s)",pair[0],pair[1],label[:160])
+        return pair[0],pair[1],True
+    logging.info("Superbet: nie znaleziono jawnych statystyk rożnych pierwszej połowy; dostępne pola=%s",[k for k in event if "stat" in k.lower()])
     return None
 
 def superbet_event_phase(event):
     meta=event.get("inplay_stats_metadata") or {}
-    labels=" ".join(str(meta.get(k,"")) for k in ("event_status_label","period_status","status")).lower()
-    if any(x in labels for x in ("1h","1st","first half","1 poł")):
+    fixture=event.get("fixture") or {}
+    candidates=[]
+    for source in (meta,fixture,event):
+        if isinstance(source,dict):
+            candidates.extend(str(source.get(k,"")) for k in (
+                "event_status_label","period_status","status","status_name","period",
+                "period_name","period_label","match_status","state","phase"
+            ))
+    labels=" ".join(candidates).lower().replace("_"," ").replace("-"," ")
+    if any(x in labels for x in ("first half","1st half","1h","1 poł","pierwsza poł")):
         return "FIRST_HALF"
-    if any(x in labels for x in ("ht","half-time","halftime","break","przerwa")):
+    if any(x in labels for x in ("half time","halftime","break","przerwa","ht")):
         return "HALFTIME"
-    if any(x in labels for x in ("2h","2nd","second half","2 poł")):
+    if any(x in labels for x in ("second half","2nd half","2h","2 poł","druga poł")):
         return "SECOND_HALF"
-    if any(x in labels for x in ("ft","finished","ended","full time")):
+    if any(x in labels for x in ("finished","ended","full time","ft","complete")):
         return "FINISHED"
+    # Some Superbet responses expose a numeric/integer period instead of a label.
+    for source in (meta,fixture,event):
+        if isinstance(source,dict):
+            value=source.get("period_id",source.get("period_number"))
+            if str(value)=="1": return "FIRST_HALF"
+            if str(value)=="2": return "SECOND_HALF"
     return "UNKNOWN"
 
 def settle(c,now):
