@@ -18,7 +18,7 @@ STAKE=50
 MAX_DAILY=10
 # Jednorazowy reset dzisiejszego licznika: pomijamy 20 wcześniejszych typów, aby umożliwić test do 20 nowych wysyłek.
 RESET_BASELINE_DATE="2026-11-05"
-RESET_BASELINE_COUNT=20
+RESET_BASELINE_COUNT=40
 TAX_RATE=0.12
 FT_CORNERS_LINE=9.5
 MIN_ODDS=1.70
