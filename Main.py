@@ -1,9 +1,11 @@
-import os, time, sqlite3, logging
+import os, time, sqlite3, logging, re, unicodedata
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
 
 API="https://www.sofascore.com/api/v1"
+SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
@@ -17,9 +19,18 @@ MIN_SAMPLE=5
 MIN_TEAM_AVG=2.2
 MIN_COMBINED_AVG=5.5
 MIN_HIT_RATE=0.60
+HT_CORNERS_LINE=4.5
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/125 Safari/537.36","Accept":"application/json"})
+sb=requests.Session()
+sb.headers.update({
+    "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+    "Accept":"application/json,*/*",
+    "Accept-Language":"pl-PL,pl;q=0.9,en;q=0.8",
+    "Origin":"https://superbet.pl",
+    "Referer":"https://superbet.pl/",
+})
 
 def api(path):
     try:
@@ -28,7 +39,107 @@ def api(path):
             logging.warning("SofaScore HTTP %s %s",r.status_code,path); return {}
         r.raise_for_status(); return r.json()
     except Exception as e:
-        logging.warning("API %s: %s",path,e); return {}
+        logging.warning("SofaScore API %s: %s",path,e); return {}
+
+def superbet_api(path,params=None):
+    try:
+        r=sb.get(SUPERBET_API+path,params=params,timeout=45)
+        if r.status_code in (403,404,429):
+            logging.warning("Superbet HTTP %s %s",r.status_code,path); return {}
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logging.warning("Superbet API %s: %s",path,e); return {}
+
+def utc_hour(dt,round_up=False):
+    value=dt.astimezone(timezone.utc).replace(minute=0,second=0,microsecond=0)
+    if round_up and dt.astimezone(timezone.utc)>value:
+        value+=timedelta(hours=1)
+    return value
+
+def superbet_football_events(start,end):
+    start_utc=utc_hour(start)
+    end_utc=utc_hour(end,round_up=True)
+    payload=superbet_api("/v3/pl-PL/events",{
+        "startDate":start_utc.isoformat().replace("+00:00","Z"),
+        "endDate":end_utc.isoformat().replace("+00:00","Z"),
+    })
+    events=payload.get("events",[])
+    result=[]
+    for event in events:
+        fixture=event.get("fixture",{})
+        if str(fixture.get("sport_id"))!="5":
+            continue
+        if fixture.get("offer_state_status",{}).get("1") not in (1,"1"):
+            continue
+        if event.get("inplay_stats_metadata",{}).get("status") not in ("NOT_STARTED",""):
+            continue
+        result.append(event)
+    logging.info("Superbet: wydarzenia %s, piłka nożna przedmeczowo %s",len(events),len(result))
+    return result
+
+def normalized_team(name):
+    value=unicodedata.normalize("NFKD",str(name or "")).encode("ascii","ignore").decode().lower()
+    tokens=re.findall(r"[a-z0-9]+",value)
+    tokens=[t for t in tokens if t not in {"fc","cf","sc","afc","club","the"}]
+    return "".join(tokens)
+
+def team_similarity(a,b):
+    x=normalized_team(a); y=normalized_team(b)
+    if not x or not y: return 0.0
+    if x==y: return 1.0
+    if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
+    return SequenceMatcher(None,x,y).ratio()
+
+def superbet_event_for_match(home,away,start_ts,events):
+    best=None
+    for event in events:
+        fixture=event.get("fixture",{})
+        try:
+            event_ts=int(datetime.fromisoformat(fixture["utc_date"].replace("Z","+00:00")).timestamp())
+        except Exception:
+            continue
+        if abs(event_ts-int(start_ts))>90*60:
+            continue
+        names=str(fixture.get("event_name","")).split("·",1)
+        if len(names)!=2:
+            continue
+        direct=(team_similarity(home,names[0]),team_similarity(away,names[1]))
+        reverse=(team_similarity(home,names[1]),team_similarity(away,names[0]))
+        scores=[direct,reverse]
+        hscore,ascore=max(scores,key=lambda pair:pair[0]+pair[1])
+        if hscore<0.68 or ascore<0.68:
+            continue
+        score=hscore+ascore
+        if best is None or score>best[0]:
+            best=(score,event)
+    return best[1] if best else None
+
+def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events",[])
+    if not events:
+        return None
+    for market in events[0].get("markets",[]):
+        name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
+        if not re.fullmatch(r"1\.?\s*połowa\s*-\s*liczba rzutów rożnych",name):
+            continue
+        for odd in market.get("odds",[]):
+            meta=odd.get("metadata",{})
+            try:
+                odd_line=float(meta.get("special_bet_value"))
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            label=(str(meta.get("name",""))+" "+str(meta.get("info",""))).lower()
+            if abs(odd_line-float(line))>0.001 or "powyżej" not in label:
+                continue
+            if odd.get("status")!=1 or not odd.get("display",False):
+                continue
+            if meta.get("offer_state_id") not in (1,"1") or price<=1.0:
+                continue
+            return price
+    return None
 
 def send(msg):
     if not TOKEN or not CHAT:
@@ -102,6 +213,9 @@ def main():
     if count>=MAX_DAILY:
         logging.info("Dzienny limit osiągnięty: %s/%s",count,MAX_DAILY); c.close(); return
     start=now+timedelta(hours=MIN_LEAD_HOURS); end=now+timedelta(hours=LOOKAHEAD_HOURS)
+    sb_events=superbet_football_events(start,end)
+    if not sb_events:
+        logging.warning("Superbet nie zwrócił przedmeczowych meczów piłkarskich — bez nowych typów")
     events=[]
     for day in dates(start,end):
         events.extend(api(f"/sport/football/scheduled-events/{day}").get("events",[])); time.sleep(.2)
@@ -113,6 +227,7 @@ def main():
         if c.execute("SELECT 1 FROM picks WHERE event_id=?",(eid,)).fetchone(): continue
         h=e.get("homeTeam",{}); a=e.get("awayTeam",{})
         if h.get("id") and a.get("id"): unique[eid]=(st,e)
+    odds_cache={}
     for eid,(st,e) in sorted(unique.items(),key=lambda x:x[1][0]):
         if count>=MAX_DAILY: break
         h=e["homeTeam"]; a=e["awayTeam"]
@@ -123,6 +238,15 @@ def main():
         hit=sum(x>=3 for x in hh+ah)/len(hh+ah)
         combined=avh+ava
         if avh<MIN_TEAM_AVG or ava<MIN_TEAM_AVG or combined<MIN_COMBINED_AVG or hit<MIN_HIT_RATE: continue
+        sb_event=superbet_event_for_match(h.get("name",""),a.get("name",""),st,sb_events)
+        if not sb_event:
+            logging.info("Pominięto %s — brak pewnego dopasowania meczu w Superbet",eid); continue
+        sb_id=sb_event.get("event_id")
+        if sb_id not in odds_cache:
+            odds_cache[sb_id]=superbet_ht_over_odds(sb_id)
+        price=odds_cache[sb_id]
+        if price is None:
+            logging.info("Pominięto %s — brak aktywnego kursu Over %.1f rożnych HT w Superbet",eid,HT_CORNERS_LINE); continue
         league=e.get("tournament",{}).get("name") or e.get("uniqueTournament",{}).get("name") or "Liga nieznana"
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
         left=(st-ts)/3600
@@ -130,10 +254,11 @@ def main():
              f"🏆 {league}\n⚽ {h.get('name')} – {a.get('name')}\n"
              f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n⏳ Do meczu: {left:.1f} godz.\n\n"
              "📌 Typ: Over 4.5 rzutów rożnych do HT\n"
+             f"💹 Kurs Superbet: {price:.2f}\n"
              f"📊 Średnia 1H obu drużyn: {combined:.1f}\n📈 Próba: {len(hh)} + {len(ah)} meczów\n💰 Stawka: {STAKE} zł")
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status) VALUES(?,?,?,?,?,?,'PENDING')",(eid,league,h.get("name","?"),a.get("name","?"),st,local.isoformat()))
-            c.commit(); count+=1; logging.info("Wysłano typ %s",eid)
+            c.commit(); count+=1; logging.info("Wysłano typ %s, Superbet event %s, kurs %.2f",eid,sb_id,price)
         time.sleep(.3)
     logging.info("Skan zakończony — %s/%s typów dziś",count,MAX_DAILY)
     c.close()
