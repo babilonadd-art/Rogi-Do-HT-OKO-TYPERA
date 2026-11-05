@@ -102,27 +102,60 @@ def team_similarity(a,b):
     return SequenceMatcher(None,x,y).ratio()
 
 def extract_league_name(event):
-    """Resolve the competition name from Superbet's event/fixture metadata."""
-    fixture=event.get("fixture") or {}
-    containers=[fixture,event]
-    for parent in list(containers):
-        for key in ("tournament","league","competition","championship"):
-            value=parent.get(key)
-            if isinstance(value,dict):
-                containers.append(value)
-    for parent in containers:
-        for key in ("tournament_name","league_name","competition_name","championship_name"):
-            value=parent.get(key)
-            if isinstance(value,str) and value.strip():
-                return value.strip()
-        for key in ("tournament","league","competition","championship"):
-            value=parent.get(key)
-            if isinstance(value,dict):
-                name=value.get("name") or value.get("title") or value.get("label")
-                if isinstance(name,str) and name.strip():
-                    return name.strip()
-    return ""
+    """Read full competition label from Superbet fixture/event metadata."""
+    explicit_names = {
+        "tournamentname", "leaguename", "competitionname", "championshipname",
+        "categoryname", "tournamenttitle", "leaguetitle", "competitiontitle",
+    }
+    competition_keys = {
+        "tournament", "league", "competition", "championship", "category",
+    }
+    seen = set()
 
+    def walk(node, depth=0):
+        if depth > 6:
+            return ""
+        if isinstance(node, dict):
+            marker = id(node)
+            if marker in seen:
+                return ""
+            seen.add(marker)
+
+            # First pass: explicit full-name fields anywhere in the Superbet payload.
+            for key, value in node.items():
+                normalized = re.sub(r"[^a-z]", "", str(key).lower())
+                if normalized in explicit_names and isinstance(value, str) and value.strip():
+                    return value.strip()
+
+            # Second pass: inspect objects explicitly named as competition/category.
+            for key, value in node.items():
+                normalized = re.sub(r"[^a-z]", "", str(key).lower())
+                if normalized in competition_keys:
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                    if isinstance(value, dict):
+                        for label_key in ("name", "title", "label", "display_name", "displayName"):
+                            label = value.get(label_key)
+                            if isinstance(label, str) and label.strip():
+                                return label.strip()
+                        found = walk(value, depth + 1)
+                        if found:
+                            return found
+
+            # Superbet may wrap fixture/category data in nested objects or arrays.
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    found = walk(value, depth + 1)
+                    if found:
+                        return found
+        elif isinstance(node, list):
+            for value in node:
+                found = walk(value, depth + 1)
+                if found:
+                    return found
+        return ""
+
+    return walk(event)
 def resolve_full_league(event,home,away,start_ts):
     """Use the full competition name supplied by Superbet only; no external league lookup."""
     league=extract_league_name(event)
