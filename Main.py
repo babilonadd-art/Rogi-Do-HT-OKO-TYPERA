@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 API="https://www.sofascore.com/api/v1"
+API_FALLBACK="https://www.sofascore.com/api/v1"
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
@@ -22,7 +23,13 @@ MIN_ODDS=1.90
 MAX_ODDS=3.50
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
-s.headers.update({"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/125 Safari/537.36","Accept":"application/json"})
+s.headers.update({
+    "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Accept":"application/json, text/plain, */*",
+    "Accept-Language":"pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Origin":"https://www.sofascore.com",
+    "Referer":"https://www.sofascore.com/",
+})
 sb=requests.Session()
 sb.headers.update({
     "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
@@ -34,12 +41,19 @@ sb.headers.update({
 
 def api(path):
     try:
-        r=s.get(API+path,timeout=18)
+        r=s.get(API+path,timeout=12)
+        if r.status_code == 403:
+            logging.warning("SofaScore HTTP 403 %s — ponawiam zapytanie",path)
+            time.sleep(0.5)
+            r=s.get(API+path,headers={"Referer":"https://www.sofascore.com/","Origin":"https://www.sofascore.com","Accept":"application/json, text/plain, */*"},timeout=12)
         if r.status_code in (403,404,429):
-            logging.warning("SofaScore HTTP %s %s",r.status_code,path); return {}
-        r.raise_for_status(); return r.json()
+            logging.warning("SofaScore HTTP %s %s — brak danych do rozliczenia",r.status_code,path)
+            return {}
+        r.raise_for_status()
+        return r.json()
     except Exception as e:
-        logging.warning("SofaScore API %s: %s",path,e); return {}
+        logging.warning("SofaScore API %s: %s",path,e)
+        return {}
 
 def superbet_api(path,params=None):
     try:
@@ -353,7 +367,7 @@ def settle(c,now):
             logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
         time.sleep(.2)
 
-def watch_pending_picks(c,duration_seconds=240,interval_seconds=15):
+def watch_pending_picks(c,duration_seconds=270,interval_seconds=5):
     """Poll live first-half corner counts frequently so a winning pick settles in-play."""
     deadline=time.monotonic()+duration_seconds
     while time.monotonic()<deadline:
