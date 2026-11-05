@@ -7,7 +7,7 @@ on:
       - "Main.py"
       - ".github/workflows/Bot.yml"
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: write
@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
       - name: Instalacja bibliotek
         run: pip install -r requirements.txt
+      - name: Testy logiki typowania
+        run: python -m unittest discover -s tests -p "test_*.py"
       - name: Skan i rozliczanie
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
