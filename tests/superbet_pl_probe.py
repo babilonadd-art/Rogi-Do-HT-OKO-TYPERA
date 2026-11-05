@@ -1,3 +1,4 @@
+import json
 import re
 import requests
 from urllib.parse import urljoin
@@ -11,54 +12,57 @@ HEADERS = {
     "Origin": "https://superbet.pl",
     "Referer": SITE,
 }
-
 s = requests.Session()
 s.headers.update(HEADERS)
 
-def short(value, limit=500):
-    return re.sub(r"\s+", " ", value)[:limit]
+def short(value, limit=2500):
+    return re.sub(r"\s+", " ", str(value))[:limit]
 
 print("FETCH SITE")
-r = s.get(SITE, timeout=30)
-print("SITE", r.status_code, len(r.content), r.url)
-r.raise_for_status()
-
-scripts = re.findall(r"<script[^>]+src=['\\\"]([^'\\\"]+)", r.text, re.I)
+page = s.get(SITE, timeout=30)
+print("SITE", page.status_code, len(page.content))
+page.raise_for_status()
+scripts = re.findall(r"<script[^>]+src=['\\\"]([^'\\\"]+)", page.text, re.I)
 print("SCRIPT_COUNT", len(scripts))
-seen = set()
 for src in scripts:
     url = urljoin(SITE, src)
-    if url in seen:
-        continue
-    seen.add(url)
     try:
         js = s.get(url, timeout=30)
         print("\nBUNDLE", js.status_code, len(js.content), url)
+        if url.endswith("/fetchConfig/app"):
+            print("APP_CONFIG_BODY", short(js.text, 12000))
         if not js.ok or len(js.content) > 20_000_000:
             continue
-        body = js.text
-        patterns = [
-            r"""["']([^"']{0,100}(?:production-superbet-offer-pl|/v[0-9]+/pl-PL/)[^"']{0,180})["']""",
-            r"""["']([^"']{0,100}(?:offerState|sportId|eventId|tournamentId)[^"']{0,180})["']""",
-        ]
-        found = set()
-        for pattern in patterns:
-            found.update(re.findall(pattern, body, re.I))
-        for item in sorted(found):
-            print("MATCH", short(item, 280))
+        for hit in sorted(set(re.findall(r"""["']([^"']{0,120}(?:production-superbet-offer-pl|subscription|events|eventDetails|event-detail|offerState)[^"']{0,180})["']""", js.text, re.I))):
+            print("BUNDLE_MATCH", short(hit, 350))
     except Exception as exc:
-        print("BUNDLE_ERROR", type(exc).__name__, str(exc)[:200])
+        print("BUNDLE_ERROR", type(exc).__name__, str(exc)[:180])
 
-print("\nSTRUCTURE_CHECK")
-try:
-    x = s.get(BASE + "/v2/pl-PL/struct", timeout=30)
-    print("/v2/pl-PL/struct", x.status_code, len(x.content))
-    data = x.json().get("data", {})
-    print("ROOT_KEYS", list(data.keys()))
-    for sport in data.get("marketTree", []):
-        if str(sport.get("sportId")) in ("1", "5"):
-            print("SPORT_MARKET_TREE", sport.get("sportId"), short(str(sport), 3500))
-except Exception as exc:
-    print("STRUCT_ERROR", type(exc).__name__, str(exc)[:200])
+print("\nSTRUCTURE_AND_MARKET_LABELS")
+resp = s.get(BASE + "/v2/pl-PL/struct", timeout=30)
+print("STRUCT", resp.status_code, len(resp.content))
+resp.raise_for_status()
+data = resp.json().get("data", {})
+print("ROOT_KEYS", list(data))
+for key in ("sports", "outcomes", "tournaments", "categories"):
+    value = data.get(key)
+    if isinstance(value, dict):
+        print(key.upper(), "keys", list(value)[:12], "length", value.get("length"))
+        items = value.get("data") or value.get("items") or value.get("list")
+        if isinstance(items, list):
+            print(key.upper(), "sample", short(items[:2]))
+    elif isinstance(value, list):
+        print(key.upper(), "sample", short(value[:2]))
+
+for key, value in data.items():
+    blob = json.dumps(value, ensure_ascii=False)
+    if re.search(r"corner|rożn|corners|kick", blob, re.I):
+        print("CORNER_MATCH_IN", key)
+        if isinstance(value, dict):
+            for subkey, subval in value.items():
+                if re.search(r"corner|rożn|corners|kick", json.dumps(subval, ensure_ascii=False), re.I):
+                    print("CORNER_SUBTREE", key, subkey, short(subval, 5000))
+        else:
+            print("CORNER_DATA", short(value, 5000))
 
 print("\nDISCOVERY_FINISHED")
