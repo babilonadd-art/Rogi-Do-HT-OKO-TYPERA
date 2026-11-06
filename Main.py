@@ -15,10 +15,6 @@ SENT_IDS_FILE="sent_event_ids.json"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
-MAX_DAILY=10
-# Jednorazowy reset dzisiejszego licznika: pomijamy 20 wcześniejszych typów, aby umożliwić test do 20 nowych wysyłek.
-RESET_BASELINE_DATE="2026-11-05"
-RESET_BASELINE_COUNT=40
 TAX_RATE=0.12
 FT_CORNERS_LINE=9.5
 MIN_ODDS=1.70
@@ -581,14 +577,6 @@ def main():
     local=datetime.now(TZ)
     send_monthly_reports(c,local)
     key=local.date().isoformat()
-    count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=?",(key,)).fetchone()[0]
-    # Jednorazowy reset licznika na 05.11.2026 bez kasowania typów ani historii.
-    reset_baseline=RESET_BASELINE_COUNT if key==RESET_BASELINE_DATE else 0
-    count=max(0,count-reset_baseline)
-    if count>=MAX_DAILY:
-        logging.info("Dzienny limit osiągnięty: %s/%s — rozliczenie ponowi harmonogram co 5 minut",count,MAX_DAILY)
-        c.close()
-        return
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
     start=max(now,day_start.astimezone(timezone.utc))
@@ -664,8 +652,6 @@ def main():
     available.sort(key=lambda x:(x[0],x[1]))
     sent=0
     for price,st,event_id,home,away,fx,league,event_data in available:
-        if count>=MAX_DAILY:
-            break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
         tax=STAKE*TAX_RATE
         payout=STAKE*(1-TAX_RATE)*price
@@ -687,7 +673,6 @@ def main():
             c.commit()
             existing_ids.add(int(event_id))
             save_sent_event_ids(existing_ids)
-            count+=1
             sent+=1
             logging.info("Wysłano typ Superbet event %s kurs %.2f",event_id,price)
         else:
