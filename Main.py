@@ -107,27 +107,61 @@ def team_similarity(a,b):
     if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
     return SequenceMatcher(None,x,y).ratio()
 
+def superbet_tournament_names():
+    """Load Superbet's official Polish tournament-name map once per run."""
+    global SB_TOURNAMENT_NAMES
+    if SB_TOURNAMENT_NAMES is not None:
+        return SB_TOURNAMENT_NAMES
+    SB_TOURNAMENT_NAMES={}
+    payload=superbet_api("/v2/pl-PL/struct")
+    data=payload.get("data") or {}
+    for item in data.get("tournaments",[]) or []:
+        if not isinstance(item,dict):
+            continue
+        tournament_id=str(item.get("id","")).strip()
+        names=item.get("localNames") or {}
+        name=names.get("pl-PL") or names.get("en-GB") or names.get("en")
+        if tournament_id and isinstance(name,str) and name.strip():
+            SB_TOURNAMENT_NAMES[tournament_id]=name.strip()
+    logging.info("Superbet: załadowano %d nazw turniejów",len(SB_TOURNAMENT_NAMES))
+    return SB_TOURNAMENT_NAMES
+
 def extract_league_name(event):
-    """Resolve the competition name from Superbet's event/fixture metadata."""
+    """Resolve full competition name from Superbet's own event and structure data."""
+    if not isinstance(event,dict):
+        return ""
     fixture=event.get("fixture") or {}
     containers=[fixture,event]
-    for parent in list(containers):
-        for key in ("tournament","league","competition","championship"):
+    # Superbet payloads use both snake_case and camelCase names, and nest
+    # competition details under category/tournament/competition objects.
+    keys=("tournament","league","competition","championship","category",
+          "sport_category","sportCategory","tournament_info","tournamentInfo")
+    seen=set()
+    while containers:
+        parent=containers.pop(0)
+        if not isinstance(parent,dict) or id(parent) in seen:
+            continue
+        seen.add(id(parent))
+        for key in keys:
             value=parent.get(key)
             if isinstance(value,dict):
                 containers.append(value)
-    for parent in containers:
-        for key in ("tournament_name","league_name","competition_name","championship_name"):
+        for key in ("tournament_name","tournamentName","league_name","leagueName",
+                    "competition_name","competitionName","championship_name",
+                    "championshipName","displayName","display_name","name","title","label"):
             value=parent.get(key)
             if isinstance(value,str) and value.strip():
+                # Do not mistake a fixture/event title for a competition name.
+                if key in ("name","title","label") and parent is fixture:
+                    continue
                 return value.strip()
-        for key in ("tournament","league","competition","championship"):
-            value=parent.get(key)
-            if isinstance(value,dict):
-                name=value.get("name") or value.get("title") or value.get("label")
-                if isinstance(name,str) and name.strip():
-                    return name.strip()
-    return "Liga niepodana przez Superbet"
+    tournament_id=fixture.get("tournament_id") or fixture.get("tournamentId")
+    if tournament_id:
+        name=superbet_tournament_names().get(str(tournament_id))
+        if name:
+            return name
+    return ""
+
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
@@ -659,6 +693,7 @@ def main():
         return
 
     sb_events=superbet_football_events(start,end)
+    superbet_tournament_names()
     resend_tips_with_corrected_league(c,sb_events)
     existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
     pre_candidates=[]
