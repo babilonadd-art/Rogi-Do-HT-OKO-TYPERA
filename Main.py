@@ -16,7 +16,7 @@ STAKE=50
 MAX_DAILY=2
 SHORTLIST_SIZE=30  # limit szczegółowych zapytań o kursy Superbet do 30 meczów
 HISTORY=8
-MIN_SAMPLE=5
+MIN_SAMPLE=3
 MIN_TEAM_AVG=2.2
 MIN_COMBINED_AVG=5.5
 MIN_HIT_RATE=0.60
@@ -682,7 +682,7 @@ def send_monthly_reports(c,local):
             logging.error("Nie udało się wysłać miesięcznego raportu %s",month)
 
 def matchday_candidate_profile(league,home,away,start_ts):
-    """Cheap prefilter based on Open Matchday history; no detailed Superbet event request."""
+    """Rank a fixture from recent HT-corner history; require a minimal sample only."""
     rows=load_matchday_results(league)
     if rows is None:
         return None,"brak danych Open Matchday dla ligi"
@@ -696,14 +696,9 @@ def matchday_candidate_profile(league,home,away,start_ts):
     totals=[x[3] for x in hh]+[x[3] for x in ah]
     combined_avg=sum(totals)/len(totals)
     hit_rate=sum(1 for total in totals if total>HT_CORNERS_LINE)/len(totals)
-    passed=(home_avg>=MIN_TEAM_AVG and away_avg>=MIN_TEAM_AVG
-            and combined_avg>=MIN_COMBINED_AVG and hit_rate>=MIN_HIT_RATE)
+    score=(hit_rate*100)+(min(home_avg,away_avg)*4)+(combined_avg*2)+(min(len(hh),len(ah))*0.5)
     detail=(f"próba {len(hh)}+{len(ah)}, średnie HT {home_avg:.2f}/{away_avg:.2f}, "
             f"średnia łączna {combined_avg:.2f}, over 4.5 w {hit_rate*100:.0f}%")
-    if not passed:
-        return None,detail
-    # Rank balanced, consistently high-corner teams above one-sided or thin samples.
-    score=(hit_rate*100)+(min(home_avg,away_avg)*4)+(combined_avg*2)+(min(len(hh),len(ah))*0.5)
     return score,detail
 
 
@@ -765,8 +760,8 @@ def main():
 
     pre_candidates.sort(key=lambda x:(-x[0],x[1]))
     shortlist=pre_candidates[:SHORTLIST_SIZE]
-    logging.info("Superbet: %d meczów w ofercie; po szybkim filtrze historii %d; do szczegółowej kontroli kursu trafia tylko TOP %d",
-                 len(sb_events),len(pre_candidates),len(shortlist))
+    logging.info("Superbet: %d meczów w ofercie; %d ma wystarczającą historię; brak/za mała historia %d; szczegółowa kontrola kursu TOP %d",
+                 len(sb_events),len(pre_candidates),history_unavailable,len(shortlist))
 
     def inspect_candidate(item):
         score,st,event_id,home,away,league,detail,listed=item
@@ -786,6 +781,7 @@ def main():
             except Exception:
                 logging.exception("Błąd sprawdzania rynku HT jednego z 30 meczów")
     available.sort(key=lambda x:(-x[0],x[1]))
+    logging.info("TOP %d: po sprawdzeniu Superbet pozostało %d meczów z aktywnym Over 4.5 HT w kursie 1.90–3.50",len(shortlist),len(available))
     sent=0
     for score,st,event_id,home,away,price,league,detail,listed in available:
         if count>=MAX_DAILY:
