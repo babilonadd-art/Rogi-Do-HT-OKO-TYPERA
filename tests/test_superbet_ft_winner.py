@@ -89,11 +89,11 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
 
     def test_matchday_form_reads_recent_full_time_results(self):
         rows = [
-            {"date": "2026-10-05", "home": "Team A", "away": "Other 1", "ft_home": "2", "ft_away": "0"},
-            {"date": "2026-10-04", "home": "Team A", "away": "Other 2", "ft_home": "1", "ft_away": "0"},
-            {"date": "2026-10-03", "home": "Other 3", "away": "Team A", "ft_home": "0", "ft_away": "1"},
-            {"date": "2026-10-02", "home": "Team A", "away": "Other 4", "ft_home": "1", "ft_away": "1"},
-            {"date": "2026-10-01", "home": "Team A", "away": "Other 5", "ft_home": "0", "ft_away": "2"},
+            {"date": "2026-09-05", "home": "Team A", "away": "Other 1", "ft_home": "2", "ft_away": "0"},
+            {"date": "2026-09-04", "home": "Team A", "away": "Other 2", "ft_home": "1", "ft_away": "0"},
+            {"date": "2026-09-03", "home": "Other 3", "away": "Team A", "ft_home": "0", "ft_away": "1"},
+            {"date": "2026-09-02", "home": "Team A", "away": "Other 4", "ft_home": "1", "ft_away": "1"},
+            {"date": "2026-09-01", "home": "Team A", "away": "Other 5", "ft_home": "0", "ft_away": "2"},
         ]
         with patch("Main.load_matchday_results", return_value=rows):
             form, detail = Main.matchday_recent_form(
@@ -105,7 +105,7 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
     def test_winner_form_uses_open_matchday_for_broader_leagues(self):
         rows = []
         for day, score in zip(
-            ["2026-10-05", "2026-10-04", "2026-10-03", "2026-10-02", "2026-10-01"],
+            ["2026-09-05", "2026-09-04", "2026-09-03", "2026-09-02", "2026-09-01"],
             [(2, 0), (1, 0), (0, 1), (1, 1), (0, 2)],
         ):
             rows.append({
@@ -113,7 +113,7 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
                 "ft_home": str(score[0]), "ft_away": str(score[1]),
             })
         for day, score in zip(
-            ["2026-10-05", "2026-10-04", "2026-10-03", "2026-10-02", "2026-10-01"],
+            ["2026-09-05", "2026-09-04", "2026-09-03", "2026-09-02", "2026-09-01"],
             [(1, 0), (0, 1), (0, 2), (2, 0), (0, 1)],
         ):
             rows.append({
