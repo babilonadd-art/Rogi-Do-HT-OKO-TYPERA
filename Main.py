@@ -255,7 +255,7 @@ MATCHDAY_LEAGUES={
     "anglianationalleaguenorth":"ENG_6_national-league-north","nationalleaguenorth":"ENG_6_national-league-north",
     "anglianationalleaguesouth":"ENG_6_national-league-south","nationalleaguesouth":"ENG_6_national-league-south",
     "northernpremierleague":"ENG_7_northern-premier-league","eflcup":"ENG_CUP_efl-cup","facup":"ENG_CUP_fa-cup",
-    "hiszpaniaprimeradivision":"ESP_1_la-liga","spainlaliga":"ESP_1_la-liga","laliga":"ESP_1_la-liga","primera":"ESP_1_la-liga",
+    "hiszpaniaprimeradivision":"ESP_1_la-liga","hiszpianalaliga":"ESP_1_la-liga","spainlaliga":"ESP_1_la-liga","laliga":"ESP_1_la-liga","primera":"ESP_1_la-liga",
     "hiszpaniasegundadivision":"ESP_2_segunda-division","segunda":"ESP_2_segunda-division","copadelrey":"ESP_CUP_copa-del-rey",
     "francjaligue1":"FRA_1_ligue-1","franceligue1":"FRA_1_ligue-1","ligue1":"FRA_1_ligue-1",
     "francjaligue2":"FRA_2_ligue-2","franceligue2":"FRA_2_ligue-2","ligue2":"FRA_2_ligue-2",
@@ -303,11 +303,11 @@ _matchday_cache={}
 _matchday_history_cache={}
 
 def matchday_folder(league):
+    # Dopasowanie wyłącznie pełnej, znormalizowanej nazwy ligi.
+    # Dopasowanie fragmentu powodowało fałszywe przypisanie np.
+    # "Malta - Premier League - Top 6" do angielskiej Premier League.
     key=normalized_team(league)
-    for alias,folder in sorted(MATCHDAY_LEAGUES.items(),key=lambda item:len(item[0]),reverse=True):
-        if key==alias or alias in key:
-            return folder
-    return None
+    return MATCHDAY_LEAGUES.get(key)
 
 def load_matchday_results(league):
     folder=matchday_folder(league)
