@@ -661,11 +661,72 @@ def football_data_recent_form(league, team, fixture_ts):
     losses = sum(1 for _, result in recent if result == "L")
     return {"wins": wins, "draws": draws, "losses": losses}, f"{wins}Z-{draws}R-{losses}P z {len(recent)}"
 
+_MATCHDAY_FORM_CACHE = {}
+
+def matchday_recent_form(league, team, fixture_ts):
+    """Read recent FT results from Open Matchday's broad 75-competition CSV set."""
+    fixture_date = datetime.fromtimestamp(fixture_ts, timezone.utc).date().isoformat()
+    cache_key = (normalized_team(league), normalized_team(team), fixture_date)
+    if cache_key in _MATCHDAY_FORM_CACHE:
+        return _MATCHDAY_FORM_CACHE[cache_key]
+    rows = load_matchday_results(league)
+    if not rows:
+        result = (None, "brak danych Open Matchday")
+        _MATCHDAY_FORM_CACHE[cache_key] = result
+        return result
+
+    history = []
+    for row in rows:
+        match_date = str(row.get("date") or "")[:10]
+        if not match_date or match_date >= fixture_date:
+            continue
+        try:
+            home_goals = int(float(row.get("ft_home")))
+            away_goals = int(float(row.get("ft_away")))
+        except (TypeError, ValueError):
+            continue
+        home_name = row.get("home") or ""
+        away_name = row.get("away") or ""
+        home_similarity = team_similarity(team, home_name)
+        away_similarity = team_similarity(team, away_name)
+        if home_similarity >= 0.82 and home_similarity > away_similarity + 0.04:
+            outcome = "W" if home_goals > away_goals else ("D" if home_goals == away_goals else "L")
+        elif away_similarity >= 0.82 and away_similarity > home_similarity + 0.04:
+            outcome = "W" if away_goals > home_goals else ("D" if away_goals == home_goals else "L")
+        else:
+            continue
+        history.append((match_date, outcome))
+
+    history.sort(key=lambda item: item[0], reverse=True)
+    recent = history[:5]
+    if len(recent) < 3:
+        result = (None, f"Open Matchday: za mała próba {len(recent)}/5")
+    else:
+        wins = sum(1 for _, outcome in recent if outcome == "W")
+        draws = sum(1 for _, outcome in recent if outcome == "D")
+        losses = sum(1 for _, outcome in recent if outcome == "L")
+        result = ({"wins": wins, "draws": draws, "losses": losses},
+                  f"{wins}Z-{draws}R-{losses}P z {len(recent)} (Open Matchday)")
+    _MATCHDAY_FORM_CACHE[cache_key] = result
+    return result
+
+
+def recent_team_form(league, team, fixture_ts):
+    # Broad Open Matchday results first; use football-data.co.uk as a fallback.
+    form, detail = matchday_recent_form(league, team, fixture_ts)
+    if form:
+        return form, detail
+    fallback, fallback_detail = football_data_recent_form(league, team, fixture_ts)
+    if fallback:
+        return fallback, f"{fallback_detail} (football-data.co.uk)"
+    return None, f"{detail}; fallback: {fallback_detail}"
+
+
 def winner_form_passes(league, home, away, start_ts, selection):
     chosen = home if selection == "1" else away
     opponent = away if selection == "1" else home
-    cf, cd = football_data_recent_form(league, chosen, start_ts)
-    of, od = football_data_recent_form(league, opponent, start_ts)
+    cf, cd = recent_team_form(league, chosen, start_ts)
+    of, od = recent_team_form(league, opponent, start_ts)
     if not cf or not of:
         return False, f"brak danych: {chosen} {cd}; rywal {od}"
     if cf["wins"] < 2:
