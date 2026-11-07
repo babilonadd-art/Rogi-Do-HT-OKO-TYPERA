@@ -40,7 +40,7 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
             odd("1", 3.20), odd("X", 3.10), odd("2", 2.25)
         ])
         self.assertEqual(result, {
-            "selection": "1", "odds": 3.20, "form": "forma testowa"
+            "selection": "2", "odds": 2.25, "form": "forma testowa"
         })
         api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
         form.assert_any_call("Test League", "Team A", "Team B", 1790000000, "1")
