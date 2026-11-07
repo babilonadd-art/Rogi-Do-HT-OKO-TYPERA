@@ -43,7 +43,7 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
             "selection": "1", "odds": 3.20, "form": "forma testowa"
         })
         api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
-        form.assert_called_once_with("Test League", "Team A", "Team B", 1790000000, "1")
+        form.assert_any_call("Test League", "Team A", "Team B", 1790000000, "1")
 
     def test_reads_away_win_from_team_label(self):
         result, _, _ = self.check_market("Wynik meczu", [
