@@ -575,6 +575,18 @@ def superbet_event_phase(event):
     return "UNKNOWN"
 
 
+def sofascore_match_url(home,away,start_ts):
+    """Build a direct SofaScore fixture URL only after matching both teams and kickoff."""
+    event=sofascore_event_for_pick(home,away,start_ts)
+    if not event or not event.get("id"):
+        return None
+    event_id=event["id"]
+    slug="-".join(
+        normalized_team(x) for x in (home,away) if normalized_team(x)
+    )
+    return f"https://www.sofascore.com/football/match/{slug}/{event_id}"
+
+
 def sofascore_event_for_pick(home,away,start_ts):
     """Find the matching SofaScore fixture by teams and kickoff date (Superbet IDs are not SofaScore IDs)."""
     kickoff=datetime.fromtimestamp(int(start_ts),timezone.utc).astimezone(TZ)
@@ -839,12 +851,23 @@ def main():
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
+        # Odczytaj kurs ponownie bezpośrednio przed publikacją, aby ograniczyć rozjazd kursu.
+        fresh_price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
+        if fresh_price is None:
+            logging.info("Pominięto event %s — kurs/rynek zmienił się przed wysyłką",event_id)
+            continue
+        price=fresh_price
+        match_url=sofascore_match_url(home,away,st)
         msg=(f"🎯 ROGI DO HT\n"
              f"⚽ {home} – {away}\n"
              f"🏆 {league} | 🕒 {kickoff:%d.%m %H:%M}\n"
              f"📌 Over {HT_CORNERS_LINE:.1f} rożnych — 1. połowa\n"
-             f"💹 Kurs: {price:.2f}\n"
+             f"💹 Kurs: {price:.2f} (ostatni odczyt)\n"
+             f"🔗 Mecz: {match_url if match_url else 'link niedostępny — nie publikuję bez linku'}\n"
              f"💰 Stawka: {STAKE} zł")
+        if not match_url:
+            logging.warning("Pominięto event %s — nie znaleziono dokładnego linku do meczu",event_id)
+            continue
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'HT')",
                       (event_id,league,home,away,st,local.isoformat(),price))
