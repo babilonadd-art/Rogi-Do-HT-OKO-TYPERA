@@ -911,11 +911,11 @@ def settle_ako_coupons(c):
         c.execute("UPDATE coupons SET status=?,settled_at=? WHERE coupon_id=?",(final,settled,coupon_id))
         c.commit()
         profit=(float(stake)*(float(total_odds)-1.0)) if final=="WON" else -float(stake)
-        msg=(f"📊 ROZLICZENIE KUPONU AKO — {coupon_id}\\n\\n"
-             f"🎯 4 zwycięstwa drużyn (1/2)\\n"
-             f"💹 Kurs łączny: {float(total_odds):.2f}\\n"
-             f"💰 Stawka: {float(stake):.2f} zł\\n"
-             f"{'🟢 KUPON WYGRANY' if final=='WON' else '🔴 KUPON PRZEGRANY'}\\n"
+        msg=(f"📊 ROZLICZENIE KUPONU AKO — {coupon_id}\n\n"
+             f"🎯 4 zwycięstwa drużyn (1/2)\n"
+             f"💹 Kurs łączny: {float(total_odds):.2f}\n"
+             f"💰 Stawka: {float(stake):.2f} zł\n"
+             f"{'🟢 KUPON WYGRANY' if final=='WON' else '🔴 KUPON PRZEGRANY'}\n"
              f"🏦 Wynik: {profit:+.2f} zł")
         if not send(msg):
             logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
@@ -1022,19 +1022,19 @@ def main():
         return
     total_odds=round(fresh_total,2)
 
-    msg=(f"🕒 KUPON DNIA | {local:%d.%m.%Y}\\n"
-         f"🎯 AKO — 4 ZWYCIĘSTWA DRUŻYN (CAŁY MECZ)\\n"
-         f"💹 KURS ŁĄCZNY: {total_odds:.2f}\\n\\n")
+    msg=(f"🕒 KUPON DNIA | {local:%d.%m.%Y}\n"
+         f"🎯 AKO — 4 ZWYCIĘSTWA DRUŻYN (CAŁY MECZ)\n"
+         f"💹 KURS ŁĄCZNY: {total_odds:.2f}\n\n")
     for index,(leg,price) in enumerate(refreshed,1):
         kickoff=datetime.fromtimestamp(leg["start_ts"],timezone.utc).astimezone(TZ)
         team=leg["home"] if leg["selection"]=="1" else leg["away"]
-        msg+=(f"{index}. 🕒 {kickoff:%H:%M}\\n"
-              f"⚽ {leg['home']} – {leg['away']}\\n"
-              f"🏆 {leg['league']}\\n"
-              f"📌 Typ: WYGRANA {team} ({leg['selection']}) — cały mecz\\n"
-              f"💹 Kurs: {price:.2f}\\n"
-              f"🔗 Mecz: {leg['url']}\\n\\n")
-    msg+=(f"💰 Stawka na kupon: {STAKE} zł\\n"
+        msg+=(f"{index}. 🕒 {kickoff:%H:%M}\n"
+              f"⚽ {leg['home']} – {leg['away']}\n"
+              f"🏆 {leg['league']}\n"
+              f"📌 Typ: WYGRANA {team} ({leg['selection']}) — cały mecz\n"
+              f"💹 Kurs: {price:.2f}\n"
+              f"🔗 Mecz: {leg['url']}\n\n")
+    msg+=(f"💰 Stawka na kupon: {STAKE} zł\n"
           f"⚠️ Kupon AKO wygrywa tylko wtedy, gdy wejdą wszystkie 4 zdarzenia.")
     if send(msg):
         c.execute("INSERT INTO coupons(coupon_id,sent_at,odds,stake,status) VALUES(?,?,?,?, 'PENDING')",
