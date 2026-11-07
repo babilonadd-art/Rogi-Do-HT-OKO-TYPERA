@@ -87,15 +87,15 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
         ))
         form.assert_called_once()
 
-    def test_four_leg_coupon_total_must_be_20_to_50(self):
+    def test_four_leg_coupon_total_must_be_5_to_10(self):
         candidates = [
-            {"event_id": i, "odds": 2.2, "start_ts": i, "priority": 1}
+            {"event_id": i, "odds": 1.8, "start_ts": i, "priority": 1}
             for i in range(4)
         ]
         result = Main.choose_four_leg_coupon(candidates)
         self.assertIsNotNone(result)
-        self.assertGreaterEqual(result[1], 20.0)
-        self.assertLessEqual(result[1], 50.0)
+        self.assertGreaterEqual(result[1], 5.0)
+        self.assertLessEqual(result[1], 10.0)
 
     def test_does_not_force_coupon_when_total_outside_range(self):
         candidates = [
