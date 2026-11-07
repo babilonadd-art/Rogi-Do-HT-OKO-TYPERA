@@ -209,7 +209,7 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
 
     for market in event.get("markets",[]):
         raw_name=str(market.get("name") or "")
-        market_name=re.sub(r"\\s+"," ",raw_name.strip().lower())
+        market_name=re.sub(r"\s+"," ",raw_name.strip().lower())
         # Market itself must explicitly describe corners AND the first half.
         has_corners=any(term in market_name for term in (
             "roż","rzutów rożnych","corner","corners"
@@ -243,7 +243,7 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
             selection=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
             )).lower().replace(",",".")
-            if not re.search(r"\\b(powyżej|over)\\b",selection):
+            if not re.search(r"\b(powyżej|over)\b",selection):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
