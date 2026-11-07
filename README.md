@@ -3,13 +3,15 @@
 Bot Telegram uruchamiany przez darmowe GitHub Actions.
 
 ## Ustawienia
-- Tylko prematch: Over 4.5 rzutów rożnych do przerwy.
-- Mecz co najmniej 3 godziny od skanowania; okno do 48 godzin.
-- Maksymalnie 2 typy dziennie.
+- Wyłącznie prematch: **Over 4.5 rzutów rożnych do przerwy (HT)**.
+- Superbet jest źródłem terminarza i kursów.
+- Open Matchday dostarcza historyczne statystyki rożnych 1. połowy.
+- Bot robi szybki ranking na podstawie historii, wybiera **TOP 30 meczów**, a dopiero dla tej trzydziestki pobiera szczegółowe rynki i kursy Superbet.
+- Kurs: 1.90–3.50.
+- Maksymalnie 2 typy dziennie; wysyła tylko mecze, które przejdą filtr historii i mają aktywny rynek Over 4.5 HT.
 - Stawka informacyjna: 50 zł.
-- Automatyczne rozliczenie po zakończeniu meczu na podstawie statystyk 1. połowy.
+- Automatyczne rozliczenie na podstawie statystyk 1. połowy.
 - Baza SQLite zapobiega ponownemu wysłaniu tego samego meczu.
-- Skan co 30 minut.
 
 ## Sekrety
 W Settings → Secrets and variables → Actions dodaj:
@@ -20,4 +22,4 @@ W Settings → Secrets and variables → Actions dodaj:
 Actions → Rogi Do HT OKO TYPERA → Run workflow.
 
 ## Ograniczenia
-Dane pochodzą z nieoficjalnego publicznego API SofaScore, które może zmieniać format lub ograniczać zapytania. Jeśli SofaScore nie udostępni statystyk 1. połowy, typ nie zostanie wybrany albo rozliczenie poczeka na kolejne uruchomienie. Bot nie wysyła typów na siłę. Wyniki historyczne nie gwarantują trafienia. Bot nie zawiera funkcji obstawiania zakładów.
+Open Matchday udostępnia splity HT tylko dla obsługiwanych lig. Brak odpowiedniej historii lub aktywnego kursu oznacza brak typu — bot nie dobija do limitu na siłę. Wyniki historyczne nie gwarantują trafienia. Bot nie zawiera funkcji obstawiania zakładów.
