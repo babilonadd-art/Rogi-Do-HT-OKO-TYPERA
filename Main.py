@@ -205,8 +205,14 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
         return None
     for market in event.get("markets",[]):
         market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
-        # This is the match total market, not either team's individual corner total.
-        if not re.fullmatch(r"1\.?\s*połowa\s*-\s*liczba rzutów rożnych",market_name):
+        # Accept Superbet's naming variants for the full-match-total HT market only.
+        has_corners=("roż" in market_name or "rzutów rożnych" in market_name)
+        has_first_half=any(term in market_name for term in (
+            "1. połowa","1 połowa","pierwsza połowa","1h","1st half","first half"
+        ))
+        if not has_corners or not has_first_half:
+            continue
+        if any(term in market_name for term in ("gospodarze","goście","home","away","drużyn")):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
