@@ -588,8 +588,8 @@ def matchday_candidate_profile(league,home,away,start_ts):
 
 
 # --- Kupony AKO: zwycięstwo gospodarzy/gości w całym meczu (1/2) ---
-COUPON_MIN_ODDS=20.0
-COUPON_MAX_ODDS=50.0
+COUPON_MIN_ODDS=5.0
+COUPON_MAX_ODDS=10.0
 COUPON_LEGS=4
 MIN_WINNER_ODDS=1.70
 MAX_WINNER_ODDS=4.00
@@ -754,7 +754,7 @@ def winner_market_selection(event_id,home,away,league,start_ts):
 
 
 def choose_four_leg_coupon(candidates):
-    """Find four distinct fixtures whose combined decimal odds are within 20–50."""
+    """Find four distinct fixtures whose combined decimal odds are within 5–10."""
     from itertools import combinations
     valid=[]
     for group in combinations(candidates,COUPON_LEGS):
@@ -939,7 +939,7 @@ def main():
             })
     coupon=choose_four_leg_coupon(available)
     if not coupon:
-        logging.info("Po sprawdzeniu TOP %s nie znaleziono 4 aktywnych zwycięstw 1/2 z kursem AKO 20–50; nie publikuję kuponu na siłę", SHORTLIST_SIZE)
+        logging.info("Po sprawdzeniu TOP %s nie znaleziono 4 aktywnych zwycięstw 1/2 z kursem AKO 5–10; nie publikuję kuponu na siłę", SHORTLIST_SIZE)
         c.close()
         return
     legs,total_odds=coupon
@@ -960,7 +960,7 @@ def main():
     fresh_total=1.0
     for _,price in refreshed: fresh_total*=price
     if not COUPON_MIN_ODDS<=fresh_total<=COUPON_MAX_ODDS:
-        logging.info("Kupon anulowany — świeży kurs łączny %.2f poza zakresem 20–50",fresh_total)
+        logging.info("Kupon anulowany — świeży kurs łączny %.2f poza zakresem 5–10",fresh_total)
         c.close()
         return
     total_odds=round(fresh_total,2)
