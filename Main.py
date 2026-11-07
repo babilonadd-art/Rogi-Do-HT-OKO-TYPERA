@@ -189,47 +189,61 @@ def superbet_event_for_match(home,away,start_ts,events):
     return best[1] if best else None
 
 def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
-    """Fetch and validate the actual Superbet PL pre-match total HT-corners price."""
+    """Return a price only when this exact event has an active HT total-corners Over line."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
+        logging.info("Superbet: brak szczegółów wydarzenia %s",event_id)
         return None
-    event=events[0]
+    event=next((e for e in events if str(e.get("id"))==str(event_id)),None)
+    if event is None:
+        logging.warning("Superbet: odpowiedź nie zawiera żądanego event_id=%s",event_id)
+        return None
     fixture=event.get("fixture",{})
-    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
         return None
     inplay=(event.get("inplay_stats_metadata") or {}).get("status")
     if inplay not in (None,"","NOT_STARTED"):
         return None
+
     for market in event.get("markets",[]):
-        market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
-        # Accept Superbet's naming variants for the full-match-total HT market only.
-        has_corners=("roż" in market_name or "rzutów rożnych" in market_name)
+        raw_name=str(market.get("name") or "")
+        market_name=re.sub(r"\\s+"," ",raw_name.strip().lower())
+        # Market itself must explicitly describe corners AND the first half.
+        has_corners=any(term in market_name for term in (
+            "roż","rzutów rożnych","corner","corners"
+        ))
         has_first_half=any(term in market_name for term in (
-            "1. połowa","1 połowa","pierwsza połowa","1h","1st half","first half"
+            "1. połowa","1 połowa","pierwsza połowa","1h","1st half",
+            "first half","first-half","half 1"
         ))
         if not has_corners or not has_first_half:
             continue
-        if any(term in market_name for term in ("gospodarze","goście","home","away","drużyn")):
+        # Reject match-total and team-specific markets; no inferred period/market.
+        if any(term in market_name for term in (
+            "cały mecz","pełny mecz","full time","match total",
+            "gospodarze","goście","home","away","drużyn"
+        )):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
+
         for odd in market.get("odds",[]):
             meta=odd.get("metadata") or {}
+            # The line must come from this exact selection's Superbet market data.
+            raw_line=meta.get("special_bet_value")
+            if raw_line is None:
+                raw_line=odd.get("special_bet_value")
             try:
-                odd_line=float(meta.get("special_bet_value",odd.get("special_bet_value")))
+                odd_line=float(str(raw_line).replace(",","."))
                 price=float(odd.get("price"))
             except (TypeError,ValueError):
                 continue
-            label=" ".join(str(x or "") for x in (
+            selection=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
-            )).lower().replace(",", ".")
-            # The selection label itself must identify Over/Powyżej AND the exact 4.5 line.
-            if not re.search(r"\b(powyżej|over)\b",label):
-                continue
-            if not re.search(r"(?<!\d)4\.5(?!\d)",label):
+            )).lower().replace(",",".")
+            if not re.search(r"\\b(powyżej|over)\\b",selection):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
@@ -237,12 +251,17 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
                 continue
             if odd.get("display") is False:
                 continue
-            if meta.get("offer_state_id",1) not in (1,"1"):
+            if str(meta.get("offer_state_id",1))!="1":
                 continue
             if not MIN_ODDS <= price <= MAX_ODDS:
-                logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
+                logging.info("Superbet: dokładny rynek HT Over %.1f znaleziony, ale kurs %.2f poza zakresem (event %s)",line,price,event_id)
                 continue
+            logging.info("Superbet: potwierdzono event %s | rynek=%r | wybór=%r | linia=%.1f | kurs=%.2f",
+                         event_id,raw_name,selection,odd_line,price)
             return price
+
+    logging.info("Superbet: event %s nie ma aktywnego, dokładnego rynku HT rożne Over %.1f w kursie %.2f–%.2f",
+                 event_id,line,MIN_ODDS,MAX_ODDS)
     return None
 
 
