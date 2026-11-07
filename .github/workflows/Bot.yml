@@ -28,7 +28,6 @@ jobs:
       - name: Testy logiki typowania
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Skan LIVE OVER z Superbet
-        
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
