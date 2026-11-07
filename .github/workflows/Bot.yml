@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "Main.py"
+      - "tests/**"
       - ".github/workflows/Bot.yml"
   schedule:
     - cron: "*/15 * * * *"
