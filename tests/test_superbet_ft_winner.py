@@ -87,6 +87,13 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
         ))
         form.assert_called_once()
 
+    def test_common_team_name_aliases_match_open_matchday_spelling(self):
+        self.assertGreaterEqual(Main.team_similarity("Manchester City", "Man City"), 0.82)
+        self.assertGreaterEqual(Main.team_similarity("Manchester United", "Man Utd"), 0.82)
+        self.assertGreaterEqual(Main.team_similarity("Nottingham Forest", "Nott'm Forest"), 0.82)
+        self.assertGreaterEqual(Main.team_similarity("Tottenham Hotspur", "Spurs"), 0.82)
+        self.assertGreaterEqual(Main.team_similarity("Istanbul Basaksehir", "Basaksehir"), 0.82)
+
     def test_matchday_form_reads_recent_full_time_results(self):
         rows = [
             {"date": "2026-09-05", "home": "Team A", "away": "Other 1", "ft_home": "2", "ft_away": "0"},
