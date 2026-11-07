@@ -197,10 +197,20 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
     if not events:
         logging.info("Superbet: brak szczegółów wydarzenia %s",event_id)
         return None
-    event=next((e for e in events if str(e.get("id"))==str(event_id)),None)
-    if event is None:
-        logging.warning("Superbet: odpowiedź nie zawiera żądanego event_id=%s",event_id)
-        return None
+    # Superbet's /events?events=<event_id> detail response may omit its own ID.
+    # When it returns exactly one event, that response is scoped to the requested ID.
+    # If an ID is present, however, it must match the requested event.
+    if len(events)==1:
+        event=events[0]
+        returned_id=event.get("event_id") or event.get("id")
+        if returned_id is not None and str(returned_id)!=str(event_id):
+            logging.warning("Superbet: żądano event_id=%s, odpowiedź zawiera %s",event_id,returned_id)
+            return None
+    else:
+        event=next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
+        if event is None:
+            logging.warning("Superbet: odpowiedź nie zawiera żądanego event_id=%s",event_id)
+            return None
     fixture=event.get("fixture",{})
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
