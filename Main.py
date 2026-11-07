@@ -14,7 +14,7 @@ STAKE=10
 MAX_DAILY_COUPONS=2
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:41:00+01:00"
-SHORTLIST_SIZE=30  # maksymalnie 30 meczów wybieranych do szczegółowej analizy
+SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
 MIN_TEAM_AVG=2.2
@@ -654,7 +654,7 @@ def football_data_recent_form(league, team, fixture_ts):
         history.append((parsed, result))
     history.sort(key=lambda x: x[0], reverse=True)
     recent = history[:5]
-    if len(recent) < 4:
+    if len(recent) < 3:
         return None, f"za mała próba {len(recent)}/5"
     wins = sum(1 for _, result in recent if result == "W")
     draws = sum(1 for _, result in recent if result == "D")
@@ -668,10 +668,10 @@ def winner_form_passes(league, home, away, start_ts, selection):
     of, od = football_data_recent_form(league, opponent, start_ts)
     if not cf or not of:
         return False, f"brak danych: {chosen} {cd}; rywal {od}"
-    if cf["wins"] < 3:
-        return False, f"{chosen}: forma za słaba ({cd})"
-    if cf["wins"] <= of["wins"]:
-        return False, f"brak przewagi formy ({cd}; rywal {od})"
+    if cf["wins"] < 2:
+        return False, f"{chosen}: forma za słaba — mniej niż 2 wygrane ({cd})"
+    if cf["wins"] < of["wins"]:
+        return False, f"rywal ma lepszą formę ({cd}; rywal {od})"
     return True, f"{chosen} {cd}; rywal {od}"
 
 def winner_market_selection(event_id,home,away,league,start_ts):
@@ -939,7 +939,7 @@ def main():
             })
     coupon=choose_four_leg_coupon(available)
     if not coupon:
-        logging.info("Nie ma dziś 4 aktywnych zwycięstw 1/2 z kursem AKO 20–50; nie publikuję kuponu na siłę")
+        logging.info("Po sprawdzeniu TOP %s nie znaleziono 4 aktywnych zwycięstw 1/2 z kursem AKO 20–50; nie publikuję kuponu na siłę", SHORTLIST_SIZE)
         c.close()
         return
     legs,total_odds=coupon
