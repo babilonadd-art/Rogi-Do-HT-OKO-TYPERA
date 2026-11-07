@@ -858,9 +858,10 @@ def main():
             continue
         price=fresh_price
         match_url=sofascore_match_url(home,away,st)
-        msg=(f"🎯 ROGI DO HT\n"
+        msg=(f"🕒 {kickoff:%H:%M} | {kickoff:%d.%m.%Y}\n"
+             f"🎯 ROGI DO HT\n"
              f"⚽ {home} – {away}\n"
-             f"🏆 {league} | 🕒 {kickoff:%d.%m %H:%M}\n"
+             f"🏆 {league}\n"
              f"📌 Over {HT_CORNERS_LINE:.1f} rożnych — 1. połowa\n"
              f"💹 Kurs: {price:.2f} (ostatni odczyt)\n"
              f"🔗 Mecz: {match_url if match_url else 'link niedostępny — nie publikuję bez linku'}\n"
