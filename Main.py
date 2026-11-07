@@ -12,7 +12,7 @@ TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
-STAKE=50
+STAKE=10
 MAX_DAILY=4
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:41:00+01:00"
