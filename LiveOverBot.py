@@ -80,7 +80,7 @@ def event_minute(event):
     """Czyta minutę tylko z jawnie nazwanych pól czasu meczu."""
     keys = {
         "minute", "match_minute", "current_minute", "elapsed_minute",
-        "elapsed_minutes", "minute_number", "timer_minute", "inplay_minute",
+        "elapsed_minutes", "minute_number", "timer_minute", "inplay_minute", "currentminute", "elapsedtime_minute", "period_minute", "event_minute",
     }
     clock_keys = {"clock", "timer", "match_time", "elapsed_time", "game_time"}
     found = []
@@ -129,11 +129,22 @@ def event_score(event):
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
-                if str(key).lower() in ("score", "scores", "scoreboard", "current_score") and isinstance(value, dict):
-                    home = next((number(value[k]) for k in ("home", "home_score", "homeScore", "team1", "participant1") if k in value), None)
-                    away = next((number(value[k]) for k in ("away", "away_score", "awayScore", "team2", "participant2") if k in value), None)
-                    if home is not None and away is not None:
-                        found.append((home, away))
+                if isinstance(value, dict):
+                    lower_keys = {str(k).lower(): k for k in value}
+                    if str(key).lower() in ("score", "scores", "scoreboard", "current_score"):
+                        home_key = next((lower_keys[k] for k in ("home", "home_score", "homescore", "team1", "participant1") if k in lower_keys), None)
+                        away_key = next((lower_keys[k] for k in ("away", "away_score", "awayscore", "team2", "participant2") if k in lower_keys), None)
+                        home = number(value[home_key]) if home_key is not None else None
+                        away = number(value[away_key]) if away_key is not None else None
+                        if home is not None and away is not None:
+                            found.append((home, away))
+                    # Superbet czasem podaje home_score/away_score bez wrappera score.
+                    home_key = next((lower_keys[k] for k in ("home_score", "homescore") if k in lower_keys), None)
+                    away_key = next((lower_keys[k] for k in ("away_score", "awayscore") if k in lower_keys), None)
+                    if home_key is not None and away_key is not None:
+                        home, away = number(value[home_key]), number(value[away_key])
+                        if home is not None and away is not None:
+                            found.append((home, away))
                 if isinstance(value, (dict, list)):
                     walk(value)
         elif isinstance(node, list):
