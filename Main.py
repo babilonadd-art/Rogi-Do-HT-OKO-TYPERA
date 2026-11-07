@@ -5,8 +5,6 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
 
-API="https://www.sofascore.com/api/v1"
-API_FALLBACK="https://www.sofascore.com/api/v1"
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
@@ -27,14 +25,6 @@ MIN_ODDS=1.60
 MAX_ODDS=2.50
 SB_TOURNAMENT_NAMES=None
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
-s=requests.Session()
-s.headers.update({
-    "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Accept":"application/json, text/plain, */*",
-    "Accept-Language":"pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Origin":"https://www.sofascore.com",
-    "Referer":"https://www.sofascore.com/",
-})
 sb=requests.Session()
 sb.headers.update({
     "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
@@ -43,22 +33,6 @@ sb.headers.update({
     "Origin":"https://superbet.pl",
     "Referer":"https://superbet.pl/",
 })
-
-def api(path):
-    try:
-        r=s.get(API+path,timeout=12)
-        if r.status_code == 403:
-            logging.warning("SofaScore HTTP 403 %s — ponawiam zapytanie",path)
-            time.sleep(0.5)
-            r=s.get(API+path,headers={"Referer":"https://www.sofascore.com/","Origin":"https://www.sofascore.com","Accept":"application/json, text/plain, */*"},timeout=12)
-        if r.status_code in (403,404,429):
-            logging.warning("SofaScore HTTP %s %s — brak danych do rozliczenia",r.status_code,path)
-            return {}
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        logging.warning("SofaScore API %s: %s",path,e)
-        return {}
 
 def superbet_api(path,params=None):
     try:
@@ -589,103 +563,6 @@ def superbet_match_url(event_id,home,away,start_ts):
                     return value
     return "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna"
 
-
-def settle(c,now):
-    # Prefer Superbet live stats; fall back to SofaScore fixture/statistics when Superbet omits HT data.
-    rows=c.execute("SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING' AND market_type='HT'").fetchall()
-    for eid,league,home,away,start_ts in rows:
-        event=superbet_live_event(eid)
-        phase=superbet_event_phase(event) if event else "UNKNOWN"
-        stats=superbet_ht_corners(event) if event else None
-        if stats is not None:
-            home_corners,away_corners,_=stats
-        else:
-            sh,sa=sofascore_ht_corners(home,away,start_ts)
-            if sh is None or sa is None:
-                logging.info("Brak wiarygodnych statystyk HT dla %s — pozostaje PENDING",eid)
-                continue
-            home_corners,away_corners=sh,sa
-            # SofaScore's first-half statistics are only final once the first half has ended.
-            if event and phase=="FIRST_HALF":
-                n_live=home_corners+away_corners
-                if n_live<5:
-                    continue
-            elif not event:
-                # Historical/finished SofaScore fixture: use only when the fixture has ended or is at half-time/later.
-                ss_event=sofascore_event_for_pick(home,away,start_ts)
-                ss_status=(ss_event or {}).get("status") or {}
-                status=str(ss_status.get("type","")).lower()
-                description=str(ss_status.get("description","")).lower()
-                second_half_or_later=any(term in description for term in ("2nd half","second half","halftime","half time","finished","ended","full time"))
-                if status!="finished" and not (status=="inprogress" and second_half_or_later):
-                    logging.info("SofaScore: mecz %s nie zakończył HT (status=%s, opis=%s) — bez rozliczenia",eid,status,description)
-                    continue
-        n=home_corners+away_corners
-        if phase=="FIRST_HALF" and n<5:
-            continue
-        if phase not in ("FIRST_HALF","HALFTIME","SECOND_HALF","FINISHED","UNKNOWN"):
-            continue
-        won=n>=5
-        msg=(f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n"
-             f"🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n"
-             f"💰 Stawka: {STAKE} zł")
-        c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",
-                  ("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
-        c.commit()
-        if not send(msg):
-            logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
-        else:
-            logging.info("Rozliczono typ Superbet event %s: %s rożnych HT — %s",eid,n,"WON" if won else "LOST")
-        time.sleep(.2)
-
-def watch_pending_picks(c,duration_seconds=270,interval_seconds=5):
-    """Poll live first-half corner counts frequently so a winning pick settles in-play."""
-    deadline=time.monotonic()+duration_seconds
-    while time.monotonic()<deadline:
-        settle(c,int(datetime.now(timezone.utc).timestamp()))
-        remaining=deadline-time.monotonic()
-        if remaining>0:
-            time.sleep(min(interval_seconds,remaining))
-
-def send_monthly_reports(c,local):
-    current_month=local.strftime("%Y-%m")
-    months=c.execute("SELECT DISTINCT substr(sent_at,1,7) FROM picks WHERE substr(sent_at,1,7)<? ORDER BY 1",(current_month,)).fetchall()
-    for (month,) in months:
-        if c.execute("SELECT 1 FROM monthly_reports WHERE month=?",(month,)).fetchone():
-            continue
-        pending=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,7)=? AND status='PENDING'",(month,)).fetchone()[0]
-        if pending:
-            logging.info("Raport %s czeka na rozliczenie %s typów",month,pending)
-            continue
-        rows=c.execute("SELECT status,odds FROM picks WHERE substr(sent_at,1,7)=?",(month,)).fetchall()
-        wins=sum(1 for status,_ in rows if status=="WON")
-        losses=sum(1 for status,_ in rows if status=="LOST")
-        voids=sum(1 for status,_ in rows if status=="VOID")
-        decided=wins+losses
-        accuracy=(wins/decided*100) if decided else 0.0
-        priced=[(status,float(odds)) for status,odds in rows if status in ("WON","LOST") and odds is not None and float(odds)>1.0]
-        missing=sum(1 for status,odds in rows if status in ("WON","LOST") and (odds is None or float(odds)<=1.0))
-        turnover=len(priced)*STAKE
-        profit=sum(STAKE*(odds-1) if status=="WON" else -STAKE for status,odds in priced)
-        yield_pct=(profit/turnover*100) if turnover else 0.0
-        result="ZYSK" if profit>0 else ("STRATA" if profit<0 else "NA ZERO")
-        msg=(f"📅 MIESIĘCZNY BILANS — {month}\n\n"
-             f"📊 Rozliczone typy: {decided}\n"
-             f"🟢 Wygrane: {wins}\n🔴 Przegrane: {losses}\n"
-             f"⚪ Anulowane: {voids}\n"
-             f"🎯 Skuteczność: {accuracy:.1f}%\n"
-             f"📈 Yield: {yield_pct:+.2f}%\n"
-             f"💰 Stawka: {STAKE} zł / typ\n"
-             f"💵 Obrót z kursami: {turnover:.2f} zł\n"
-             f"🏦 Wynik: {profit:+.2f} zł ({result})")
-        if missing:
-            msg+=f"\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
-        if send(msg):
-            c.execute("INSERT OR IGNORE INTO monthly_reports(month,sent_at) VALUES(?,?)",(month,local.isoformat()))
-            c.commit()
-            logging.info("Wysłano miesięczny raport %s",month)
-        else:
-            logging.error("Nie udało się wysłać miesięcznego raportu %s",month)
 
 def matchday_candidate_profile(league,home,away,start_ts):
     """Rank a fixture from recent HT-corner history; require a minimal sample only."""
