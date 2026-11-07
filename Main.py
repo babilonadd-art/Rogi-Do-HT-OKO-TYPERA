@@ -763,7 +763,87 @@ COUPON_LEGS=4
 MIN_WINNER_ODDS=1.70
 MAX_WINNER_ODDS=4.00
 
-def winner_market_selection(event_id,home,away):
+
+_FORM_CACHE = {}
+
+def football_data_recent_form(league, team, fixture_ts):
+    key = normalized_team(league)
+    codes = {
+        "premierleague":"E0", "championship":"E1", "leagueone":"E2", "leaguetwo":"E3",
+        "bundesliga":"D1", "2bundesliga":"D2", "seriea":"I1", "laliga":"SP1",
+        "ligue1":"F1", "eredivisie":"N1", "primeiraliga":"P1", "scotlandpremiership":"SC0",
+        "englandpremierleague":"E0", "englandchampionship":"E1", "englandleagueone":"E2",
+        "englandleaguetwo":"E3", "germanybundesliga":"D1", "germany2bundesliga":"D2",
+        "italyseriea":"I1", "spainlaliga":"SP1", "franceligue1":"F1",
+        "netherlandseredivisie":"N1", "portugalprimeiraliga":"P1"
+    }
+    code = next((v for k, v in codes.items() if k in key or key in k), None)
+    if not code:
+        return None, "liga poza bazą formy"
+    d = datetime.fromtimestamp(fixture_ts, timezone.utc).date()
+    y = d.year if d.month >= 7 else d.year - 1
+    season = f"{y%100:02d}{(y+1)%100:02d}"
+    cache_key = (code, season)
+    if cache_key not in _FORM_CACHE:
+        try:
+            url = f"https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+            response = requests.get(url, headers={"User-Agent":"Mozilla/5.0","Accept":"text/csv"}, timeout=15)
+            response.raise_for_status()
+            _FORM_CACHE[cache_key] = list(csv.DictReader(io.StringIO(response.content.decode("latin-1"))))
+            logging.info("Forma: pobrano %s wyników dla %s", len(_FORM_CACHE[cache_key]), code)
+        except Exception as exc:
+            logging.warning("Forma: brak danych %s/%s: %s", code, season, exc)
+            _FORM_CACHE[cache_key] = None
+    rows = _FORM_CACHE[cache_key]
+    if not rows:
+        return None, "brak aktualnych wyników"
+    history = []
+    for row in rows:
+        raw = str(row.get("Date") or "").strip()
+        parsed = None
+        for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+            try:
+                parsed = datetime.strptime(raw, fmt).date()
+                break
+            except ValueError:
+                pass
+        if not parsed or parsed >= d:
+            continue
+        try:
+            hg, ag = int(float(row.get("FTHG"))), int(float(row.get("FTAG")))
+        except (TypeError, ValueError):
+            continue
+        home_name, away_name = row.get("HomeTeam") or "", row.get("AwayTeam") or ""
+        if team_similarity(team, home_name) >= 0.84:
+            result = "W" if hg > ag else ("D" if hg == ag else "L")
+        elif team_similarity(team, away_name) >= 0.84:
+            result = "W" if ag > hg else ("D" if ag == hg else "L")
+        else:
+            continue
+        history.append((parsed, result))
+    history.sort(key=lambda x: x[0], reverse=True)
+    recent = history[:5]
+    if len(recent) < 4:
+        return None, f"za mała próba {len(recent)}/5"
+    wins = sum(1 for _, result in recent if result == "W")
+    draws = sum(1 for _, result in recent if result == "D")
+    losses = sum(1 for _, result in recent if result == "L")
+    return {"wins": wins, "draws": draws, "losses": losses}, f"{wins}Z-{draws}R-{losses}P z {len(recent)}"
+
+def winner_form_passes(league, home, away, start_ts, selection):
+    chosen = home if selection == "1" else away
+    opponent = away if selection == "1" else home
+    cf, cd = football_data_recent_form(league, chosen, start_ts)
+    of, od = football_data_recent_form(league, opponent, start_ts)
+    if not cf or not of:
+        return False, f"brak danych: {chosen} {cd}; rywal {od}"
+    if cf["wins"] < 3:
+        return False, f"{chosen}: forma za słaba ({cd})"
+    if cf["wins"] <= of["wins"]:
+        return False, f"brak przewagi formy ({cd}; rywal {od})"
+    return True, f"{chosen} {cd}; rywal {od}"
+
+def winner_market_selection(event_id,home,away,league,start_ts):
     """Return an active pre-match 1X2 home/away selection from the exact Superbet event."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events") or []
@@ -829,9 +909,17 @@ def winner_market_selection(event_id,home,away):
                 found.append({"selection":selection,"odds":price})
     if not found:
         return None
-    # Prefer the stronger-priced side; final four-leg product is constrained separately.
-    found.sort(key=lambda x:x["odds"],reverse=True)
-    return found[0]
+    qualified=[]
+    for option in found:
+        passed,detail=winner_form_passes(league,home,away,start_ts,option["selection"])
+        logging.info("Forma 1X2 %s - %s | %s | %s",home,away,option["selection"],detail)
+        if passed:
+            option["form"]=detail
+            qualified.append(option)
+    if not qualified:
+        return None
+    qualified.sort(key=lambda x:(-x["odds"],x["selection"]))
+    return qualified[0]
 
 
 def choose_four_leg_coupon(candidates):
@@ -978,7 +1066,7 @@ def main():
 
     available=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(winner_market_selection,eid,home,away)
+        futures=[pool.submit(winner_market_selection,eid,home,away,league,kickoff)
                  for priority,kickoff,eid,home,away,league in shortlist]
         for item,future in zip(shortlist,futures):
             try:
@@ -992,7 +1080,7 @@ def main():
             available.append({
                 "priority":priority,"start_ts":kickoff,"event_id":eid,"home":home,
                 "away":away,"league":league,"selection":market["selection"],
-                "odds":market["odds"]
+                "odds":market["odds"],"form":market["form"]
             })
     coupon=choose_four_leg_coupon(available)
     if not coupon:
@@ -1012,7 +1100,7 @@ def main():
     # Ostatnia kontrola rynku tuż przed publikacją; bez meczu live i bez zmiany typu.
     refreshed=[]
     for leg in legs:
-        fresh=winner_market_selection(leg["event_id"],leg["home"],leg["away"])
+        fresh=winner_market_selection(leg["event_id"],leg["home"],leg["away"],leg["league"],leg["start_ts"])
         if not fresh or fresh["selection"]!=leg["selection"]:
             logging.info("Kupon anulowany przed wysyłką — rynek/typ zmienił się dla %s - %s",leg["home"],leg["away"])
             c.close()
