@@ -14,6 +14,8 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
 MAX_DAILY=2
+# Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
+DAILY_LIMIT_RESET_AT="2026-11-07T14:02:14+01:00"
 SHORTLIST_SIZE=15  # maksymalnie 15 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
@@ -740,7 +742,7 @@ def main():
     local=datetime.now(TZ)
     send_monthly_reports(c,local)
     key=local.date().isoformat()
-    count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=? AND market_type='HT'",(key,)).fetchone()[0]
+    count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=? AND sent_at>=? AND market_type='HT'",(key,DAILY_LIMIT_RESET_AT)).fetchone()[0]
     if count>=MAX_DAILY:
         logging.info("Dzienny limit HT osiągnięty: %s/%s",count,MAX_DAILY)
         c.close()
