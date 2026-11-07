@@ -611,7 +611,7 @@ def matchday_candidate_profile(league,home,away,start_ts):
 COUPON_MIN_ODDS=5.0
 COUPON_MAX_ODDS=10.0
 COUPON_LEGS=4
-MIN_WINNER_ODDS=1.70
+MIN_WINNER_ODDS=1.50
 MAX_WINNER_ODDS=4.00
 
 
@@ -830,7 +830,9 @@ def winner_market_selection(event_id,home,away,league,start_ts):
             qualified.append(option)
     if not qualified:
         return None
-    qualified.sort(key=lambda x:(-x["odds"],x["selection"]))
+    # When both sides pass the form check, prefer the lower price:
+    # it is the more conservative leg and helps keep the 4-fold inside 5–10.
+    qualified.sort(key=lambda x:(x["odds"],x["selection"]))
     return qualified[0]
 
 
@@ -1018,6 +1020,8 @@ def main():
                 "away":away,"league":league,"selection":market["selection"],
                 "odds":market["odds"],"form":market["form"]
             })
+    logging.info("Selekcja 1X2: %s mecze przeszły kontrolę formy; kursy: %s",
+                 len(available), [round(item["odds"],2) for item in available])
     coupon=choose_four_leg_coupon(available)
     if not coupon:
         logging.info("Po sprawdzeniu TOP %s nie znaleziono 4 aktywnych zwycięstw 1/2 z kursem AKO 5–10; nie publikuję kuponu na siłę", SHORTLIST_SIZE)
