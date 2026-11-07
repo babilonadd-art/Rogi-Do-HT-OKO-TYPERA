@@ -25,28 +25,42 @@ def odd(name, price, status=1, display=True, offer_state_id=1):
 
 
 class SuperbetFullTimeWinnerTests(unittest.TestCase):
-    @patch("Main.superbet_api")
-    def test_reads_home_win_from_active_full_time_1x2_market(self, api):
-        api.return_value=event_payload("Wynik meczu 1X2", [
+    def check_market(self, market_name, odds):
+        with patch("Main.superbet_api") as api, patch(
+            "Main.winner_form_passes", return_value=(True, "forma testowa")
+        ) as form:
+            api.return_value = event_payload(market_name, odds)
+            result = Main.winner_market_selection(
+                123, "Team A", "Team B", "Test League", 1790000000
+            )
+        return result, api, form
+
+    def test_reads_home_win_from_active_full_time_1x2_market(self):
+        result, api, form = self.check_market("Wynik meczu 1X2", [
             odd("1", 3.20), odd("X", 3.10), odd("2", 2.25)
         ])
-        self.assertEqual(Main.winner_market_selection(123, "Team A", "Team B"),
-                         {"selection": "1", "odds": 3.20})
+        self.assertEqual(result, {
+            "selection": "1", "odds": 3.20, "form": "forma testowa"
+        })
+        api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
+        form.assert_called_once_with("Test League", "Team A", "Team B", 1790000000, "1")
 
-    @patch("Main.superbet_api")
-    def test_reads_away_win_from_team_label(self, api):
-        api.return_value=event_payload("Wynik meczu", [
+    def test_reads_away_win_from_team_label(self):
+        result, _, _ = self.check_market("Wynik meczu", [
             odd("Remis", 3.10), odd("Goście", 2.40)
         ])
-        self.assertEqual(Main.winner_market_selection(123, "Team A", "Team B"),
-                         {"selection": "2", "odds": 2.40})
+        self.assertEqual(result, {
+            "selection": "2", "odds": 2.40, "form": "forma testowa"
+        })
 
     @patch("Main.superbet_api")
     def test_rejects_half_time_and_double_chance_markets(self, api):
         for market in ("1. połowa - wynik meczu", "Podwójna szansa 1X"):
-            api.return_value=event_payload(market, [odd("1", 2.20)])
+            api.return_value = event_payload(market, [odd("1", 2.20)])
             with self.subTest(market=market):
-                self.assertIsNone(Main.winner_market_selection(123, "Team A", "Team B"))
+                self.assertIsNone(Main.winner_market_selection(
+                    123, "Team A", "Team B", "Test League", 1790000000
+                ))
 
     @patch("Main.superbet_api")
     def test_rejects_inactive_hidden_and_live_selections(self, api):
@@ -58,16 +72,27 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
             event_payload("Wynik meczu", [odd("1", 2.20)], market_status=0),
         ]
         for payload in cases:
-            api.return_value=payload
+            api.return_value = payload
             with self.subTest(payload=payload):
-                self.assertIsNone(Main.winner_market_selection(123, "Team A", "Team B"))
+                self.assertIsNone(Main.winner_market_selection(
+                    123, "Team A", "Team B", "Test League", 1790000000
+                ))
+
+    @patch("Main.superbet_api")
+    @patch("Main.winner_form_passes", return_value=(False, "za słaba forma"))
+    def test_rejects_selection_when_team_form_does_not_pass(self, form, api):
+        api.return_value = event_payload("Wynik meczu", [odd("1", 2.20)])
+        self.assertIsNone(Main.winner_market_selection(
+            123, "Team A", "Team B", "Test League", 1790000000
+        ))
+        form.assert_called_once()
 
     def test_four_leg_coupon_total_must_be_20_to_50(self):
         candidates = [
             {"event_id": i, "odds": 2.2, "start_ts": i, "priority": 1}
             for i in range(4)
         ]
-        result=Main.choose_four_leg_coupon(candidates)
+        result = Main.choose_four_leg_coupon(candidates)
         self.assertIsNotNone(result)
         self.assertGreaterEqual(result[1], 20.0)
         self.assertLessEqual(result[1], 50.0)
