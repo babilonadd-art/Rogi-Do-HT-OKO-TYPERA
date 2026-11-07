@@ -75,7 +75,27 @@ def normalized_team(name):
     value=unicodedata.normalize("NFKD",str(name or "")).encode("ascii","ignore").decode().lower()
     tokens=re.findall(r"[a-z0-9]+",value)
     tokens=[t for t in tokens if t not in {"fc","cf","sc","afc","club","the"}]
-    return "".join(tokens)
+    compact="".join(tokens)
+    # Common provider spellings and short names; canonical forms prevent false
+    # "no history" results for the same club (e.g. Man City / Manchester City).
+    aliases={
+        "manchestercity":"mancity","mancity":"mancity",
+        "manchesterunited":"manutd","manutd":"manutd",
+        "nottinghamforest":"nottinghamforest","nottmforest":"nottinghamforest",
+        "tottenhamhotspur":"spurs","tottenham":"spurs","spurs":"spurs",
+        "parissaintgermain":"psg","psg":"psg",
+        "istanbulbasaksehir":"basaksehir","basaksehir":"basaksehir",
+        "wolverhamptonwanderers":"wolves","wolves":"wolves",
+        "westhamunited":"westham","westham":"westham",
+        "newcastleunited":"newcastle","newcastle":"newcastle",
+        "atleticodemadrid":"atleticomadrid","atleticomadrid":"atleticomadrid",
+        "borussiadortmund":"dortmund","dortmund":"dortmund",
+        "bayernmunich":"bayernmunchen","bayernmunchen":"bayernmunchen",
+        "internazionale":"inter","intermilan":"inter","inter":"inter",
+        "realbetisbalompie":"realbetis","realbetis":"realbetis",
+        "athleticbilbao":"athleticclub","athleticclub":"athleticclub",
+    }
+    return aliases.get(compact,compact)
 
 def team_similarity(a,b):
     x=normalized_team(a); y=normalized_team(b)
@@ -320,7 +340,7 @@ def matchday_folder(league):
 def load_matchday_results(league):
     folder=matchday_folder(league)
     if not folder:
-        logging.info("Open Matchday: brak splitów rożnych HT dla ligi %s",league)
+        logging.info("Open Matchday: brak mapowania ligi z wynikami dla %s",league)
         return None
     if folder in _matchday_cache:
         return _matchday_cache[folder]
