@@ -87,6 +87,46 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
         ))
         form.assert_called_once()
 
+    def test_matchday_form_reads_recent_full_time_results(self):
+        rows = [
+            {"date": "2026-10-05", "home": "Team A", "away": "Other 1", "ft_home": "2", "ft_away": "0"},
+            {"date": "2026-10-04", "home": "Team A", "away": "Other 2", "ft_home": "1", "ft_away": "0"},
+            {"date": "2026-10-03", "home": "Other 3", "away": "Team A", "ft_home": "0", "ft_away": "1"},
+            {"date": "2026-10-02", "home": "Team A", "away": "Other 4", "ft_home": "1", "ft_away": "1"},
+            {"date": "2026-10-01", "home": "Team A", "away": "Other 5", "ft_home": "0", "ft_away": "2"},
+        ]
+        with patch("Main.load_matchday_results", return_value=rows):
+            form, detail = Main.matchday_recent_form(
+                "Polska Ekstraklasa", "Team A", 1790000000
+            )
+        self.assertEqual(form, {"wins": 3, "draws": 1, "losses": 1})
+        self.assertIn("Open Matchday", detail)
+
+    def test_winner_form_uses_open_matchday_for_broader_leagues(self):
+        rows = []
+        for day, score in zip(
+            ["2026-10-05", "2026-10-04", "2026-10-03", "2026-10-02", "2026-10-01"],
+            [(2, 0), (1, 0), (0, 1), (1, 1), (0, 2)],
+        ):
+            rows.append({
+                "date": day, "home": "Team A", "away": "Other " + day,
+                "ft_home": str(score[0]), "ft_away": str(score[1]),
+            })
+        for day, score in zip(
+            ["2026-10-05", "2026-10-04", "2026-10-03", "2026-10-02", "2026-10-01"],
+            [(1, 0), (0, 1), (0, 2), (2, 0), (0, 1)],
+        ):
+            rows.append({
+                "date": day, "home": "Team B", "away": "Other B " + day,
+                "ft_home": str(score[0]), "ft_away": str(score[1]),
+            })
+        with patch("Main.load_matchday_results", return_value=rows):
+            passed, detail = Main.winner_form_passes(
+                "Polska Ekstraklasa", "Team A", "Team B", 1790000000, "1"
+            )
+        self.assertTrue(passed, detail)
+        self.assertIn("Open Matchday", detail)
+
     def test_four_leg_coupon_total_must_be_5_to_10(self):
         # 1.70 x 1.70 x 1.70 x 1.70 = 8.35, inside the configured range.
         candidates = [
