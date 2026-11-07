@@ -811,16 +811,6 @@ def main():
             logging.error("Nie udało się wysłać typu HT do Telegrama dla event %s",event_id)
         time.sleep(.3)
 
-    if sent==0:
-        send("🤖 ROGI DO HT — RAPORT SKANU\\n\\n"
-             f"📅 {local:%d.%m.%Y}\\n"
-             f"🔎 Mecze w ofercie Superbet: {len(sb_events)}\\n"
-             f"📚 Mecze z historią spełniającą filtr: {len(pre_candidates)}\\n"
-             f"🎯 Szczegółowo sprawdzono maksymalnie: {len(shortlist)} (TOP {SHORTLIST_SIZE})\\n"
-             f"💹 Rynki Over {HT_CORNERS_LINE:.1f} HT z właściwym kursem: {len(available)}\\n"
-             f"⚠️ Brak/za mała historia: {history_unavailable}\\n"
-             f"📉 Odrzucone przez filtr jakości: {history_rejected}\\n"
-             "ℹ️ Bot nie wysyła typu bez potwierdzonego rynku i historii.")
     logging.info("Skan HT zakończony — wysłano %s typów",sent)
     c.close()
 
