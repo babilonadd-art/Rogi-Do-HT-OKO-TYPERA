@@ -23,8 +23,8 @@ MIN_TEAM_AVG=2.2
 MIN_COMBINED_AVG=5.5
 MIN_HIT_RATE=0.60
 HT_CORNERS_LINE=4.5
-MIN_ODDS=1.90
-MAX_ODDS=3.50
+MIN_ODDS=1.60
+MAX_ODDS=2.50
 SB_TOURNAMENT_NAMES=None
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
@@ -845,7 +845,7 @@ def main():
             except Exception:
                 logging.exception("Błąd sprawdzania rynku HT jednego z TOP shortlist")
     available.sort(key=lambda x:(-x[0],x[1]))
-    logging.info("TOP %d: po sprawdzeniu Superbet pozostało %d meczów z aktywnym Over 4.5 HT w kursie 1.90–3.50",len(shortlist),len(available))
+    logging.info("TOP %d: po sprawdzeniu Superbet pozostało %d meczów z aktywnym Over 4.5 HT w kursie 1.60–2.50",len(shortlist),len(available))
     sent=0
     for score,st,event_id,home,away,price,league,detail,listed in available:
         if count>=MAX_DAILY:
