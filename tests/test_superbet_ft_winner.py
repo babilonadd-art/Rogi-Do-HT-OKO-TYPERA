@@ -28,10 +28,10 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
     @patch("Main.superbet_api")
     def test_reads_home_win_from_active_full_time_1x2_market(self, api):
         api.return_value=event_payload("Wynik meczu 1X2", [
-            odd("1", 2.25), odd("X", 3.10), odd("2", 3.20)
+            odd("1", 3.20), odd("X", 3.10), odd("2", 2.25)
         ])
         self.assertEqual(Main.winner_market_selection(123, "Team A", "Team B"),
-                         {"selection": "1", "odds": 2.25})
+                         {"selection": "1", "odds": 3.20})
 
     @patch("Main.superbet_api")
     def test_reads_away_win_from_team_label(self, api):
