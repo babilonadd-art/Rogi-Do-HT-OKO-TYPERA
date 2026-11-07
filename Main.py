@@ -989,14 +989,10 @@ def main():
             if not market:
                 continue
             priority,kickoff,eid,home,away,league=item
-            link=sofascore_match_url(home,away,kickoff)
-            if not link:
-                logging.info("Pominięto %s - %s: brak dokładnego linku",home,away)
-                continue
             available.append({
                 "priority":priority,"start_ts":kickoff,"event_id":eid,"home":home,
                 "away":away,"league":league,"selection":market["selection"],
-                "odds":market["odds"],"url":link
+                "odds":market["odds"]
             })
     coupon=choose_four_leg_coupon(available)
     if not coupon:
@@ -1004,6 +1000,14 @@ def main():
         c.close()
         return
     legs,total_odds=coupon
+    # Linki pobieramy dopiero dla wybranej czwórki, nie dla całej shortlisty.
+    for leg in legs:
+        link=sofascore_match_url(leg["home"],leg["away"],leg["start_ts"])
+        if not link:
+            logging.info("Kupon anulowany — brak dokładnego linku dla %s - %s",leg["home"],leg["away"])
+            c.close()
+            return
+        leg["url"]=link
 
     # Ostatnia kontrola rynku tuż przed publikacją; bez meczu live i bez zmiany typu.
     refreshed=[]
