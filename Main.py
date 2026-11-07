@@ -1,25 +1,28 @@
-import os, time, sqlite3, logging, re, unicodedata, csv, io, json
+import os, time, sqlite3, logging, re, unicodedata, csv, io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 API="https://www.sofascore.com/api/v1"
 API_FALLBACK="https://www.sofascore.com/api/v1"
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
 DB="okotypera_rogi.db"
-SENT_IDS_FILE="sent_event_ids.json"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
-TAX_RATE=0.12
-FT_CORNERS_LINE=9.5
-MIN_ODDS=1.70
-MAX_ODDS=2.50
-SB_TOURNAMENT_NAMES = None
+MAX_DAILY=2
+SHORTLIST_SIZE=30
+HISTORY=8
+MIN_SAMPLE=5
+MIN_TEAM_AVG=2.2
+MIN_COMBINED_AVG=5.5
+MIN_HIT_RATE=0.60
+HT_CORNERS_LINE=4.5
+MIN_ODDS=1.90
+MAX_ODDS=3.50
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({
@@ -56,7 +59,7 @@ def api(path):
 
 def superbet_api(path,params=None):
     try:
-        r=sb.get(SUPERBET_API+path,params=params,timeout=20)
+        r=sb.get(SUPERBET_API+path,params=params,timeout=45)
         if r.status_code in (403,404,429):
             logging.warning("Superbet HTTP %s %s",r.status_code,path); return {}
         r.raise_for_status()
@@ -104,78 +107,27 @@ def team_similarity(a,b):
     if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
     return SequenceMatcher(None,x,y).ratio()
 
-def superbet_tournament_names():
-    """Load Superbet's official Polish tournament-name map once per run."""
-    global SB_TOURNAMENT_NAMES
-    if SB_TOURNAMENT_NAMES is not None:
-        return SB_TOURNAMENT_NAMES
-    SB_TOURNAMENT_NAMES={}
-    payload=superbet_api("/v2/pl-PL/struct")
-    data=payload.get("data") or {}
-    for item in data.get("tournaments",[]) or []:
-        if not isinstance(item,dict):
-            continue
-        tournament_id=str(item.get("id","")).strip()
-        names=item.get("localNames") or {}
-        name=names.get("pl-PL") or names.get("en-GB") or names.get("en")
-        if tournament_id and isinstance(name,str) and name.strip():
-            SB_TOURNAMENT_NAMES[tournament_id]=name.strip()
-    logging.info("Superbet: załadowano %d nazw turniejów",len(SB_TOURNAMENT_NAMES))
-    return SB_TOURNAMENT_NAMES
-
 def extract_league_name(event):
-    """Resolve full competition name from Superbet's own event and structure data."""
-    if not isinstance(event,dict):
-        return ""
+    """Resolve the competition name from Superbet's event/fixture metadata."""
     fixture=event.get("fixture") or {}
     containers=[fixture,event]
-    # Superbet payloads use both snake_case and camelCase names, and nest
-    # competition details under category/tournament/competition objects.
-    keys=("tournament","league","competition","championship","category",
-          "sport_category","sportCategory","tournament_info","tournamentInfo")
-    seen=set()
-    while containers:
-        parent=containers.pop(0)
-        if not isinstance(parent,dict) or id(parent) in seen:
-            continue
-        seen.add(id(parent))
-        for key in keys:
+    for parent in list(containers):
+        for key in ("tournament","league","competition","championship"):
             value=parent.get(key)
             if isinstance(value,dict):
                 containers.append(value)
-        for key in ("tournament_name","tournamentName","league_name","leagueName",
-                    "competition_name","competitionName","championship_name",
-                    "championshipName","displayName","display_name","name","title","label"):
+    for parent in containers:
+        for key in ("tournament_name","league_name","competition_name","championship_name"):
             value=parent.get(key)
             if isinstance(value,str) and value.strip():
-                # Do not mistake a fixture/event title for a competition name.
-                if key in ("name","title","label") and parent is fixture:
-                    continue
                 return value.strip()
-    tournament_id=fixture.get("tournament_id") or fixture.get("tournamentId")
-    if tournament_id:
-        name=superbet_tournament_names().get(str(tournament_id))
-        if name:
-            return name
-    return ""
-
-def resolve_full_league(event,home,away,start_ts):
-    """Use Superbet competition metadata first, SofaScore only if absent."""
-    league=extract_league_name(event)
-    if league and league!="Liga niepodana przez Superbet":
-        return league
-    match=sofascore_event_for_pick(home,away,start_ts)
-    if match:
-        unique=match.get("uniqueTournament") or {}
-        tournament=match.get("tournament") or {}
-        category=match.get("category") or {}
-        name=unique.get("name") or tournament.get("name")
-        country=category.get("name")
-        if name and country and country.lower() not in name.lower():
-            return f"{name} — {country}"
-        if name:
-            return name
-    return ""
+        for key in ("tournament","league","competition","championship"):
+            value=parent.get(key)
+            if isinstance(value,dict):
+                name=value.get("name") or value.get("title") or value.get("label")
+                if isinstance(name,str) and name.strip():
+                    return name.strip()
+    return "Liga niepodana przez Superbet"
 
 def superbet_event_for_match(home,away,start_ts,events):
     best=None
@@ -201,50 +153,25 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_prematch_event_url(event,home,away,event_id):
-    """Build a pre-match Superbet event URL opened on the corners market."""
-    fixture=(event or {}).get("fixture") or {}
-    url=None
-    for key in ("url","event_url","eventUrl","slug","seo_url","seoUrl"):
-        value=fixture.get(key) or (event or {}).get(key)
-        if isinstance(value,str) and value.strip():
-            value=value.strip()
-            if value.startswith(("https://","http://")):
-                url=value
-                break
-            if value.startswith("/"):
-                url="https://superbet.pl"+value
-                break
-    if not url:
-        def slug_part(value):
-            value=unicodedata.normalize("NFKD",str(value or "")).encode("ascii","ignore").decode().lower()
-            return re.sub(r"-+","-",re.sub(r"[^a-z0-9]+","-",value)).strip("-")
-        slug=slug_part(home)+"-vs-"+slug_part(away)+"-"+str(int(event_id))
-        url="https://superbet.pl/kursy/pilka-nozna/"+slug
-    parts=urlsplit(url)
-    query=dict(parse_qsl(parts.query,keep_blank_values=True))
-    query["marketGroup"]="111"
-    return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
-
-def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
-    """Return (price, detailed Superbet event) for a pre-match FT corners offer."""
+def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
+    """Fetch and validate the actual Superbet PL pre-match total HT-corners price."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
-        return (None,None)
+        return None
     event=events[0]
     fixture=event.get("fixture",{})
+    # Superbet marks the pre-match offer state as 1; reject started/in-play events.
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1"):
-        return (None,event)
+        return None
     inplay=(event.get("inplay_stats_metadata") or {}).get("status")
     if inplay not in (None,"","NOT_STARTED"):
-        return (None,event)
+        return None
     for market in event.get("markets",[]):
         market_name=re.sub(r"\s+"," ",str(market.get("name","")).strip().lower())
-        if any(term in market_name for term in ("połowa","1h","2h","drużyn")):
-            continue
-        if not re.fullmatch(r"(?:cały mecz\s*-\s*)?liczba rzutów rożnych(?:\s*-\s*cały mecz)?",market_name):
+        # This is the match total market, not either team's individual corner total.
+        if not re.fullmatch(r"1\.?\s*połowa\s*-\s*liczba rzutów rożnych",market_name):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -271,18 +198,103 @@ def superbet_ft_event_data(event_id,line=FT_CORNERS_LINE):
             if not MIN_ODDS <= price <= MAX_ODDS:
                 logging.info("Odrzucono kurs poza zakresem %.2f–%.2f: %.2f (event %s)",MIN_ODDS,MAX_ODDS,price,event_id)
                 continue
-            return (price,event)
-    return (None,event)
-
-def superbet_ft_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Compatibility wrapper returning only the pre-match FT Over 9.5 price."""
-    price,_event=superbet_ft_event_data(event_id,line)
-    return price
+            return price
+    return None
 
 
 # Open Matchday: darmowe, dzienne CSV z historią rożnych 1. połowy.
 # Splity HT są dostępne tylko dla 10 wskazanych lig; bez próbki bot nie typuje.
-# Open Matchday history is not used for FT tip selection.
+MATCHDAY_BASE="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/data"
+MATCHDAY_SEASON="2627"
+MATCHDAY_LEAGUES={
+    "premierleague":"ENG_1_premier-league",
+    "laliga":"ESP_1_la-liga",
+    "bundesliga":"GER_1_bundesliga",
+    "seriea":"ITA_1_serie-a",
+    "ligue1":"FRA_1_ligue-1",
+    "eredivisie":"NED_1_eredivisie",
+    "primeiraliga":"POR_1_primeira-liga",
+    "belgianproleague":"BEL_1_pro-league",
+    "jupilerproleague":"BEL_1_pro-league",
+    "superlig":"TUR_1_super-lig",
+    "superleaguegreece":"GRE_1_super-league",
+    "superleague1":"GRE_1_super-league",
+}
+_matchday_cache={}
+_matchday_history_cache={}
+
+def matchday_folder(league):
+    key=normalized_team(league)
+    for alias,folder in MATCHDAY_LEAGUES.items():
+        if key==alias or alias in key:
+            return folder
+    return None
+
+def load_matchday_results(league):
+    folder=matchday_folder(league)
+    if not folder:
+        logging.info("Open Matchday: brak splitów rożnych HT dla ligi %s",league)
+        return None
+    if folder in _matchday_cache:
+        return _matchday_cache[folder]
+    url=f"{MATCHDAY_BASE}/{folder}/results_{MATCHDAY_SEASON}.csv"
+    try:
+        response=requests.get(url,headers={"User-Agent":"OkoTypera/1.0","Accept":"text/csv"},timeout=25)
+        response.raise_for_status()
+        rows=list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
+        _matchday_cache[folder]=rows
+        logging.info("Open Matchday: pobrano %s historycznych meczów dla %s",len(rows),league)
+        return rows
+    except Exception as exc:
+        logging.warning("Open Matchday: nie udało się pobrać historii %s: %s",league,exc)
+        return None
+
+def recent_team_ht_corner_history(team,rows,fixture_date):
+    cache_key=(id(rows),normalized_team(team),fixture_date)
+    if cache_key in _matchday_history_cache:
+        return _matchday_history_cache[cache_key]
+    matched=[]
+    for row in rows:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            home_c=int(row["home_corners_1h"])
+            away_c=int(row["away_corners_1h"])
+        except (KeyError,TypeError,ValueError):
+            continue
+        hsim=team_similarity(team,row.get("home",""))
+        assim=team_similarity(team,row.get("away",""))
+        if hsim>=0.82 and hsim>assim+0.04:
+            matched.append((match_date,home_c,away_c,home_c+away_c))
+        elif assim>=0.82 and assim>hsim+0.04:
+            matched.append((match_date,away_c,home_c,home_c+away_c))
+    matched.sort(key=lambda item:item[0],reverse=True)
+    result=matched[:HISTORY]
+    _matchday_history_cache[cache_key]=result
+    return result
+
+def evaluate_matchday_quality(league,home,away,start_ts):
+    rows=load_matchday_results(league)
+    if rows is None:
+        return None,"brak danych Open Matchday dla ligi"
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    home_history=recent_team_ht_corner_history(home,rows,fixture_date)
+    away_history=recent_team_ht_corner_history(away,rows,fixture_date)
+    if len(home_history)<MIN_SAMPLE or len(away_history)<MIN_SAMPLE:
+        return None,(f"za mała próba: {home} {len(home_history)}/{HISTORY}, "
+                     f"{away} {len(away_history)}/{HISTORY}")
+    home_avg=sum(x[1] for x in home_history)/len(home_history)
+    away_avg=sum(x[1] for x in away_history)/len(away_history)
+    combined=[x[3] for x in home_history]+[x[3] for x in away_history]
+    combined_avg=sum(combined)/len(combined)
+    hit_rate=sum(1 for total in combined if total>HT_CORNERS_LINE)/len(combined)
+    passed=(home_avg>=MIN_TEAM_AVG and away_avg>=MIN_TEAM_AVG
+            and combined_avg>=MIN_COMBINED_AVG and hit_rate>=MIN_HIT_RATE)
+    detail=(f"próba {len(home_history)}+{len(away_history)}, "
+            f"średnie rożne HT drużyn {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, over 4.5 w {hit_rate*100:.0f}%")
+    return passed,detail
 
 def send(msg):
     if not TOKEN or not CHAT:
@@ -293,34 +305,22 @@ def send(msg):
         return r.ok
     except Exception as e: logging.error("Telegram: %s",e); return False
 
-def load_sent_event_ids():
-    try:
-        with open(SENT_IDS_FILE,"r",encoding="utf-8") as handle:
-            values=json.load(handle)
-        return {int(value) for value in values}
-    except (FileNotFoundError,ValueError,TypeError):
-        return set()
-
-def save_sent_event_ids(event_ids):
-    with open(SENT_IDS_FILE,"w",encoding="utf-8") as handle:
-        json.dump(sorted({int(value) for value in event_ids}),handle,ensure_ascii=False)
-
 def db_open():
     c=sqlite3.connect(DB)
     c.execute("""CREATE TABLE IF NOT EXISTS picks(event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,sent_at TEXT,status TEXT DEFAULT 'PENDING',ht_corners INTEGER,settled_at TEXT)""")
     columns={row[1] for row in c.execute("PRAGMA table_info(picks)").fetchall()}
     if "odds" not in columns:
         c.execute("ALTER TABLE picks ADD COLUMN odds REAL")
-    if "market_type" not in columns:
-        c.execute("ALTER TABLE picks ADD COLUMN market_type TEXT NOT NULL DEFAULT 'HT'")
-    if "ft_corners" not in columns:
-        c.execute("ALTER TABLE picks ADD COLUMN ft_corners INTEGER")
     if "league_corrected_at" not in columns:
         c.execute("ALTER TABLE picks ADD COLUMN league_corrected_at TEXT")
     c.execute("""CREATE TABLE IF NOT EXISTS monthly_reports(month TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
     c.execute("UPDATE picks SET odds=1.92 WHERE event_id=15562733 AND odds IS NULL")
     c.execute("UPDATE picks SET odds=1.97 WHERE event_id=14572637 AND odds IS NULL")
-    c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE status='PENDING' AND market_type='HT'",
+    if "market_type" not in columns:
+        c.execute("ALTER TABLE picks ADD COLUMN market_type TEXT NOT NULL DEFAULT 'HT'")
+    if "ft_corners" not in columns:
+        c.execute("ALTER TABLE picks ADD COLUMN ft_corners INTEGER")
+    c.execute("UPDATE picks SET status='VOID',settled_at=? WHERE status='PENDING' AND market_type='FT'",
               (datetime.now(TZ).isoformat(),))
     c.commit()
     return c
@@ -340,15 +340,12 @@ def resend_tips_with_corrected_league(c,events):
         if league==old_league or old_league not in ("Superbet — liga","Liga niepodana przez Superbet","liga"):
             continue
         kickoff=datetime.fromtimestamp(start_ts,timezone.utc).astimezone(TZ)
-        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\n\n"
-             f"🏆 {league}\n⚽ {home} – {away}\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n\n"
-             f"📌 Typ: Over {FT_CORNERS_LINE:.1f} rzutów rożnych FT\n"
-             f"💹 Kurs Superbet: {float(odds):.2f}\n"
-             f"💰 Stawka: {STAKE} zł\n"
-             f"💸 Podatek 12%: {STAKE*TAX_RATE:.2f} zł\n"
-             f"💵 Możliwa wypłata po podatku: {STAKE*(1-TAX_RATE)*float(odds):.2f} zł\n"
-             f"📈 Możliwy zysk: {STAKE*(1-TAX_RATE)*float(odds)-STAKE:.2f} zł")
+        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\\n\\n"
+             f"🏆 {league}\\n⚽ {home} – {away}\\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
+             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\\n"
+             f"💹 Kurs Superbet: {float(odds):.2f}\\n"
+             f"💰 Stawka: {STAKE} zł")
         if send(msg):
             c.execute("UPDATE picks SET league=?,league_corrected_at=? WHERE event_id=?",
                       (league,datetime.now(TZ).isoformat(),eid))
@@ -391,31 +388,50 @@ def _corner_pair_from_object(obj):
     except (TypeError,ValueError):
         return None
 
-def superbet_ft_corners(event):
-    """Read full-match corner statistics, excluding explicitly half-specific totals."""
-    roots=[(k,event[k]) for k in ("inplay_stats","statistics","stats","event_stats","live_statistics") if event.get(k) is not None]
+def superbet_ht_corners(event):
+    """Return only an explicitly identified first-half corner score; never use match totals."""
+    roots=[]
+    for key in ("inplay_stats","statistics","stats","event_stats","live_statistics"):
+        value=event.get(key)
+        if value is not None:
+            roots.append((key,value))
     found=[]
-    def walk(node,path=()):
+    period_terms=("1h","1st","first half","first_half","first-half","period 1","period_1","half 1","1 poł","pierwsza poł","1. poł")
+    def is_first_half(label):
+        label=label.lower()
+        return any(term in label for term in period_terms)
+    def walk(node,path=(),period_hint=""):
         if isinstance(node,dict):
-            label=" ".join(path+(str(node.get("period","")),str(node.get("period_name","")),str(node.get("period_label","")),str(node.get("half","")),str(node.get("name","")),str(node.get("label","")),str(node.get("type","")),str(node.get("key","")))).lower()
-            if any(x in label for x in ("first half","1st half","1h","first_half","first-half","second half","2nd half","2h","second_half","second-half","1 poł","2 poł","pierwsza poł","druga poł","period 1","period 2","half 1","half 2")): return
+            period=str(node.get("period") or node.get("period_name") or node.get("period_label") or node.get("half") or period_hint).lower()
+            here=" ".join(path+(period,str(node.get("name","")),str(node.get("label",""))))
             pair=_corner_pair_from_object(node)
-            if pair is not None: found.append((pair,label))
+            if pair is not None and is_first_half(here):
+                found.append((pair,here))
             keys={str(k).lower():v for k,v in node.items()}
-            hk=next((k for k in keys if ("corner" in k or "roż" in k) and ("home" in k or "host" in k)),None)
-            ak=next((k for k in keys if ("corner" in k or "roż" in k) and ("away" in k or "guest" in k)),None)
-            if hk and ak:
-                try: found.append(((int(float(keys[hk])),int(float(keys[ak]))),label+" "+hk+" "+ak))
-                except (TypeError,ValueError): pass
-            for key,value in node.items(): walk(value,path+(str(key).lower(),))
+            home_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("home" in k or "host" in k)),None)
+            away_key=next((k for k in keys if ("corner" in k or "roż" in k) and ("away" in k or "guest" in k)),None)
+            if home_key and away_key:
+                try:
+                    pair=(int(float(keys[home_key])),int(float(keys[away_key])))
+                    label=" ".join(path+(period,home_key,away_key))
+                    if is_first_half(label):
+                        found.append((pair,label))
+                except (TypeError,ValueError):
+                    pass
+            # Handle arrays of named stats and nested home/away value objects.
+            for key,value in node.items():
+                walk(value,path+(str(key).lower(),),period)
         elif isinstance(node,list):
-            for item in node: walk(item,path)
-    for name,root in roots: walk(root,(name,))
+            for item in node:
+                walk(item,path,period_hint)
+    for root_name,root in roots:
+        walk(root,(root_name,))
     if found:
-        pair,label=max(found,key=lambda x:len(x[1]))
-        logging.info("Superbet: rożne FT %s:%s (%s)",pair[0],pair[1],label[:150])
-        return pair
-    logging.info("Superbet: brak jawnych statystyk rożnych FT")
+        # If duplicate representations exist, use the most deeply labelled first-half record.
+        pair,label=max(found,key=lambda item:len(item[1]))
+        logging.info("Superbet: odczytano rożne HT %s:%s (%s)",pair[0],pair[1],label[:160])
+        return pair[0],pair[1],True
+    logging.info("Superbet: nie znaleziono jawnych statystyk rożnych pierwszej połowy; dostępne pola=%s",[k for k in event if "stat" in k.lower()])
     return None
 
 def superbet_event_phase(event):
@@ -466,55 +482,81 @@ def sofascore_event_for_pick(home,away,start_ts):
                 best=(score,item)
     return best[1] if best else None
 
-def sofascore_ft_corners(home,away,start_ts):
-    """Read SofaScore ALL/full-match corner statistics."""
+def sofascore_ht_corners(home,away,start_ts):
     event=sofascore_event_for_pick(home,away,start_ts)
-    if not event: return None,None,None
-    payload=api(f"/event/{event.get('id')}/statistics")
+    if not event:
+        logging.warning("SofaScore: nie znaleziono meczu %s - %s do rozliczenia",home,away)
+        return None,None
+    event_id=event.get("id")
+    payload=api(f"/event/{event_id}/statistics")
     stats=payload.get("statistics") or []
-    if isinstance(stats,dict): stats=[stats]
+    if isinstance(stats,dict):
+        stats=[stats]
     for period in stats:
-        pname=str(period.get("period","")).lower().replace("_","").replace(" ","")
-        if pname not in ("all","ft","fulltime","match","total"): continue
+        period_name=str(period.get("period","")).lower().replace("_","")
+        if period_name not in ("1h","1st","first","firsthalf","first_half","1sthalf"):
+            continue
         for group in period.get("groups",[]):
             for item in group.get("statisticsItems",[]):
                 name=str(item.get("name","")).lower()
-                if "corner" not in name and "roż" not in name: continue
-                try: return int(float(item.get("home"))),int(float(item.get("away"))),event
-                except (TypeError,ValueError): continue
-    return None,None,event
+                if "corner" not in name and "roż" not in name:
+                    continue
+                try:
+                    h=int(float(item.get("home")))
+                    a=int(float(item.get("away")))
+                    logging.info("SofaScore: rożne HT %s:%s dla %s - %s",h,a,home,away)
+                    return h,a
+                except (TypeError,ValueError):
+                    continue
+    logging.warning("SofaScore: brak statystyk rożnych HT dla %s - %s (event %s)",home,away,event_id)
+    return None,None
 
 def settle(c,now):
-    """Settle FT Over 9.5 at 10 corners immediately, otherwise at full time."""
-    rows=c.execute("SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING' AND market_type='FT'").fetchall()
+    # Prefer Superbet live stats; fall back to SofaScore fixture/statistics when Superbet omits HT data.
+    rows=c.execute("SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING' AND market_type='HT'").fetchall()
     for eid,league,home,away,start_ts in rows:
         event=superbet_live_event(eid)
         phase=superbet_event_phase(event) if event else "UNKNOWN"
-        stats=superbet_ft_corners(event) if event else None
-        ss_event=None
+        stats=superbet_ht_corners(event) if event else None
         if stats is not None:
-            home_corners,away_corners=stats
+            home_corners,away_corners,_=stats
         else:
-            h,a,ss_event=sofascore_ft_corners(home,away,start_ts)
-            if h is None or a is None:
-                logging.info("Brak wiarygodnych statystyk FT dla %s — pozostaje PENDING",eid)
+            sh,sa=sofascore_ht_corners(home,away,start_ts)
+            if sh is None or sa is None:
+                logging.info("Brak wiarygodnych statystyk HT dla %s — pozostaje PENDING",eid)
                 continue
-            home_corners,away_corners=h,a
-        total=home_corners+away_corners
-        if total<10:
-            status=(ss_event or {}).get("status") or {}
-            desc=str(status.get("description","")).lower()
-            finished=(phase=="FINISHED" or str(status.get("type","")).lower()=="finished" or any(x in desc for x in ("finished","ended","full time")))
-            if not finished: continue
-        won=total>=10
-        msg=(f"📊 ROZLICZENIE — ROGI FT\n\n🏆 {league}\n⚽ {home} – {away}\n"
-             f"🚩 Rożne w całym meczu: {total}\n🎯 Over 9.5 FT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n"
+            home_corners,away_corners=sh,sa
+            # SofaScore's first-half statistics are only final once the first half has ended.
+            if event and phase=="FIRST_HALF":
+                n_live=home_corners+away_corners
+                if n_live<5:
+                    continue
+            elif not event:
+                # Historical/finished SofaScore fixture: use only when the fixture has ended or is at half-time/later.
+                ss_event=sofascore_event_for_pick(home,away,start_ts)
+                ss_status=(ss_event or {}).get("status") or {}
+                status=str(ss_status.get("type","")).lower()
+                description=str(ss_status.get("description","")).lower()
+                second_half_or_later=any(term in description for term in ("2nd half","second half","halftime","half time","finished","ended","full time"))
+                if status!="finished" and not (status=="inprogress" and second_half_or_later):
+                    logging.info("SofaScore: mecz %s nie zakończył HT (status=%s, opis=%s) — bez rozliczenia",eid,status,description)
+                    continue
+        n=home_corners+away_corners
+        if phase=="FIRST_HALF" and n<5:
+            continue
+        if phase not in ("FIRST_HALF","HALFTIME","SECOND_HALF","FINISHED","UNKNOWN"):
+            continue
+        won=n>=5
+        msg=(f"📊 ROZLICZENIE — ROGI DO HT\n\n🏆 {league}\n⚽ {home} – {away}\n"
+             f"🚩 Rożne do przerwy: {n}\n🎯 Over 4.5 HT: {'🟢 WYGRANY' if won else '🔴 PRZEGRANY'}\n"
              f"💰 Stawka: {STAKE} zł")
-        c.execute("UPDATE picks SET status=?,ft_corners=?,settled_at=? WHERE event_id=?",
-                  ("WON" if won else "LOST",total,datetime.now(TZ).isoformat(),eid))
+        c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",
+                  ("WON" if won else "LOST",n,datetime.now(TZ).isoformat(),eid))
         c.commit()
-        if not send(msg): logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
-        else: logging.info("Rozliczono typ FT event %s: %s rożnych — %s",eid,total,"WON" if won else "LOST")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia Telegram dla event %s",eid)
+        else:
+            logging.info("Rozliczono typ Superbet event %s: %s rożnych HT — %s",eid,n,"WON" if won else "LOST")
         time.sleep(.2)
 
 def watch_pending_picks(c,duration_seconds=270,interval_seconds=5):
@@ -548,17 +590,17 @@ def send_monthly_reports(c,local):
         profit=sum(STAKE*(odds-1) if status=="WON" else -STAKE for status,odds in priced)
         yield_pct=(profit/turnover*100) if turnover else 0.0
         result="ZYSK" if profit>0 else ("STRATA" if profit<0 else "NA ZERO")
-        msg=(f"📅 MIESIĘCZNY BILANS — {month}\n\n"
-             f"📊 Rozliczone typy: {decided}\n"
-             f"🟢 Wygrane: {wins}\n🔴 Przegrane: {losses}\n"
-             f"⚪ Anulowane: {voids}\n"
-             f"🎯 Skuteczność: {accuracy:.1f}%\n"
-             f"📈 Yield: {yield_pct:+.2f}%\n"
-             f"💰 Stawka: {STAKE} zł / typ\n"
-             f"💵 Obrót z kursami: {turnover:.2f} zł\n"
+        msg=(f"📅 MIESIĘCZNY BILANS — {month}\\n\\n"
+             f"📊 Rozliczone typy: {decided}\\n"
+             f"🟢 Wygrane: {wins}\\n🔴 Przegrane: {losses}\\n"
+             f"⚪ Anulowane: {voids}\\n"
+             f"🎯 Skuteczność: {accuracy:.1f}%\\n"
+             f"📈 Yield: {yield_pct:+.2f}%\\n"
+             f"💰 Stawka: {STAKE} zł / typ\\n"
+             f"💵 Obrót z kursami: {turnover:.2f} zł\\n"
              f"🏦 Wynik: {profit:+.2f} zł ({result})")
         if missing:
-            msg+=f"\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
+            msg+=f"\\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
         if send(msg):
             c.execute("INSERT OR IGNORE INTO monthly_reports(month,sent_at) VALUES(?,?)",(month,local.isoformat()))
             c.commit()
@@ -566,17 +608,47 @@ def send_monthly_reports(c,local):
         else:
             logging.error("Nie udało się wysłać miesięcznego raportu %s",month)
 
+def matchday_candidate_profile(league,home,away,start_ts):
+    """Cheap prefilter based on Open Matchday history; no detailed Superbet event request."""
+    rows=load_matchday_results(league)
+    if rows is None:
+        return None,"brak danych Open Matchday dla ligi"
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    hh=recent_team_ht_corner_history(home,rows,fixture_date)
+    ah=recent_team_ht_corner_history(away,rows,fixture_date)
+    if len(hh)<MIN_SAMPLE or len(ah)<MIN_SAMPLE:
+        return None,f"za mała próba: {home} {len(hh)}/{HISTORY}, {away} {len(ah)}/{HISTORY}"
+    home_avg=sum(x[1] for x in hh)/len(hh)
+    away_avg=sum(x[1] for x in ah)/len(ah)
+    totals=[x[3] for x in hh]+[x[3] for x in ah]
+    combined_avg=sum(totals)/len(totals)
+    hit_rate=sum(1 for total in totals if total>HT_CORNERS_LINE)/len(totals)
+    passed=(home_avg>=MIN_TEAM_AVG and away_avg>=MIN_TEAM_AVG
+            and combined_avg>=MIN_COMBINED_AVG and hit_rate>=MIN_HIT_RATE)
+    detail=(f"próba {len(hh)}+{len(ah)}, średnie HT {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, over 4.5 w {hit_rate*100:.0f}%")
+    if not passed:
+        return None,detail
+    # Rank balanced, consistently high-corner teams above one-sided or thin samples.
+    score=(hit_rate*100)+(min(home_avg,away_avg)*4)+(combined_avg*2)+(min(len(hh),len(ah))*0.5)
+    return score,detail
+
+
 def main():
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
     now=datetime.now(timezone.utc)
-    ts=int(now.timestamp())
-    settle(c,ts)
+    settle(c,int(now.timestamp()))
     local=datetime.now(TZ)
     send_monthly_reports(c,local)
     key=local.date().isoformat()
+    count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=? AND market_type='HT'",(key,)).fetchone()[0]
+    if count>=MAX_DAILY:
+        logging.info("Dzienny limit HT osiągnięty: %s/%s",count,MAX_DAILY)
+        c.close()
+        return
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
     start=max(now,day_start.astimezone(timezone.utc))
@@ -586,22 +658,16 @@ def main():
         c.close()
         return
 
-    # Superbet is the source of fixtures and prices; don't discard niche leagues
-    # because a second provider has no matching fixture or historical statistics.
     sb_events=superbet_football_events(start,end)
-    # Load the official competition dictionary once before parallel event checks.
-    superbet_tournament_names()
     resend_tips_with_corrected_league(c,sb_events)
-    logging.info("Superbet: %d meczów piłkarskich przedmeczowych",len(sb_events))
-    # Skanuj kursy równolegle: sekwencyjne odpytanie każdego z setek meczów
-    # powodowało przekroczenie limitu czasu GitHub Actions.
     existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
-    existing_ids.update(load_sent_event_ids())
-    candidates=[]
+    pre_candidates=[]
+    history_unavailable=0
+    history_rejected=0
     for listed in sb_events:
         fx=listed.get("fixture",{})
         event_id=listed.get("event_id")
-        if not event_id:
+        if not event_id or int(event_id) in existing_ids:
             continue
         try:
             st=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
@@ -612,78 +678,74 @@ def main():
         parts=str(fx.get("event_name","")).split("·",1)
         if len(parts)!=2:
             continue
-        if int(event_id) in existing_ids:
-            continue
         home,away=(x.strip() for x in parts)
-        candidates.append((listed,int(event_id),st,home,away))
+        league=extract_league_name(listed)
+        score,detail=matchday_candidate_profile(league,home,away,st)
+        if score is None:
+            if "brak danych" in detail or "za mała próba" in detail:
+                history_unavailable+=1
+            else:
+                history_rejected+=1
+            continue
+        pre_candidates.append((score,st,int(event_id),home,away,league,detail,listed))
 
-    logging.info("Do sprawdzenia kursów Superbet: %d meczów",len(candidates))
+    pre_candidates.sort(key=lambda x:(-x[0],x[1]))
+    shortlist=pre_candidates[:SHORTLIST_SIZE]
+    logging.info("Superbet: %d meczów w ofercie; po szybkim filtrze historii %d; do szczegółowej kontroli kursu trafia tylko TOP %d",
+                 len(sb_events),len(pre_candidates),len(shortlist))
+
     def inspect_candidate(item):
-        listed,event_id,st,home,away=item
-        price,detailed_event=superbet_ft_event_data(event_id,FT_CORNERS_LINE)
+        score,st,event_id,home,away,league,detail,listed=item
+        price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
         if price is None:
             return None
-        # The detailed Superbet response may contain competition metadata
-        # omitted from the daily fixture list. Prefer it, then use SofaScore.
-        league=resolve_full_league(detailed_event or listed,home,away,st)
-        if not league:
-            league=resolve_full_league(listed,home,away,st)
-        if not league:
-            logging.warning("Pominięto %s - %s: nie udało się ustalić pełnej nazwy ligi",home,away)
-            return None
-        logging.info("KWALIFIKACJA O%.1f FT: %s - %s | %s @ %.2f",FT_CORNERS_LINE,home,away,league,price)
-        return (price,st,event_id,home,away,price,league,detailed_event or listed)
+        return (score,st,event_id,home,away,price,league,detail,listed)
 
     available=[]
-    checked=len(candidates)
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(inspect_candidate,item) for item in candidates]
+        futures=[pool.submit(inspect_candidate,item) for item in shortlist]
         for future in as_completed(futures):
             try:
                 result=future.result()
                 if result is not None:
                     available.append(result)
             except Exception:
-                logging.exception("Błąd podczas sprawdzania kursu jednego z meczów")
-    market_candidates=len(available)
-    logging.info("Skan kursów zakończony: sprawdzono %d meczów, znaleziono %d kandydatów z kursem O%.1f FT",
-                 checked,market_candidates,FT_CORNERS_LINE)
-
-    available.sort(key=lambda x:(x[0],x[1]))
+                logging.exception("Błąd sprawdzania rynku HT jednego z 30 meczów")
+    available.sort(key=lambda x:(-x[0],x[1]))
     sent=0
-    for price,st,event_id,home,away,fx,league,event_data in available:
+    for score,st,event_id,home,away,price,league,detail,listed in available:
+        if count>=MAX_DAILY:
+            break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        tax=STAKE*TAX_RATE
-        payout=STAKE*(1-TAX_RATE)*price
-        profit=payout-STAKE
-        prematch_url=superbet_prematch_event_url(event_data,home,away,event_id)
-        msg=(f"🎯 ROGI FT\n"
-             f"🏆 {league}\n"
-             f"⚽ {home} – {away}\n"
-             f"🕒 {kickoff:%d.%m.%Y} | {kickoff:%H:%M}\n"
-             f"Over {FT_CORNERS_LINE:.1f} rożnych – kurs {price:.2f}\n"
-             f"🔗 Superbet PRE-MATCH: {prematch_url}\n"
-             f"Stawka: {STAKE} zł\n"
-             f"Podatek 12%: {tax:.2f} zł\n"
-             f"Możliwa wypłata po podatku: {payout:.2f} zł\n"
-             f"Możliwy zysk: {profit:.2f} zł")
+        msg=("🎯 OKOTYPERA — ROGI DO HT\\n\\n"
+             f"🏆 {league}\\n⚽ {home} – {away}\\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
+             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\\n"
+             f"💹 Kurs Superbet: {price:.2f}\\n"
+             f"📊 Historia: {detail}\\n"
+             f"💰 Stawka: {STAKE} zł")
         if send(msg):
-            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'FT')",
+            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'HT')",
                       (event_id,league,home,away,st,local.isoformat(),price))
             c.commit()
-            existing_ids.add(int(event_id))
-            save_sent_event_ids(existing_ids)
+            count+=1
             sent+=1
-            logging.info("Wysłano typ Superbet event %s kurs %.2f",event_id,price)
+            logging.info("Wysłano typ HT Superbet event %s kurs %.2f | score %.2f",event_id,price,score)
         else:
-            logging.error("Nie udało się wysłać typu do Telegrama dla event %s",event_id)
+            logging.error("Nie udało się wysłać typu HT do Telegrama dla event %s",event_id)
         time.sleep(.3)
 
-    logging.info("Skan zakończony — wysłano %s typów",sent)
-    # GitHub Actions uruchamia skan co 5 minut; nie blokuj joba dodatkowym
-    # 270-sekundowym pollingiem, który powodował nakładanie i anulowanie runów.
+    if sent==0:
+        send("🤖 ROGI DO HT — RAPORT SKANU\\n\\n"
+             f"📅 {local:%d.%m.%Y}\\n"
+             f"🔎 Mecze w ofercie Superbet: {len(sb_events)}\\n"
+             f"📚 Mecze z historią spełniającą filtr: {len(pre_candidates)}\\n"
+             f"🎯 Szczegółowo sprawdzono maksymalnie: {len(shortlist)} (TOP 30)\\n"
+             f"💹 Rynki Over {HT_CORNERS_LINE:.1f} HT z właściwym kursem: {len(available)}\\n"
+             f"⚠️ Brak/za mała historia: {history_unavailable}\\n"
+             f"📉 Odrzucone przez filtr jakości: {history_rejected}\\n"
+             "ℹ️ Bot nie wysyła typu bez potwierdzonego rynku i historii.")
+    logging.info("Skan HT zakończony — wysłano %s typów",sent)
     c.close()
 
 if __name__=="__main__": main()
-
-# Manual activation: trigger the scheduled FT corners scan via GitHub Actions push.
