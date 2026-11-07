@@ -16,7 +16,7 @@ STAKE=50
 MAX_DAILY=2
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:02:14+01:00"
-SHORTLIST_SIZE=15  # maksymalnie 15 meczów wybieranych do szczegółowej analizy
+SHORTLIST_SIZE=30  # maksymalnie 30 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
 MIN_TEAM_AVG=2.2
@@ -771,8 +771,8 @@ def main():
     resend_tips_with_corrected_league(c,sb_events)
     existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
 
-    # Szybki etap: wybierz maksymalnie TOP 15 spotkań z lig priorytetowych.
-    # Historia Matchday nie jest wymagana i nie może blokować wysłania typu.
+    # Szybki etap: wybierz maksymalnie TOP 30 spotkań z rozszerzonej listy lig.
+    # Priorytet mają ligi główne i puchary; dodatkowe ligi Matchday są rezerwą.
     league_priority={
         "ENG_1_premier-league":0,"ESP_1_la-liga":1,"GER_1_bundesliga":2,
         "ITA_1_serie-a":3,"FRA_1_ligue-1":4,"NED_1_eredivisie":5,
@@ -798,9 +798,10 @@ def main():
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed)
         folder=matchday_folder(league)
-        if folder not in league_priority:
-            continue
-        raw_candidates.append((league_priority[folder],st,int(event_id),home,away,league,listed))
+        # Nie odrzucaj innych lig obsługiwanych przez Matchday.
+        # Trafiają do drugiej puli po ligach priorytetowych.
+        priority=league_priority.get(folder,20) if folder else 30
+        raw_candidates.append((priority,st,int(event_id),home,away,league,listed))
 
     raw_candidates.sort(key=lambda x:(x[0],x[1]))
     selected=raw_candidates[:SHORTLIST_SIZE]
@@ -810,7 +811,7 @@ def main():
         for priority,st,event_id,home,away,league,listed in selected
     ]
     logging.info(
-        "Superbet: %d meczów w ofercie; wybrano %d z lig priorytetowych; analiza historii wyłączona",
+        "Superbet: %d meczów w ofercie; wybrano %d kandydatów (ligi priorytetowe + pozostałe)",
         len(sb_events),len(shortlist)
     )
 
