@@ -1,0 +1,44 @@
+name: PRZEDMECZOWE BTTS — Superbet
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prematch-btts-okotypera
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja bibliotek
+        run: pip install -r requirements.txt
+      - name: Kontrola składni
+        run: python -m py_compile PrematchBTTS.py
+      - name: Skan przedmeczowy BTTS
+        env:
+          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python PrematchBTTS.py
+      - name: Zapis bazy wysłanych typów
+        run: |
+          if [ -f okotypera_rogi.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_rogi.db
+            git diff --cached --quiet || git commit -m "Update BTTS sent picks database"
+            git pull --rebase origin main
+            git push
+          fi
