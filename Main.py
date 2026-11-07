@@ -14,7 +14,7 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
 MAX_DAILY=2
-SHORTLIST_SIZE=30  # limit szczegółowych zapytań o kursy Superbet do 30 meczów
+SHORTLIST_SIZE=15  # maksymalnie 15 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
 MIN_TEAM_AVG=2.2
@@ -785,7 +785,7 @@ def main():
                 if result is not None:
                     available.append(result)
             except Exception:
-                logging.exception("Błąd sprawdzania rynku HT jednego z 30 meczów")
+                logging.exception("Błąd sprawdzania rynku HT jednego z TOP shortlist")
     available.sort(key=lambda x:(-x[0],x[1]))
     logging.info("TOP %d: po sprawdzeniu Superbet pozostało %d meczów z aktywnym Over 4.5 HT w kursie 1.90–3.50",len(shortlist),len(available))
     sent=0
@@ -816,7 +816,7 @@ def main():
              f"📅 {local:%d.%m.%Y}\\n"
              f"🔎 Mecze w ofercie Superbet: {len(sb_events)}\\n"
              f"📚 Mecze z historią spełniającą filtr: {len(pre_candidates)}\\n"
-             f"🎯 Szczegółowo sprawdzono maksymalnie: {len(shortlist)} (TOP 30)\\n"
+             f"🎯 Szczegółowo sprawdzono maksymalnie: {len(shortlist)} (TOP {SHORTLIST_SIZE})\\n"
              f"💹 Rynki Over {HT_CORNERS_LINE:.1f} HT z właściwym kursem: {len(available)}\\n"
              f"⚠️ Brak/za mała historia: {history_unavailable}\\n"
              f"📉 Odrzucone przez filtr jakości: {history_rejected}\\n"
