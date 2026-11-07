@@ -52,13 +52,13 @@ class SuperbetHTMarketTests(unittest.TestCase):
         api.return_value=event_payload("1. połowa - liczba rzutów rożnych",[
             selection("Poniżej 4.5",price=2.1),
             selection("Powyżej 3.5",line=3.5,price=2.1),
-            selection("Powyżej 4.5",price=1.89),
-            selection("Powyżej 4.5",price=3.51)])
+            selection("Powyżej 4.5",price=1.59),
+            selection("Powyżej 4.5",price=2.51)])
         self.assertIsNone(Main.superbet_ht_over_odds(123))
 
     @patch("Main.superbet_api")
     def test_accepts_odds_boundaries(self, api):
-        for price in (1.90,3.50):
+        for price in (1.60,2.50):
             with self.subTest(price=price):
                 api.return_value=event_payload("1. połowa - liczba rzutów rożnych",
                     [selection("Powyżej 4.5",price=price)])
