@@ -575,66 +575,20 @@ def superbet_event_phase(event):
     return "UNKNOWN"
 
 
-def sofascore_match_url(home,away,start_ts):
-    """Build a direct SofaScore fixture URL only after matching both teams and kickoff."""
-    event=sofascore_event_for_pick(home,away,start_ts)
-    if not event or not event.get("id"):
-        return None
-    event_id=event["id"]
-    slug="-".join(
-        normalized_team(x) for x in (home,away) if normalized_team(x)
-    )
-    return f"https://www.sofascore.com/football/match/{slug}/{event_id}"
+def superbet_match_url(event_id,home,away,start_ts):
+    """Use a match URL supplied by Superbet; never query SofaScore for a fixture."""
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events") or []
+    event=events[0] if len(events)==1 else next(
+        (e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
+    if event:
+        for obj in (event,event.get("fixture") or {}):
+            for key in ("url","event_url","eventUrl","permalink","web_url","webUrl"):
+                value=obj.get(key) if isinstance(obj,dict) else None
+                if isinstance(value,str) and value.startswith("https://") and "superbet" in value.lower():
+                    return value
+    return "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna"
 
-
-def sofascore_event_for_pick(home,away,start_ts):
-    """Find the matching SofaScore fixture by teams and kickoff date (Superbet IDs are not SofaScore IDs)."""
-    kickoff=datetime.fromtimestamp(int(start_ts),timezone.utc).astimezone(TZ)
-    dates={kickoff.date().isoformat(),(kickoff.date()-timedelta(days=1)).isoformat()}
-    best=None
-    for day in dates:
-        payload=api(f"/sport/football/scheduled-events/{day}")
-        for item in payload.get("events",[]):
-            h=(item.get("homeTeam") or {}).get("name","")
-            a=(item.get("awayTeam") or {}).get("name","")
-            ts=item.get("startTimestamp")
-            if not h or not a or not ts or abs(int(ts)-int(start_ts))>4*3600:
-                continue
-            direct=team_similarity(home,h)+team_similarity(away,a)
-            reverse=team_similarity(home,a)+team_similarity(away,h)
-            score=max(direct,reverse)
-            if score>=1.45 and (best is None or score>best[0]):
-                best=(score,item)
-    return best[1] if best else None
-
-def sofascore_ht_corners(home,away,start_ts):
-    event=sofascore_event_for_pick(home,away,start_ts)
-    if not event:
-        logging.warning("SofaScore: nie znaleziono meczu %s - %s do rozliczenia",home,away)
-        return None,None
-    event_id=event.get("id")
-    payload=api(f"/event/{event_id}/statistics")
-    stats=payload.get("statistics") or []
-    if isinstance(stats,dict):
-        stats=[stats]
-    for period in stats:
-        period_name=str(period.get("period","")).lower().replace("_","")
-        if period_name not in ("1h","1st","first","firsthalf","first_half","1sthalf"):
-            continue
-        for group in period.get("groups",[]):
-            for item in group.get("statisticsItems",[]):
-                name=str(item.get("name","")).lower()
-                if "corner" not in name and "roż" not in name:
-                    continue
-                try:
-                    h=int(float(item.get("home")))
-                    a=int(float(item.get("away")))
-                    logging.info("SofaScore: rożne HT %s:%s dla %s - %s",h,a,home,away)
-                    return h,a
-                except (TypeError,ValueError):
-                    continue
-    logging.warning("SofaScore: brak statystyk rożnych HT dla %s - %s (event %s)",home,away,event_id)
-    return None,None
 
 def settle(c,now):
     # Prefer Superbet live stats; fall back to SofaScore fixture/statistics when Superbet omits HT data.
@@ -955,58 +909,72 @@ def ensure_coupon_schema(c):
 
 
 def settle_ako_coupons(c):
+    """Settle FT 1X2 coupons from football-data.co.uk CSV; no SofaScore requests."""
     rows=c.execute("SELECT coupon_id,odds,stake,status FROM coupons WHERE status='PENDING'").fetchall()
+    codes={"premierleague":"E0","championship":"E1","leagueone":"E2","leaguetwo":"E3",
+           "bundesliga":"D1","2bundesliga":"D2","seriea":"I1","laliga":"SP1","ligue1":"F1",
+           "eredivisie":"N1","primeiraliga":"P1","scotlandpremiership":"SC0",
+           "englandpremierleague":"E0","englandchampionship":"E1","englandleagueone":"E2",
+           "englandleaguetwo":"E3","germanybundesliga":"D1","germany2bundesliga":"D2",
+           "italyseriea":"I1","spainlaliga":"SP1","franceligue1":"F1",
+           "netherlandseredivisie":"N1","portugalprimeiraliga":"P1"}
     for coupon_id,total_odds,stake,status in rows:
-        legs=c.execute("""SELECT event_id,home,away,start_ts,selection,result FROM coupon_legs
+        legs=c.execute("""SELECT event_id,league,home,away,start_ts,selection,result FROM coupon_legs
                           WHERE coupon_id=? ORDER BY start_ts""",(coupon_id,)).fetchall()
-        all_won=True
-        lost=False
-        for event_id,home,away,start_ts,selection,result in legs:
+        lost=False; all_won=True
+        for event_id,league,home,away,start_ts,selection,result in legs:
             if result in ("WON","LOST"):
-                if result=="LOST": lost=True
-                if result!="WON": all_won=False
-                continue
-            event=sofascore_event_for_pick(home,away,start_ts)
-            if not event:
-                all_won=False
-                continue
-            st=event.get("status") or {}
-            status_type=str(st.get("type") or "").lower()
-            description=str(st.get("description") or "").lower()
-            if status_type!="finished" and not any(x in description for x in ("finished","ended","after penalties")):
-                all_won=False
-                continue
-            hs=(event.get("homeScore") or {}).get("current")
-            aws=(event.get("awayScore") or {}).get("current")
-            try:
-                hs=int(hs); aws=int(aws)
-            except (TypeError,ValueError):
-                all_won=False
-                continue
-            actual="1" if hs>aws else ("2" if aws>hs else "X")
+                lost |= result=="LOST"; all_won &= result=="WON"; continue
+            key=normalized_team(league)
+            code=next((v for k,v in codes.items() if k in key or key in k),None)
+            if not code:
+                logging.info("Rozliczenie %s: brak kodu CSV ligi %s",coupon_id,league); all_won=False; continue
+            d=datetime.fromtimestamp(start_ts,timezone.utc).date()
+            y=d.year if d.month>=7 else d.year-1
+            season=f"{y%100:02d}{(y+1)%100:02d}"; cache_key=(code,season)
+            if cache_key not in _FORM_CACHE:
+                try:
+                    url=f"https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+                    response=requests.get(url,headers={"User-Agent":"Mozilla/5.0","Accept":"text/csv"},timeout=15)
+                    response.raise_for_status()
+                    _FORM_CACHE[cache_key]=list(csv.DictReader(io.StringIO(response.content.decode("latin-1"))))
+                except Exception as exc:
+                    logging.warning("CSV wyników %s: %s",league,exc); _FORM_CACHE[cache_key]=None
+            data=_FORM_CACHE.get(cache_key)
+            match=None
+            for row in data or []:
+                parsed=None
+                for fmt in ("%d/%m/%Y","%d/%m/%y"):
+                    try: parsed=datetime.strptime(str(row.get("Date") or "").strip(),fmt).date(); break
+                    except ValueError: pass
+                if parsed!=d: continue
+                hname=row.get("HomeTeam") or ""; aname=row.get("AwayTeam") or ""
+                direct=team_similarity(home,hname)+team_similarity(away,aname)
+                reverse=team_similarity(home,aname)+team_similarity(away,hname)
+                if max(direct,reverse)>=1.65: match=(row,direct>=reverse); break
+            if not match:
+                logging.info("Rozliczenie %s: brak wyniku CSV dla %s - %s; PENDING",coupon_id,home,away)
+                all_won=False; continue
+            row,direct=match
+            try: hg=int(float(row["FTHG"])); ag=int(float(row["FTAG"]))
+            except (KeyError,TypeError,ValueError): all_won=False; continue
+            if not direct: hg,ag=ag,hg
+            actual="1" if hg>ag else ("2" if ag>hg else "X")
             leg_result="WON" if actual==selection else "LOST"
             c.execute("UPDATE coupon_legs SET result=? WHERE event_id=?",(leg_result,event_id))
-            if leg_result=="LOST": lost=True
-            if leg_result!="WON": all_won=False
-        if lost:
-            final="LOST"
-        elif all_won and len(legs)==COUPON_LEGS:
-            final="WON"
-        else:
-            c.commit()
-            continue
-        settled=datetime.now(TZ).isoformat()
-        c.execute("UPDATE coupons SET status=?,settled_at=? WHERE coupon_id=?",(final,settled,coupon_id))
-        c.commit()
-        profit=(float(stake)*(float(total_odds)-1.0)) if final=="WON" else -float(stake)
+            lost |= leg_result=="LOST"; all_won &= leg_result=="WON"
+        if lost: final="LOST"
+        elif all_won and len(legs)==COUPON_LEGS: final="WON"
+        else: c.commit(); continue
+        c.execute("UPDATE coupons SET status=?,settled_at=? WHERE coupon_id=?",
+                  (final,datetime.now(TZ).isoformat(),coupon_id)); c.commit()
+        profit=float(stake)*(float(total_odds)-1.0) if final=="WON" else -float(stake)
         msg=(f"📊 ROZLICZENIE KUPONU AKO — {coupon_id}\n\n"
-             f"🎯 4 zwycięstwa drużyn (1/2)\n"
-             f"💹 Kurs łączny: {float(total_odds):.2f}\n"
+             f"🎯 4 zwycięstwa drużyn (1/2)\n💹 Kurs łączny: {float(total_odds):.2f}\n"
              f"💰 Stawka: {float(stake):.2f} zł\n"
              f"{'🟢 KUPON WYGRANY' if final=='WON' else '🔴 KUPON PRZEGRANY'}\n"
              f"🏦 Wynik: {profit:+.2f} zł")
-        if not send(msg):
-            logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
+        if not send(msg): logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
 
 
 def main():
@@ -1100,11 +1068,7 @@ def main():
     legs,total_odds=coupon
     # Linki pobieramy dopiero dla wybranej czwórki, nie dla całej shortlisty.
     for leg in legs:
-        link=sofascore_match_url(leg["home"],leg["away"],leg["start_ts"])
-        if not link:
-            logging.info("Kupon anulowany — brak dokładnego linku dla %s - %s",leg["home"],leg["away"])
-            c.close()
-            return
+        link=superbet_match_url(leg["event_id"],leg["home"],leg["away"],leg["start_ts"])
         leg["url"]=link
 
     # Ostatnia kontrola rynku tuż przed publikacją; bez meczu live i bez zmiany typu.
