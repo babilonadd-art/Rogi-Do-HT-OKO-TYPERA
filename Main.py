@@ -736,9 +736,18 @@ def main():
     superbet_tournament_names()
     resend_tips_with_corrected_league(c,sb_events)
     existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
-    pre_candidates=[]
-    history_unavailable=0
-    history_rejected=0
+
+    # Szybki etap: wybierz maksymalnie TOP 15 spotkań z lig, dla których
+    # Open Matchday ma dane HT. Nie pobieraj historii i nie licz statystyk
+    # dla całej oferty Superbet.
+    league_priority={
+        "ENG_1_premier-league":0,"ESP_1_la-liga":1,"GER_1_bundesliga":2,
+        "ITA_1_serie-a":3,"FRA_1_ligue-1":4,"NED_1_eredivisie":5,
+        "POR_1_primeira-liga":6,"BRA_1_serie-a":7,"ARG_1_liga-profesional":8,
+        "UEFA_1_champions-league":9,"UEFA_1_europa-league":10,
+        "UEFA_1_conference-league":11
+    }
+    raw_candidates=[]
     for listed in sb_events:
         fx=listed.get("fixture",{})
         event_id=listed.get("event_id")
@@ -755,6 +764,18 @@ def main():
             continue
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed)
+        folder=matchday_folder(league)
+        if not folder:
+            continue
+        priority=league_priority.get(folder,20)
+        raw_candidates.append((priority,st,int(event_id),home,away,league,listed))
+
+    raw_candidates.sort(key=lambda x:(x[0],x[1]))
+    selected=raw_candidates[:SHORTLIST_SIZE]
+    pre_candidates=[]
+    history_unavailable=0
+    history_rejected=0
+    for priority,st,event_id,home,away,league,listed in selected:
         score,detail=matchday_candidate_profile(league,home,away,st)
         if score is None:
             if "brak danych" in detail or "za mała próba" in detail:
@@ -762,12 +783,12 @@ def main():
             else:
                 history_rejected+=1
             continue
-        pre_candidates.append((score,st,int(event_id),home,away,league,detail,listed))
+        pre_candidates.append((score,st,event_id,home,away,league,detail,listed))
 
     pre_candidates.sort(key=lambda x:(-x[0],x[1]))
-    shortlist=pre_candidates[:SHORTLIST_SIZE]
-    logging.info("Superbet: %d meczów w ofercie; %d ma wystarczającą historię; brak/za mała historia %d; szczegółowa kontrola kursu TOP %d",
-                 len(sb_events),len(pre_candidates),history_unavailable,len(shortlist))
+    shortlist=pre_candidates
+    logging.info("Superbet: %d meczów w ofercie; szybki wybór TOP %d z lig Matchday; %d z historią do kontroli kursu; brak/za mała historia %d",
+                 len(sb_events),len(selected),len(pre_candidates),history_unavailable)
 
     def inspect_candidate(item):
         score,st,event_id,home,away,league,detail,listed=item
