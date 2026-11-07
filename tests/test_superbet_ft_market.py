@@ -20,6 +20,7 @@ def selection(name, line=4.5, price=2.10, status=1, display=True, offer_state_id
 def event_payload(market_name, odds, market_status=1, inplay="NOT_STARTED",
                   offer_state_status=None):
     return {"events": [{
+        "id": 123,
         "fixture": {"offer_state_status": offer_state_status or {"1": 1}},
         "inplay_stats_metadata": {"status": inplay},
         "markets": [{"name": market_name, "status": market_status, "odds": odds}],
