@@ -88,8 +88,9 @@ class SuperbetFullTimeWinnerTests(unittest.TestCase):
         form.assert_called_once()
 
     def test_four_leg_coupon_total_must_be_5_to_10(self):
+        # 1.70 x 1.70 x 1.70 x 1.70 = 8.35, inside the configured range.
         candidates = [
-            {"event_id": i, "odds": 1.8, "start_ts": i, "priority": 1}
+            {"event_id": i, "odds": 1.70, "start_ts": i, "priority": 1}
             for i in range(4)
         ]
         result = Main.choose_four_leg_coupon(candidates)
