@@ -9,7 +9,7 @@ DB="okotypera_rogi.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 MIN_ODDS=1.70
-MAX_ODDS=10.00
+MAX_ODDS=2.60
 MAX_PICKS=3
 STAKE=10
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
