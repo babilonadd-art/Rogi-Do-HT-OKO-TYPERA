@@ -78,6 +78,22 @@ class SuperbetHTMarketTests(unittest.TestCase):
                 self.assertIsNone(Main.superbet_ht_over_odds(123))
 
     @patch("Main.superbet_api")
+    def test_accepts_single_detail_event_when_response_omits_id(self, api):
+        payload=event_payload("1. połowa - liczba rzutów rożnych",
+            [selection("Powyżej 4.5",price=2.10)])
+        payload["events"][0].pop("id",None)
+        api.return_value=payload
+        self.assertEqual(Main.superbet_ht_over_odds(123),2.10)
+
+    @patch("Main.superbet_api")
+    def test_rejects_single_detail_event_with_wrong_id(self, api):
+        payload=event_payload("1. połowa - liczba rzutów rożnych",
+            [selection("Powyżej 4.5",price=2.10)])
+        payload["events"][0]["id"]=456
+        api.return_value=payload
+        self.assertIsNone(Main.superbet_ht_over_odds(123))
+
+    @patch("Main.superbet_api")
     def test_returns_none_when_event_missing(self, api):
         api.return_value={"events":[]}
         self.assertIsNone(Main.superbet_ht_over_odds(123))
