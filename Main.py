@@ -23,6 +23,7 @@ MIN_HIT_RATE=0.60
 HT_CORNERS_LINE=4.5
 MIN_ODDS=1.90
 MAX_ODDS=3.50
+SB_TOURNAMENT_NAMES=None
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 s=requests.Session()
 s.headers.update({
