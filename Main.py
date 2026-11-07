@@ -13,7 +13,7 @@ DB="okotypera_rogi.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=50
-MAX_DAILY=2
+MAX_DAILY=4
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:02:14+01:00"
 SHORTLIST_SIZE=30  # maksymalnie 30 meczów wybieranych do szczegółowej analizy
