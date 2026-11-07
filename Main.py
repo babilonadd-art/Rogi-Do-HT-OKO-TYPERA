@@ -242,25 +242,63 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
 MATCHDAY_BASE="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/data"
 MATCHDAY_SEASON="2627"
 MATCHDAY_LEAGUES={
-    "premierleague":"ENG_1_premier-league",
-    "laliga":"ESP_1_la-liga",
-    "bundesliga":"GER_1_bundesliga",
-    "seriea":"ITA_1_serie-a",
-    "ligue1":"FRA_1_ligue-1",
-    "eredivisie":"NED_1_eredivisie",
-    "primeiraliga":"POR_1_primeira-liga",
-    "belgianproleague":"BEL_1_pro-league",
-    "jupilerproleague":"BEL_1_pro-league",
-    "superlig":"TUR_1_super-lig",
-    "superleaguegreece":"GRE_1_super-league",
-    "superleague1":"GRE_1_super-league",
+    "angliapremierleague":"ENG_1_premier-league","englandpremierleague":"ENG_1_premier-league","premierleague":"ENG_1_premier-league",
+    "angliachampionship":"ENG_2_championship","englandchampionship":"ENG_2_championship","championship":"ENG_2_championship",
+    "anglialeagueone":"ENG_3_league-one","leagueone":"ENG_3_league-one","anglialeaguetwo":"ENG_4_league-two","leaguetwo":"ENG_4_league-two",
+    "anglianationalleague":"ENG_5_national-league","nationalleagueengland":"ENG_5_national-league",
+    "anglianationalleaguenorth":"ENG_6_national-league-north","nationalleaguenorth":"ENG_6_national-league-north",
+    "anglianationalleaguesouth":"ENG_6_national-league-south","nationalleaguesouth":"ENG_6_national-league-south",
+    "northernpremierleague":"ENG_7_northern-premier-league","eflcup":"ENG_CUP_efl-cup","facup":"ENG_CUP_fa-cup",
+    "hiszpaniaprimeradivision":"ESP_1_la-liga","spainlaliga":"ESP_1_la-liga","laliga":"ESP_1_la-liga","primera":"ESP_1_la-liga",
+    "hiszpaniasegundadivision":"ESP_2_segunda-division","segunda":"ESP_2_segunda-division","copadelrey":"ESP_CUP_copa-del-rey",
+    "francjaligue1":"FRA_1_ligue-1","franceligue1":"FRA_1_ligue-1","ligue1":"FRA_1_ligue-1",
+    "francjaligue2":"FRA_2_ligue-2","franceligue2":"FRA_2_ligue-2","ligue2":"FRA_2_ligue-2",
+    "niemcybundesliga":"GER_1_bundesliga","germanybundesliga":"GER_1_bundesliga","bundesliga":"GER_1_bundesliga",
+    "niemcy2bundesliga":"GER_2_2-bundesliga","zweitebundesliga":"GER_2_2-bundesliga","2bundesliga":"GER_2_2-bundesliga",
+    "niemcy3liga":"GER_3_3-liga","drittliga":"GER_3_3-liga","3liga":"GER_3_3-liga","dfbpokal":"GER_CUP_dfb-pokal",
+    "wlochyseriea":"ITA_1_serie-a","italyseriea":"ITA_1_serie-a","seriea":"ITA_1_serie-a",
+    "wlochyserieb":"ITA_2_serie-b","italyserieb":"ITA_2_serie-b","serieb":"ITA_2_serie-b","coppaitalia":"ITA_CUP_coppa-italia",
+    "holandiaeredivisie":"NED_1_eredivisie","netherlandseredivisie":"NED_1_eredivisie","eredivisie":"NED_1_eredivisie",
+    "holandiaeerstedivisie":"NED_2_eerste-divisie","eerstedivisie":"NED_2_eerste-divisie","knvbeker":"NED_CUP_knvb-beker",
+    "portugaliaprimeiraliga":"POR_1_primeira-liga","portugalprimeiraliga":"POR_1_primeira-liga","primeiraliga":"POR_1_primeira-liga","tacadeportugal":"POR_CUP_taca-de-portugal",
+    "belgiaproleague":"BEL_1_pro-league","belgiumproleague":"BEL_1_pro-league","jupilerproleague":"BEL_1_pro-league",
+    "belgiau21proleague":"BEL_U21_pro-league","u21proleague":"BEL_U21_pro-league",
+    "grecjasuperleague":"GRE_1_super-league","greecesuperleague":"GRE_1_super-league","superleaguegreece":"GRE_1_super-league",
+    "turcjasuperlig":"TUR_1_super-lig","turkeysuperlig":"TUR_1_super-lig","superlig":"TUR_1_super-lig",
+    "polskaekstraklasa":"POL_1_ekstraklasa","polandekstraklasa":"POL_1_ekstraklasa","ekstraklasa":"POL_1_ekstraklasa",
+    "polska1liga":"POL_2_division-1","poland1liga":"POL_2_division-1","polskadivision1":"POL_2_division-1",
+    "polska2liga":"POL_3_division-2","poland2liga":"POL_3_division-2","polskadivision2":"POL_3_division-2",
+    "daniasuperliga":"DEN_1_superliga","denmarksuperliga":"DEN_1_superliga",
+    "austriabundesliga":"AUT_1_bundesliga","austriacup":"AUT_CUP_ofb-cup",
+    "czechchanceliga":"CZE_1_chance-liga","czechiachanceliga":"CZE_1_chance-liga","chanceliga":"CZE_1_chance-liga",
+    "swisssuperleague":"SUI_1_super-league","switzerlandsuperleague":"SUI_1_super-league","swisscup":"SUI_CUP_swiss-cup",
+    "slovaknikeliga":"SVK_1_nike-liga","nikeliga":"SVK_1_nike-liga","slovenianprvaliga":"SVN_1_prva-liga","prvaliga":"SVN_1_prva-liga",
+    "swedenallsvenskan":"SWE_1_allsvenskan","allsvenskan":"SWE_1_allsvenskan","norwayeliteserien":"NOR_1_eliteserien","eliteserien":"NOR_1_eliteserien",
+    "finlandveikkausliiga":"FIN_1_veikkausliiga","veikkausliiga":"FIN_1_veikkausliiga",
+    "scotlandpremiership":"SCO_1_premiership","scottishpremiership":"SCO_1_premiership","scotlandchampionship":"SCO_2_championship",
+    "scotlandleagueone":"SCO_3_league-one","scotlandleaguetwo":"SCO_4_league-two","scottishcup":"SCO_CUP_scottish-cup","scottishleaguecup":"SCO_CUP_league-cup",
+    "irelandfirstdivision":"IRE_2_first-division","irelandnationalleague":"IRE_3_national-league",
+    "walescymrupremier":"WAL_1_cymru-premier","cymrupremier":"WAL_1_cymru-premier","cymrunorth":"WAL_2_cymru-north","cymrusouth":"WAL_3_cymru-south",
+    "argentinaprimeradivision":"ARG_1_liga-profesional","argentinaprofesional":"ARG_1_liga-profesional","ligaprofesional":"ARG_1_liga-profesional",
+    "argentinaprimeranacional":"ARG_2_primera-nacional","primeranacional":"ARG_2_primera-nacional",
+    "brasilseriea":"BRA_1_serie-a","brasilbrasileirao":"BRA_1_serie-a","brasileirao":"BRA_1_serie-a","brasilserieb":"BRA_2_serie-b",
+    "mexicoligamx":"MEX_1_liga-mx","ligamx":"MEX_1_liga-mx","mexicoligaexpansion":"MEX_2_liga-expansion","ligaexpansion":"MEX_2_liga-expansion",
+    "usamls":"USA_1_mls","mls":"USA_1_mls","japanj1league":"JPN_1_j1-league","j1league":"JPN_1_j1-league",
+    "australiaaleague":"AUS_1_a-league","aleague":"AUS_1_a-league","chinachinasuperleague":"CHN_1_super-league",
+    "croatiahnl":"CRO_1_hnl","hnl":"CRO_1_hnl","cyprusfirstdivision":"CYP_1_first-division",
+    "romanialiga1":"ROU_1_liga-1","liga1romania":"ROU_1_liga-1",
+    "russiapremierliga":"RUS_1_premier-liga","ukrainepremierleague":"UKR_1_premier-league",
+    "kazakhstanpremierleague":"KAZ_1_premier-league",
+    "uefachampionsleague":"UEFA_1_champions-league","championsleague":"UEFA_1_champions-league",
+    "uefaeuropaleague":"UEFA_1_europa-league","europaleague":"UEFA_1_europa-league",
+    "uefaconferenceleague":"UEFA_1_conference-league","conferenceleague":"UEFA_1_conference-league",
 }
 _matchday_cache={}
 _matchday_history_cache={}
 
 def matchday_folder(league):
     key=normalized_team(league)
-    for alias,folder in MATCHDAY_LEAGUES.items():
+    for alias,folder in sorted(MATCHDAY_LEAGUES.items(),key=lambda item:len(item[0]),reverse=True):
         if key==alias or alias in key:
             return folder
     return None
