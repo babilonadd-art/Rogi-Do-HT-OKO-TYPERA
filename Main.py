@@ -754,133 +754,301 @@ def matchday_candidate_profile(league,home,away,start_ts):
     return score,detail
 
 
+
+
+# --- Kupony AKO: zwycięstwo gospodarzy/gości w całym meczu (1/2) ---
+COUPON_MIN_ODDS=20.0
+COUPON_MAX_ODDS=50.0
+COUPON_LEGS=4
+MIN_WINNER_ODDS=1.70
+MAX_WINNER_ODDS=4.00
+
+def winner_market_selection(event_id,home,away):
+    """Return an active pre-match 1X2 home/away selection from the exact Superbet event."""
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events") or []
+    if not events:
+        return None
+    if len(events)==1:
+        event=events[0]
+        returned_id=event.get("event_id") or event.get("id")
+        if returned_id is not None and str(returned_id)!=str(event_id):
+            return None
+    else:
+        event=next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
+        if event is None:
+            return None
+    fixture=event.get("fixture") or {}
+    offer_states=fixture.get("offer_state_status") or {}
+    if offer_states and offer_states.get("1") not in (1,"1"):
+        return None
+    phase=(event.get("inplay_stats_metadata") or {}).get("status")
+    if phase not in (None,"","NOT_STARTED"):
+        return None
+
+    found=[]
+    for market in event.get("markets",[]) or []:
+        raw=str(market.get("name") or "")
+        name=re.sub(r"\s+"," ",raw.strip().lower())
+        if market.get("status") not in (None,1,"1","ACTIVE","active"):
+            continue
+        if any(x in name for x in ("1. poł","1 poł","pierwsza poł","first half","1st half","2. poł","second half","2nd half","roż","corner","rzutów rożnych","double chance","podwójna szansa","draw no bet","bez remisu","handicap")):
+            continue
+        is_result=("1x2" in name or "wynik meczu" in name or "match result" in name or
+                   "full time result" in name or "full-time result" in name or
+                   ("zwycięzca" in name and "meczu" in name) or
+                   ("zwyciezca" in name and "meczu" in name))
+        if not is_result:
+            continue
+        for odd in market.get("odds",[]) or []:
+            meta=odd.get("metadata") or {}
+            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+                continue
+            if str(meta.get("offer_state_id",1))!="1":
+                continue
+            try:
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            if not MIN_WINNER_ODDS<=price<=MAX_WINNER_ODDS:
+                continue
+            labels=[odd.get("name"),odd.get("label"),meta.get("name"),meta.get("info")]
+            labels=[str(x).strip().lower() for x in labels if x is not None]
+            selection=None
+            for label in labels:
+                compact=re.sub(r"[^a-z0-9ąćęłńóśźż]+","",label)
+                if compact in ("1","1.","gospodarze","gospodarz","home","hometeam"):
+                    selection="1"; break
+                if compact in ("2","2.","goście","goscie","gość","gosc","away","awayteam"):
+                    selection="2"; break
+                if team_similarity(label,home)>=0.84:
+                    selection="1"; break
+                if team_similarity(label,away)>=0.84:
+                    selection="2"; break
+            if selection:
+                found.append({"selection":selection,"odds":price})
+    if not found:
+        return None
+    # Prefer the stronger-priced side; final four-leg product is constrained separately.
+    found.sort(key=lambda x:x["odds"],reverse=True)
+    return found[0]
+
+
+def choose_four_leg_coupon(candidates):
+    """Find four distinct fixtures whose combined decimal odds are within 20–50."""
+    from itertools import combinations
+    valid=[]
+    for group in combinations(candidates,COUPON_LEGS):
+        product=1.0
+        for item in group:
+            product*=item["odds"]
+        if COUPON_MIN_ODDS<=product<=COUPON_MAX_ODDS:
+            # Aim near 30.0, with a slight preference for earlier kickoff and major leagues.
+            score=abs(product-30.0)
+            score+=sum(item.get("priority",20) for item in group)*0.001
+            score+=sum(item["start_ts"] for item in group)*1e-12
+            valid.append((score,product,group))
+    if not valid:
+        return None
+    valid.sort(key=lambda x:x[0])
+    _,product,group=valid[0]
+    return list(group),round(product,2)
+
+
+def ensure_coupon_schema(c):
+    c.execute("""CREATE TABLE IF NOT EXISTS coupons(
+        coupon_id TEXT PRIMARY KEY,sent_at TEXT NOT NULL,odds REAL NOT NULL,
+        stake REAL NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',settled_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS coupon_legs(
+        event_id INTEGER PRIMARY KEY,coupon_id TEXT NOT NULL,league TEXT,home TEXT,away TEXT,
+        start_ts INTEGER NOT NULL,selection TEXT NOT NULL,odds REAL NOT NULL,
+        result TEXT,FOREIGN KEY(coupon_id) REFERENCES coupons(coupon_id))""")
+    c.commit()
+
+
+def settle_ako_coupons(c):
+    rows=c.execute("SELECT coupon_id,odds,stake,status FROM coupons WHERE status='PENDING'").fetchall()
+    for coupon_id,total_odds,stake,status in rows:
+        legs=c.execute("""SELECT event_id,home,away,start_ts,selection,result FROM coupon_legs
+                          WHERE coupon_id=? ORDER BY start_ts""",(coupon_id,)).fetchall()
+        all_won=True
+        lost=False
+        for event_id,home,away,start_ts,selection,result in legs:
+            if result in ("WON","LOST"):
+                if result=="LOST": lost=True
+                if result!="WON": all_won=False
+                continue
+            event=sofascore_event_for_pick(home,away,start_ts)
+            if not event:
+                all_won=False
+                continue
+            st=event.get("status") or {}
+            status_type=str(st.get("type") or "").lower()
+            description=str(st.get("description") or "").lower()
+            if status_type!="finished" and not any(x in description for x in ("finished","ended","after penalties")):
+                all_won=False
+                continue
+            hs=(event.get("homeScore") or {}).get("current")
+            aws=(event.get("awayScore") or {}).get("current")
+            try:
+                hs=int(hs); aws=int(aws)
+            except (TypeError,ValueError):
+                all_won=False
+                continue
+            actual="1" if hs>aws else ("2" if aws>hs else "X")
+            leg_result="WON" if actual==selection else "LOST"
+            c.execute("UPDATE coupon_legs SET result=? WHERE event_id=?",(leg_result,event_id))
+            if leg_result=="LOST": lost=True
+            if leg_result!="WON": all_won=False
+        if lost:
+            final="LOST"
+        elif all_won and len(legs)==COUPON_LEGS:
+            final="WON"
+        else:
+            c.commit()
+            continue
+        settled=datetime.now(TZ).isoformat()
+        c.execute("UPDATE coupons SET status=?,settled_at=? WHERE coupon_id=?",(final,settled,coupon_id))
+        c.commit()
+        profit=(float(stake)*(float(total_odds)-1.0)) if final=="WON" else -float(stake)
+        msg=(f"📊 ROZLICZENIE KUPONU AKO — {coupon_id}\\n\\n"
+             f"🎯 4 zwycięstwa drużyn (1/2)\\n"
+             f"💹 Kurs łączny: {float(total_odds):.2f}\\n"
+             f"💰 Stawka: {float(stake):.2f} zł\\n"
+             f"{'🟢 KUPON WYGRANY' if final=='WON' else '🔴 KUPON PRZEGRANY'}\\n"
+             f"🏦 Wynik: {profit:+.2f} zł")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
+
+
 def main():
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
-    now=datetime.now(timezone.utc)
-    settle(c,int(now.timestamp()))
+    ensure_coupon_schema(c)
+    settle_ako_coupons(c)
     local=datetime.now(TZ)
-    send_monthly_reports(c,local)
-    key=local.date().isoformat()
-    count=c.execute("SELECT COUNT(*) FROM picks WHERE substr(sent_at,1,10)=? AND sent_at>=? AND market_type='HT'",(key,DAILY_LIMIT_RESET_AT)).fetchone()[0]
-    if count>=MAX_DAILY:
-        logging.info("Dzienny limit HT osiągnięty: %s/%s",count,MAX_DAILY)
+    coupon_id=local.date().isoformat()
+    if c.execute("SELECT 1 FROM coupons WHERE coupon_id=?",(coupon_id,)).fetchone():
+        logging.info("Kupon AKO na dziś już został opublikowany: %s",coupon_id)
         c.close()
         return
+
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
+    now=datetime.now(timezone.utc)
     start=max(now,day_start.astimezone(timezone.utc))
     end=day_end.astimezone(timezone.utc)
     if start>=end:
-        logging.info("Brak pozostałych godzin dzisiejszego dnia")
+        logging.info("Brak pozostałych meczów przedmeczowych na dziś")
         c.close()
         return
 
-    sb_events=superbet_football_events(start,end)
+    events=superbet_football_events(start,end)
     superbet_tournament_names()
-    resend_tips_with_corrected_league(c,sb_events)
-    existing_ids={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
-
-    # Szybki etap: wybierz maksymalnie TOP 30 spotkań z rozszerzonej listy lig.
-    # Priorytet mają ligi główne i puchary; dodatkowe ligi Matchday są rezerwą.
     league_priority={
         "ENG_1_premier-league":0,"ESP_1_la-liga":1,"GER_1_bundesliga":2,
         "ITA_1_serie-a":3,"FRA_1_ligue-1":4,"NED_1_eredivisie":5,
-        "POR_1_primeira-liga":6,"BRA_1_serie-a":7,"ARG_1_liga-profesional":8,
-        "UEFA_1_champions-league":9,"UEFA_1_europa-league":10,
-        "UEFA_1_conference-league":11
+        "POR_1_primeira-liga":6,"UEFA_1_champions-league":7,
+        "UEFA_1_europa-league":8,"UEFA_1_conference-league":9
     }
-    raw_candidates=[]
-    for listed in sb_events:
-        fx=listed.get("fixture",{})
+    raw=[]
+    for listed in events:
+        fx=listed.get("fixture") or {}
         event_id=listed.get("event_id")
-        if not event_id or int(event_id) in existing_ids:
+        if not event_id:
             continue
         try:
-            st=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
+            kickoff=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
         except Exception:
             continue
-        if not int(start.timestamp())<=st<=int(end.timestamp()):
+        if not int(start.timestamp())<=kickoff<=int(end.timestamp()):
             continue
-        parts=str(fx.get("event_name","")).split("·",1)
+        parts=str(fx.get("event_name") or "").split("·",1)
         if len(parts)!=2:
             continue
         home,away=(x.strip() for x in parts)
-        league=extract_league_name(listed)
+        league=extract_league_name(listed) or "Liga niepodana przez Superbet"
         folder=matchday_folder(league)
-        # Nie odrzucaj innych lig obsługiwanych przez Matchday.
-        # Trafiają do drugiej puli po ligach priorytetowych.
-        priority=league_priority.get(folder,20) if folder else 30
-        raw_candidates.append((priority,st,int(event_id),home,away,league,listed))
-
-    raw_candidates.sort(key=lambda x:(x[0],x[1]))
-    selected=raw_candidates[:SHORTLIST_SIZE]
-    # Brak danych historycznych nie odrzuca spotkania.
-    shortlist=[
-        (0,st,event_id,home,away,league,"Historia nie jest wymagana",listed)
-        for priority,st,event_id,home,away,league,listed in selected
-    ]
-    logging.info(
-        "Superbet: %d meczów w ofercie; wybrano %d kandydatów (ligi priorytetowe + pozostałe)",
-        len(sb_events),len(shortlist)
-    )
-
-    def inspect_candidate(item):
-        score,st,event_id,home,away,league,detail,listed=item
-        price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
-        if price is None:
-            return None
-        return (score,st,event_id,home,away,price,league,detail,listed)
+        raw.append((league_priority.get(folder,20),kickoff,int(event_id),home,away,league))
+    raw.sort(key=lambda x:(x[0],x[1]))
+    shortlist=raw[:SHORTLIST_SIZE]
+    logging.info("Superbet: %s meczów przedmeczowych dziś; szczegółowo sprawdzam TOP %s",len(raw),len(shortlist))
 
     available=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(inspect_candidate,item) for item in shortlist]
-        for future in as_completed(futures):
+        futures=[pool.submit(winner_market_selection,eid,home,away)
+                 for priority,kickoff,eid,home,away,league in shortlist]
+        for item,future in zip(shortlist,futures):
             try:
-                result=future.result()
-                if result is not None:
-                    available.append(result)
+                market=future.result()
             except Exception:
-                logging.exception("Błąd sprawdzania rynku HT jednego z TOP shortlist")
-    available.sort(key=lambda x:(-x[0],x[1]))
-    logging.info("TOP %d: po sprawdzeniu Superbet pozostało %d meczów z aktywnym Over 4.5 HT w kursie 1.60–2.50",len(shortlist),len(available))
-    sent=0
-    for score,st,event_id,home,away,price,league,detail,listed in available:
-        if count>=MAX_DAILY:
-            break
-        kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        # Odczytaj kurs ponownie bezpośrednio przed publikacją, aby ograniczyć rozjazd kursu.
-        fresh_price=superbet_ht_over_odds(event_id,HT_CORNERS_LINE)
-        if fresh_price is None:
-            logging.info("Pominięto event %s — kurs/rynek zmienił się przed wysyłką",event_id)
-            continue
-        price=fresh_price
-        match_url=sofascore_match_url(home,away,st)
-        msg=(f"🕒 {kickoff:%H:%M} | {kickoff:%d.%m.%Y}\n"
-             f"🎯 ROGI DO HT\n"
-             f"⚽ {home} – {away}\n"
-             f"🏆 {league}\n"
-             f"📌 Over {HT_CORNERS_LINE:.1f} rożnych — 1. połowa\n"
-             f"💹 Kurs: {price:.2f} (ostatni odczyt)\n"
-             f"🔗 Mecz: {match_url if match_url else 'link niedostępny — nie publikuję bez linku'}\n"
-             f"💰 Stawka: {STAKE} zł")
-        if not match_url:
-            logging.warning("Pominięto event %s — nie znaleziono dokładnego linku do meczu",event_id)
-            continue
-        if send(msg):
-            c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'HT')",
-                      (event_id,league,home,away,st,local.isoformat(),price))
-            c.commit()
-            count+=1
-            sent+=1
-            logging.info("Wysłano typ HT Superbet event %s kurs %.2f | score %.2f",event_id,price,score)
-        else:
-            logging.error("Nie udało się wysłać typu HT do Telegrama dla event %s",event_id)
-        time.sleep(.3)
+                logging.exception("Błąd sprawdzania rynku 1X2")
+                market=None
+            if not market:
+                continue
+            priority,kickoff,eid,home,away,league=item
+            link=sofascore_match_url(home,away,kickoff)
+            if not link:
+                logging.info("Pominięto %s - %s: brak dokładnego linku",home,away)
+                continue
+            available.append({
+                "priority":priority,"start_ts":kickoff,"event_id":eid,"home":home,
+                "away":away,"league":league,"selection":market["selection"],
+                "odds":market["odds"],"url":link
+            })
+    coupon=choose_four_leg_coupon(available)
+    if not coupon:
+        logging.info("Nie ma dziś 4 aktywnych zwycięstw 1/2 z kursem AKO 20–50; nie publikuję kuponu na siłę")
+        c.close()
+        return
+    legs,total_odds=coupon
 
-    logging.info("Skan HT zakończony — wysłano %s typów",sent)
+    # Ostatnia kontrola rynku tuż przed publikacją; bez meczu live i bez zmiany typu.
+    refreshed=[]
+    for leg in legs:
+        fresh=winner_market_selection(leg["event_id"],leg["home"],leg["away"])
+        if not fresh or fresh["selection"]!=leg["selection"]:
+            logging.info("Kupon anulowany przed wysyłką — rynek/typ zmienił się dla %s - %s",leg["home"],leg["away"])
+            c.close()
+            return
+        refreshed.append((leg,fresh["odds"]))
+    fresh_total=1.0
+    for _,price in refreshed: fresh_total*=price
+    if not COUPON_MIN_ODDS<=fresh_total<=COUPON_MAX_ODDS:
+        logging.info("Kupon anulowany — świeży kurs łączny %.2f poza zakresem 20–50",fresh_total)
+        c.close()
+        return
+    total_odds=round(fresh_total,2)
+
+    msg=(f"🕒 KUPON DNIA | {local:%d.%m.%Y}\\n"
+         f"🎯 AKO — 4 ZWYCIĘSTWA DRUŻYN (CAŁY MECZ)\\n"
+         f"💹 KURS ŁĄCZNY: {total_odds:.2f}\\n\\n")
+    for index,(leg,price) in enumerate(refreshed,1):
+        kickoff=datetime.fromtimestamp(leg["start_ts"],timezone.utc).astimezone(TZ)
+        team=leg["home"] if leg["selection"]=="1" else leg["away"]
+        msg+=(f"{index}. 🕒 {kickoff:%H:%M}\\n"
+              f"⚽ {leg['home']} – {leg['away']}\\n"
+              f"🏆 {leg['league']}\\n"
+              f"📌 Typ: WYGRANA {team} ({leg['selection']}) — cały mecz\\n"
+              f"💹 Kurs: {price:.2f}\\n"
+              f"🔗 Mecz: {leg['url']}\\n\\n")
+    msg+=(f"💰 Stawka na kupon: {STAKE} zł\\n"
+          f"⚠️ Kupon AKO wygrywa tylko wtedy, gdy wejdą wszystkie 4 zdarzenia.")
+    if send(msg):
+        c.execute("INSERT INTO coupons(coupon_id,sent_at,odds,stake,status) VALUES(?,?,?,?, 'PENDING')",
+                  (coupon_id,local.isoformat(),total_odds,STAKE))
+        for leg,price in refreshed:
+            c.execute("""INSERT INTO coupon_legs(event_id,coupon_id,league,home,away,start_ts,selection,odds)
+                         VALUES(?,?,?,?,?,?,?,?)""",
+                      (leg["event_id"],coupon_id,leg["league"],leg["home"],leg["away"],
+                       leg["start_ts"],leg["selection"],price))
+        c.commit()
+        logging.info("Wysłano kupon AKO %s | 4 mecze | kurs %.2f",coupon_id,total_odds)
+    else:
+        logging.error("Nie udało się wysłać kuponu AKO %s do Telegrama",coupon_id)
     c.close()
+
 
 if __name__=="__main__": main()
