@@ -1,0 +1,84 @@
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import Main
+
+
+def event_payload(market_name, odds, market_status=1, inplay="NOT_STARTED",
+                  offer_state_status=None):
+    return {"events": [{
+        "id": 123,
+        "fixture": {"offer_state_status": offer_state_status or {"1": 1}},
+        "inplay_stats_metadata": {"status": inplay},
+        "markets": [{"name": market_name, "status": market_status, "odds": odds}],
+    }]}
+
+
+def odd(name, price, status=1, display=True, offer_state_id=1):
+    return {
+        "name": name, "price": price, "status": status, "display": display,
+        "metadata": {"name": name, "offer_state_id": offer_state_id},
+    }
+
+
+class SuperbetFullTimeWinnerTests(unittest.TestCase):
+    @patch("Main.superbet_api")
+    def test_reads_home_win_from_active_full_time_1x2_market(self, api):
+        api.return_value=event_payload("Wynik meczu 1X2", [
+            odd("1", 2.25), odd("X", 3.10), odd("2", 3.20)
+        ])
+        self.assertEqual(Main.winner_market_selection(123, "Team A", "Team B"),
+                         {"selection": "1", "odds": 2.25})
+
+    @patch("Main.superbet_api")
+    def test_reads_away_win_from_team_label(self, api):
+        api.return_value=event_payload("Wynik meczu", [
+            odd("Remis", 3.10), odd("Goście", 2.40)
+        ])
+        self.assertEqual(Main.winner_market_selection(123, "Team A", "Team B"),
+                         {"selection": "2", "odds": 2.40})
+
+    @patch("Main.superbet_api")
+    def test_rejects_half_time_and_double_chance_markets(self, api):
+        for market in ("1. połowa - wynik meczu", "Podwójna szansa 1X"):
+            api.return_value=event_payload(market, [odd("1", 2.20)])
+            with self.subTest(market=market):
+                self.assertIsNone(Main.winner_market_selection(123, "Team A", "Team B"))
+
+    @patch("Main.superbet_api")
+    def test_rejects_inactive_hidden_and_live_selections(self, api):
+        cases = [
+            event_payload("Wynik meczu", [odd("1", 2.20, status=0)]),
+            event_payload("Wynik meczu", [odd("1", 2.20, display=False)]),
+            event_payload("Wynik meczu", [odd("1", 2.20, offer_state_id=2)]),
+            event_payload("Wynik meczu", [odd("1", 2.20)], inplay="IN_PLAY"),
+            event_payload("Wynik meczu", [odd("1", 2.20)], market_status=0),
+        ]
+        for payload in cases:
+            api.return_value=payload
+            with self.subTest(payload=payload):
+                self.assertIsNone(Main.winner_market_selection(123, "Team A", "Team B"))
+
+    def test_four_leg_coupon_total_must_be_20_to_50(self):
+        candidates = [
+            {"event_id": i, "odds": 2.2, "start_ts": i, "priority": 1}
+            for i in range(4)
+        ]
+        result=Main.choose_four_leg_coupon(candidates)
+        self.assertIsNotNone(result)
+        self.assertGreaterEqual(result[1], 20.0)
+        self.assertLessEqual(result[1], 50.0)
+
+    def test_does_not_force_coupon_when_total_outside_range(self):
+        candidates = [
+            {"event_id": i, "odds": 1.2, "start_ts": i, "priority": 1}
+            for i in range(4)
+        ]
+        self.assertIsNone(Main.choose_four_leg_coupon(candidates))
+
+
+if __name__ == "__main__":
+    unittest.main()
