@@ -1,14 +1,14 @@
-name: Rogi Do HT OKO TYPERA
+name: LIVE OVER — IddaaOranTahmin
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "Main.py"
+      - "LiveOverBot.py"
       - "tests/**"
       - ".github/workflows/Bot.yml"
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
@@ -36,13 +36,13 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python Main.py
+        run: python LiveOverBot.py
       - name: Zapis bazy typów
         run: |
           if [ -f okotypera_rogi.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add okotypera_rogi.db sent_event_ids.json
+            git add okotypera_rogi.db
             git diff --cached --quiet || git commit -m "Update picks database and sent IDs"
             git pull --rebase origin main
             git push
