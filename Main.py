@@ -225,8 +225,11 @@ def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
                 continue
             label=" ".join(str(x or "") for x in (
                 odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label")
-            )).lower()
-            if not re.search(r"\bpowyżej\b",label):
+            )).lower().replace(",", ".")
+            # The selection label itself must identify Over/Powyżej AND the exact 4.5 line.
+            if not re.search(r"\b(powyżej|over)\b",label):
+                continue
+            if not re.search(r"(?<!\d)4\.5(?!\d)",label):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
@@ -419,11 +422,11 @@ def resend_tips_with_corrected_league(c,events):
         if league==old_league or old_league not in ("Superbet — liga","Liga niepodana przez Superbet","liga"):
             continue
         kickoff=datetime.fromtimestamp(start_ts,timezone.utc).astimezone(TZ)
-        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\\n\\n"
-             f"🏆 {league}\\n⚽ {home} – {away}\\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
-             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\\n"
-             f"💹 Kurs Superbet: {float(odds):.2f}\\n"
+        msg=("✏️ KOREKTA TYPU — NAZWA LIGI\n\n"
+             f"🏆 {league}\n⚽ {home} – {away}\n"
+             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\n\n"
+             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\n"
+             f"💹 Kurs Superbet: {float(odds):.2f}\n"
              f"💰 Stawka: {STAKE} zł")
         if send(msg):
             c.execute("UPDATE picks SET league=?,league_corrected_at=? WHERE event_id=?",
@@ -669,17 +672,17 @@ def send_monthly_reports(c,local):
         profit=sum(STAKE*(odds-1) if status=="WON" else -STAKE for status,odds in priced)
         yield_pct=(profit/turnover*100) if turnover else 0.0
         result="ZYSK" if profit>0 else ("STRATA" if profit<0 else "NA ZERO")
-        msg=(f"📅 MIESIĘCZNY BILANS — {month}\\n\\n"
-             f"📊 Rozliczone typy: {decided}\\n"
-             f"🟢 Wygrane: {wins}\\n🔴 Przegrane: {losses}\\n"
-             f"⚪ Anulowane: {voids}\\n"
-             f"🎯 Skuteczność: {accuracy:.1f}%\\n"
-             f"📈 Yield: {yield_pct:+.2f}%\\n"
-             f"💰 Stawka: {STAKE} zł / typ\\n"
-             f"💵 Obrót z kursami: {turnover:.2f} zł\\n"
+        msg=(f"📅 MIESIĘCZNY BILANS — {month}\n\n"
+             f"📊 Rozliczone typy: {decided}\n"
+             f"🟢 Wygrane: {wins}\n🔴 Przegrane: {losses}\n"
+             f"⚪ Anulowane: {voids}\n"
+             f"🎯 Skuteczność: {accuracy:.1f}%\n"
+             f"📈 Yield: {yield_pct:+.2f}%\n"
+             f"💰 Stawka: {STAKE} zł / typ\n"
+             f"💵 Obrót z kursami: {turnover:.2f} zł\n"
              f"🏦 Wynik: {profit:+.2f} zł ({result})")
         if missing:
-            msg+=f"\\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
+            msg+=f"\n⚠️ Typy bez zapisanego kursu, pominięte w yield: {missing}"
         if send(msg):
             c.execute("INSERT OR IGNORE INTO monthly_reports(month,sent_at) VALUES(?,?)",(month,local.isoformat()))
             c.commit()
@@ -804,12 +807,11 @@ def main():
         if count>=MAX_DAILY:
             break
         kickoff=datetime.fromtimestamp(st,timezone.utc).astimezone(TZ)
-        msg=("🎯 OKOTYPERA — ROGI DO HT\\n\\n"
-             f"🏆 {league}\\n⚽ {home} – {away}\\n"
-             f"🕒 Start: {kickoff:%d.%m.%Y %H:%M}\\n\\n"
-             f"📌 Typ: Over {HT_CORNERS_LINE:.1f} rzutów rożnych do HT\\n"
-             f"💹 Kurs Superbet: {price:.2f}\\n"
-             f"📊 Historia: {detail}\\n"
+        msg=(f"🎯 ROGI DO HT\n"
+             f"⚽ {home} – {away}\n"
+             f"🏆 {league} | 🕒 {kickoff:%d.%m %H:%M}\n"
+             f"📌 Over {HT_CORNERS_LINE:.1f} rożnych — 1. połowa\n"
+             f"💹 Kurs: {price:.2f}\n"
              f"💰 Stawka: {STAKE} zł")
         if send(msg):
             c.execute("INSERT OR IGNORE INTO picks(event_id,league,home,away,start_ts,sent_at,status,odds,market_type) VALUES(?,?,?,?,?,?,'PENDING',?,'HT')",
