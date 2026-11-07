@@ -765,9 +765,11 @@ def main():
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed)
         folder=matchday_folder(league)
-        if not folder:
+        # Analizujemy wyłącznie ligi z ustalonej listy priorytetowej.
+        # Pozostałe rozgrywki odrzucamy przed pobieraniem historii Matchday.
+        if folder not in league_priority:
             continue
-        priority=league_priority.get(folder,20)
+        priority=league_priority[folder]
         raw_candidates.append((priority,st,int(event_id),home,away,league,listed))
 
     raw_candidates.sort(key=lambda x:(x[0],x[1]))
