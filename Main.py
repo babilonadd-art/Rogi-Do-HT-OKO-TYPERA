@@ -762,8 +762,8 @@ def choose_four_leg_coupon(candidates):
         for item in group:
             product*=item["odds"]
         if COUPON_MIN_ODDS<=product<=COUPON_MAX_ODDS:
-            # Aim near 30.0, with a slight preference for earlier kickoff and major leagues.
-            score=abs(product-30.0)
+            # Aim near 8.5 within the requested 5–10 range, then prefer earlier kickoff and major leagues.
+            score=abs(product-8.5)
             score+=sum(item.get("priority",20) for item in group)*0.001
             score+=sum(item["start_ts"] for item in group)*1e-12
             valid.append((score,product,group))
