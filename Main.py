@@ -13,7 +13,7 @@ DB="okotypera_rogi.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
-MAX_DAILY=4
+MAX_DAILY_COUPONS=2
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:41:00+01:00"
 SHORTLIST_SIZE=30  # maksymalnie 30 meczów wybieranych do szczegółowej analizy
@@ -1017,11 +1017,16 @@ def main():
     ensure_coupon_schema(c)
     settle_ako_coupons(c)
     local=datetime.now(TZ)
-    coupon_id=local.date().isoformat()
-    if c.execute("SELECT 1 FROM coupons WHERE coupon_id=?",(coupon_id,)).fetchone():
-        logging.info("Kupon AKO na dziś już został opublikowany: %s",coupon_id)
+    day_key=local.date().isoformat()
+    sent_today=c.execute(
+        "SELECT COUNT(*) FROM coupons WHERE sent_at LIKE ?",
+        (day_key+"%",)
+    ).fetchone()[0]
+    if sent_today >= MAX_DAILY_COUPONS:
+        logging.info("Osiągnięto dzienny limit kuponów AKO: %s/%s",sent_today,MAX_DAILY_COUPONS)
         c.close()
         return
+    coupon_id=f"{day_key}-{sent_today+1:02d}"
 
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
@@ -1063,6 +1068,11 @@ def main():
     raw.sort(key=lambda x:(x[0],x[1]))
     shortlist=raw[:SHORTLIST_SIZE]
     logging.info("Superbet: %s meczów przedmeczowych dziś; szczegółowo sprawdzam TOP %s",len(raw),len(shortlist))
+
+    # Nie wykorzystuj ponownie meczu, który był już częścią wcześniejszego kuponu.
+    used_event_ids={row[0] for row in c.execute("SELECT event_id FROM coupon_legs").fetchall()}
+    shortlist=[item for item in shortlist if item[2] not in used_event_ids]
+    logging.info("Po odrzuceniu wcześniej użytych spotkań pozostało %s meczów",len(shortlist))
 
     available=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
