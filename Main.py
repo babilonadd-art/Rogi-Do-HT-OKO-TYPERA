@@ -72,7 +72,8 @@ def superbet_football_events(start,end):
     return result
 
 def normalized_team(name):
-    value=unicodedata.normalize("NFKD",str(name or "")).encode("ascii","ignore").decode().lower()
+    raw=str(name or "").replace("ł","l").replace("Ł","L")
+    value=unicodedata.normalize("NFKD",raw).encode("ascii","ignore").decode().lower()
     tokens=re.findall(r"[a-z0-9]+",value)
     tokens=[t for t in tokens if t not in {"fc","cf","sc","afc","club","the"}]
     compact="".join(tokens)
@@ -305,9 +306,9 @@ MATCHDAY_LEAGUES={
     "daniasuperliga":"DEN_1_superliga","denmarksuperliga":"DEN_1_superliga",
     "austriabundesliga":"AUT_1_bundesliga","austriacup":"AUT_CUP_ofb-cup",
     "czechchanceliga":"CZE_1_chance-liga","czechiachanceliga":"CZE_1_chance-liga","chanceliga":"CZE_1_chance-liga",
-    "swisssuperleague":"SUI_1_super-league","switzerlandsuperleague":"SUI_1_super-league","swisscup":"SUI_CUP_swiss-cup",
+    "swisssuperleague":"SUI_1_super-league","switzerlandsuperleague":"SUI_1_super-league","szwajcariasuperleague":"SUI_1_super-league","swisscup":"SUI_CUP_swiss-cup",
     "slovaknikeliga":"SVK_1_nike-liga","nikeliga":"SVK_1_nike-liga","slovenianprvaliga":"SVN_1_prva-liga","prvaliga":"SVN_1_prva-liga",
-    "swedenallsvenskan":"SWE_1_allsvenskan","allsvenskan":"SWE_1_allsvenskan","norwayeliteserien":"NOR_1_eliteserien","eliteserien":"NOR_1_eliteserien",
+    "swedenallsvenskan":"SWE_1_allsvenskan","szwecjaallsvenskan":"SWE_1_allsvenskan","allsvenskan":"SWE_1_allsvenskan","norwayeliteserien":"NOR_1_eliteserien","norwegiaeliteserien":"NOR_1_eliteserien","eliteserien":"NOR_1_eliteserien",
     "finlandveikkausliiga":"FIN_1_veikkausliiga","veikkausliiga":"FIN_1_veikkausliiga",
     "scotlandpremiership":"SCO_1_premiership","scottishpremiership":"SCO_1_premiership","scotlandchampionship":"SCO_2_championship",
     "scotlandleagueone":"SCO_3_league-one","scotlandleaguetwo":"SCO_4_league-two","scottishcup":"SCO_CUP_scottish-cup","scottishleaguecup":"SCO_CUP_league-cup",
@@ -372,9 +373,9 @@ def recent_team_ht_corner_history(team,rows,fixture_date):
             continue
         hsim=team_similarity(team,row.get("home",""))
         assim=team_similarity(team,row.get("away",""))
-        if hsim>=0.82 and hsim>assim+0.04:
+        if hsim>=0.74 and hsim>assim+0.05:
             matched.append((match_date,home_c,away_c,home_c+away_c))
-        elif assim>=0.82 and assim>hsim+0.04:
+        elif assim>=0.74 and assim>hsim+0.05:
             matched.append((match_date,away_c,home_c,home_c+away_c))
     matched.sort(key=lambda item:item[0],reverse=True)
     result=matched[:HISTORY]
