@@ -403,7 +403,7 @@ MATCHDAY_LEAGUES={
     # Additional exact aliases for competitions returned by Superbet.
     "romaniasuperliga":"ROU_1_liga-1","superligaromania":"ROU_1_liga-1","romania1liga":"ROU_1_liga-1",
     "laliga2":"ESP_2_segunda-division","spainlaliga2":"ESP_2_segunda-division",
-    "chin asuperleague":"CHN_1_super-league","chinasuperleague":"CHN_1_super-league",
+    "chinasuperleague":"CHN_1_super-league",
     "australianaleague":"AUS_1_a-league","australiaaleague":"AUS_1_a-league",
     "croatianhnl":"CRO_1_hnl","cyprusdivision1":"CYP_1_first-division",
     "irelandfirstdivision":"IRE_2_first-division","irelandnationalleague":"IRE_3_national-league",
@@ -421,11 +421,7 @@ _matchday_history_cache={}
 
 def matchday_folder(league):
     # Tylko jawne aliasy pełnych nazw — bez ryzykownego dopasowania fragmentów.
-    key=normalized_team(league)
-    folder=MATCHDAY_LEAGUES.get(key)
-    if not folder:
-        logging.info("Open Matchday: nieobsługiwana liga Superbet=%r (klucz=%s)",league,key)
-    return folder
+    return MATCHDAY_LEAGUES.get(normalized_team(league))
 
 def load_matchday_results(league):
     folder=matchday_folder(league)
