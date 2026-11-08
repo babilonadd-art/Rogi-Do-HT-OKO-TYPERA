@@ -1363,7 +1363,9 @@ def main():
             c.execute("INSERT OR IGNORE INTO daily_headers(day_key,sent_at) VALUES(?,?)",
                       (day_key,local.isoformat()))
             c.commit()
-        msg=(f"DATA: {kickoff:%d.%m.%Y}\n"
+        pick_number=sent_today+1
+        msg=(f"𝗧𝗬𝗣 𝗡𝗥. {pick_number}\n"
+             f"DATA: {kickoff:%d.%m.%Y}\n"
              f"🕒 Godzina: {kickoff:%H:%M}\n"
              f"🏆 {item['league']}\n"
              f"⚽ {item['home']} – {item['away']}\n"
@@ -1379,8 +1381,9 @@ def main():
                 (item["event_id"],item["league"],item["home"],item["away"],
                  item["start_ts"],local.isoformat(),fresh))
             c.commit()
-            logging.info("Wysłano typ FT %s - %s | kurs %.2f | score %.2f",
-                         item["home"],item["away"],fresh,item["score"])
+            sent_today+=1
+            logging.info("Wysłano typ FT nr %s: %s - %s | kurs %.2f | score %.2f",
+                         pick_number,item["home"],item["away"],fresh,item["score"])
         else:
             logging.error("Nie udało się wysłać typu FT %s - %s",item["home"],item["away"])
         time.sleep(.3)
