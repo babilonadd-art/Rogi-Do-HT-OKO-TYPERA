@@ -102,7 +102,20 @@ def team_similarity(a,b):
     x=normalized_team(a); y=normalized_team(b)
     if not x or not y: return 0.0
     if x==y: return 1.0
-    if x in y or y in x: return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
+
+    # Compare meaningful name tokens as well as compact strings. Superbet often
+    # shortens clubs (Schalke) while Open Matchday uses formal names (FC Schalke 04).
+    noise={"fc","cf","sc","afc","club","the","tsg","sv","vfb","rb",
+           "1899","1893","1900","1904","1907","04","07","1"}
+    ta={t for t in re.findall(r"[a-z0-9]+",str(a).lower()) if t not in noise}
+    tb={t for t in re.findall(r"[a-z0-9]+",str(b).lower()) if t not in noise}
+    generic={"united","city","town","sporting","athletic","real"}
+    if ta and tb and (ta.issubset(tb) or tb.issubset(ta)):
+        shorter=ta if len(ta)<=len(tb) else tb
+        if not (len(shorter)==1 and next(iter(shorter)) in generic):
+            return 0.96
+    if x in y or y in x:
+        return max(0.78,min(len(x),len(y))/max(len(x),len(y)))
     return SequenceMatcher(None,x,y).ratio()
 
 def superbet_tournament_names():
