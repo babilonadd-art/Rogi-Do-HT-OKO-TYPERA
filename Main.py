@@ -11,9 +11,9 @@ DB="okotypera_ht.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
-MAX_DAILY_PICKS=4
+MAX_DAILY_PICKS=8
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
-DAILY_LIMIT_RESET_AT="2026-11-07T14:41:00+01:00"
+DAILY_LIMIT_RESET_AT="2026-11-08T16:43:55+01:00"
 SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
@@ -1061,8 +1061,8 @@ def main():
     local=datetime.now(TZ)
     day_key=local.date().isoformat()
     sent_today=c.execute(
-        "SELECT COUNT(*) FROM picks WHERE sent_at LIKE ? AND market_type='HT'",
-        (day_key+"%",)
+        "SELECT COUNT(*) FROM picks WHERE sent_at LIKE ? AND sent_at >= ? AND market_type='HT'",
+        (day_key+"%",DAILY_LIMIT_RESET_AT)
     ).fetchone()[0]
     if sent_today >= MAX_DAILY_PICKS:
         logging.info("Dzienny limit typów HT osiągnięty: %s/%s",sent_today,MAX_DAILY_PICKS)
