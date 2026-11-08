@@ -224,7 +224,7 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
     if (event.get("inplay_stats_metadata") or {}).get("status") not in (None,"","NOT_STARTED"):
         return None
     for market in event.get("markets") or []:
-        name=re.sub(r"\\s+"," ",str(market.get("name") or "").strip().lower())
+        name=re.sub(r"\s+"," ",str(market.get("name") or "").strip().lower())
         has_corners=any(term in name for term in ("corner","corners","roż","rzutów rożnych","suma rzutów"))
         if not has_corners:
             continue
@@ -244,7 +244,7 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
             except (TypeError,ValueError):
                 continue
             selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
-            if not re.search(r"\\b(powyżej|powyzej|over)\\b",selection):
+            if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
                 continue
             if abs(odd_line-float(line))>0.001:
                 continue
