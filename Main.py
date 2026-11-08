@@ -400,16 +400,32 @@ MATCHDAY_LEAGUES={
     "uefachampionsleague":"UEFA_1_champions-league","championsleague":"UEFA_1_champions-league",
     "uefaeuropaleague":"UEFA_1_europa-league","europaleague":"UEFA_1_europa-league",
     "uefaconferenceleague":"UEFA_1_conference-league","conferenceleague":"UEFA_1_conference-league",
+    # Additional exact aliases for competitions returned by Superbet.
+    "romaniasuperliga":"ROU_1_liga-1","superligaromania":"ROU_1_liga-1","romania1liga":"ROU_1_liga-1",
+    "laliga2":"ESP_2_segunda-division","spainlaliga2":"ESP_2_segunda-division",
+    "chin asuperleague":"CHN_1_super-league","chinasuperleague":"CHN_1_super-league",
+    "australianaleague":"AUS_1_a-league","australiaaleague":"AUS_1_a-league",
+    "croatianhnl":"CRO_1_hnl","cyprusdivision1":"CYP_1_first-division",
+    "irelandfirstdivision":"IRE_2_first-division","irelandnationalleague":"IRE_3_national-league",
+    "russianpremierleague":"RUS_1_premier-liga","ukrainianpremierleague":"UKR_1_premier-league",
+    "walespremierleague":"WAL_1_cymru-premier","welshpremierleague":"WAL_1_cymru-premier",
+    "walescymrupremier":"WAL_1_cymru-premier","cymrupremier":"WAL_1_cymru-premier",
+    "walescymrunorth":"WAL_2_cymru-north","walescymrusouth":"WAL_3_cymru-south",
+    "argentinaprimeradivision":"ARG_1_liga-profesional","argentinaprofessionalleague":"ARG_1_liga-profesional",
+    "brasilseriea":"BRA_1_serie-a","brazilseriea":"BRA_1_serie-a","brasileirao":"BRA_1_serie-a",
+    "brazilserieb":"BRA_2_serie-b","mexicoligamx":"MEX_1_liga-mx","mexicoligaexpansion":"MEX_2_liga-expansion",
+    "japanjleague":"JPN_1_j1-league","japanj1":"JPN_1_j1-league",
 }
 _matchday_cache={}
 _matchday_history_cache={}
 
 def matchday_folder(league):
-    # Dopasowanie wyłącznie pełnej, znormalizowanej nazwy ligi.
-    # Dopasowanie fragmentu powodowało fałszywe przypisanie np.
-    # "Malta - Premier League - Top 6" do angielskiej Premier League.
+    # Tylko jawne aliasy pełnych nazw — bez ryzykownego dopasowania fragmentów.
     key=normalized_team(league)
-    return MATCHDAY_LEAGUES.get(key)
+    folder=MATCHDAY_LEAGUES.get(key)
+    if not folder:
+        logging.info("Open Matchday: nieobsługiwana liga Superbet=%r (klucz=%s)",league,key)
+    return folder
 
 def load_matchday_results(league):
     folder=matchday_folder(league)
@@ -1288,6 +1304,10 @@ def main():
         raw.append((league_priority.get(folder,20),kickoff,int(event_id),home,away,league))
     raw=[item for item in raw if item[2] not in used]
     logging.info("Superbet: %s meczów FT do oceny po odjęciu już wysłanych",len(raw))
+    mapped_count=sum(1 for item in raw if matchday_folder(item[5]))
+    unknown_leagues=sorted({item[5] for item in raw if not matchday_folder(item[5])})
+    logging.info("Open Matchday: ligi z mapowaniem %s/%s; bez mapowania %s",
+                 mapped_count,len(raw),", ".join(unknown_leagues[:30]) or "brak")
 
     profiled=[]
     for priority,kickoff,eid,home,away,league in raw:
