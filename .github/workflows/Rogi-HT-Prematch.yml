@@ -2,6 +2,12 @@ name: Rogi HT Prematch
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Main.py'
+      - '.github/workflows/Rogi-HT-Prematch.yml'
+      - 'requirements.txt'
   schedule:
     - cron: "*/5 * * * *"
 
