@@ -1,4 +1,4 @@
-name: Rogi HT Prematch
+name: Rogi FT Prematch
 
 on:
   workflow_dispatch:
@@ -33,18 +33,18 @@ jobs:
         run: pip install -r requirements.txt
       - name: Kontrola składni
         run: python -m py_compile Main.py
-      - name: Skan przedmeczowych rogów HT
+      - name: Skan przedmeczowych rogów FT Over 9.5
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python Main.py
-      - name: Zapis bazy typów HT
+      - name: Zapis bazy typów rogów
         run: |
           if [ -f okotypera_ht.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add okotypera_ht.db
-            git diff --cached --quiet || git commit -m "Update HT corners picks database"
+            git diff --cached --quiet || git commit -m "Update FT corners picks database"
             git pull --rebase origin main
             git push
           fi
