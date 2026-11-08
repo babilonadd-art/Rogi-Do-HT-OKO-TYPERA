@@ -1347,7 +1347,7 @@ def main():
             c.execute("INSERT OR IGNORE INTO daily_headers(day_key,sent_at) VALUES(?,?)",
                       (day_key,local.isoformat()))
             c.commit()
-        msg=(f"📅 {kickoff:%d.%m.%Y}\n"
+        msg=(f"📅 DATA: {kickoff:%d.%m.%Y}\n"
              f"🕒 Godzina: {kickoff:%H:%M}\n"
              f"🏆 {item['league']}\n"
              f"⚽ {item['home']} – {item['away']}\n"
