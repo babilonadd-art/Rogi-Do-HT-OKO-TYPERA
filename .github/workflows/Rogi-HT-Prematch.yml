@@ -9,7 +9,8 @@ on:
       - '.github/workflows/Rogi-HT-Prematch.yml'
       - 'requirements.txt'
   schedule:
-    - cron: "*/5 * * * *"
+    # Przesunięcie poza pełne interwały ogranicza opóźnienia harmonogramu GitHub Actions.
+    - cron: "2-59/5 * * * *"
 
 permissions:
   contents: write
