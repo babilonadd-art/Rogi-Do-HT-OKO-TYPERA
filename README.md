@@ -1,30 +1,31 @@
 # Rogi Do HT OKO TYPERA
 
-Bot Telegram do przedmeczowego rynku **Over 4.5 rzutów rożnych do przerwy (HT)**.
+Bot Telegram do przedmeczowych typów **Over 9.5 rzutów rożnych — FT (cały mecz)**.
 
 ## Ustawienia
 - Źródło terminarza i kursów: Superbet.
-- Rynek: wyłącznie Over 4.5 rożnych HT.
-- Akceptowany kurs: **1.70–2.60** (włącznie); kursy poza zakresem są odrzucane.
-- Maksymalnie **2 typy dziennie**.
-- Bot ocenia historię rożnych HT obu drużyn z Open Matchday, wymaga minimalnej próbki oraz filtruje mecze według średnich i odsetka spotkań z co najmniej 5 rożnymi do przerwy.
-- Mecze są sortowane według wyniku jakości; kursy pobierane są dla najwyżej ocenionych spotkań. Bot nie dobija do limitu na siłę.
+- Rynek: wyłącznie pełny mecz — Over 9.5 rzutów rożnych FT; rynki HT, 1. połowy, 2. połowy i rożne drużynowe są odrzucane.
+- Akceptowany kurs: **1.70–2.60** (włącznie).
+- Maksymalnie **8 typów dziennie**. To limit maksymalny, nie liczba do wypełnienia — bot może wysłać mniej lub zero typów.
+- Selekcja opiera się na ostatnich meczach drużyn z Open Matchday: wymaga co najmniej 5 spotkań na drużynę, średnio minimum 3.5 rożnego dla każdej drużyny, średniej sumy co najmniej 10.5 i skuteczności Over 9.5 na poziomie co najmniej 65% w badanej próbce.
+- Kandydaci są oceniani i sortowani według jakości historii; kurs jest sprawdzany bezpośrednio w aktywnym rynku Superbet, a przed wysłaniem sprawdzany ponownie. Brak odpowiednio dobrych spotkań oznacza brak typu — bot nie typuje na siłę.
+- Każdy typ zaczyna się od daty meczu i godziny w strefie Europe/Warsaw.
 - Stawka informacyjna: 10 zł.
-- Typy są rozliczane na podstawie sumy rożnych w pierwszej połowie z Open Matchday; minimum 5 oznacza wygraną.
-- Osobna baza `okotypera_ht.db` zapobiega ponownemu wysłaniu i nie koliduje z bazą bota LIVE.
+- Rozliczanie FT korzysta z sumy home_corners + away_corners w Open Matchday; 10 lub więcej oznacza wygraną.
+- Nowe typy FT są zapisywane w osobnej tabeli ft_picks, aby historia wcześniejszych typów HT nie blokowała nowego rynku. Oczekujące stare typy HT nadal mogą zostać rozliczone według dotychczasowych zasad.
 
-## Dane Bet365
-Bet365 nie udostępnia publicznego, oficjalnego API. Jego Match Insights są prezentowane w serwisie, ale nie stanowią publicznego źródła danych dla tego bota, a oficjalna lista przedmeczowych statystyk drużyn nie obejmuje historii rzutów rożnych HT. Dlatego do selekcji rożnych wykorzystywane są dane Open Matchday zamiast niepewnego scrapowania strony lub płatnego pośrednika.
+## Dane
+Open Matchday udostępnia w wynikach kolumny pełnego meczu home_corners i away_corners, a także osobne statystyki HT. Bot używa wyłącznie kolumn FT do selekcji i rozliczeń nowego rynku.
 
 ## Sekrety
 W Settings → Secrets and variables → Actions:
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+- TELEGRAM_BOT_TOKEN
+- TELEGRAM_CHAT_ID
 
 Bot musi mieć uprawnienie administratora do publikowania w kanale.
 
 ## Uruchamianie
-Workflow `Rogi HT Prematch` uruchamia skan co 5 minut dla pozostałych meczów danego dnia. Można go też uruchomić ręcznie w GitHub Actions.
+Workflow skanuje co 5 minut mecze przedmeczowe z bieżącego dnia. Można go też uruchomić ręcznie w GitHub Actions.
 
 ## Ograniczenia
-Open Matchday udostępnia statystyki HT tylko dla obsługiwanych lig i spotkań, w których dane są dostępne. Brak próbki, brak aktywnego rynku lub kurs poza zakresem oznacza brak typu. Wyniki historyczne nie gwarantują trafienia. Bot nie zawiera funkcji obstawiania zakładów.
+Dane Open Matchday są dostępne tylko dla obsługiwanych lig i spotkań, dla których istnieje historia. Brak próbki, brak aktywnego rynku lub kurs poza zakresem oznacza brak typu. Statystyki historyczne nie gwarantują wyniku. Bot nie zawiera funkcji obstawiania zakładów.
