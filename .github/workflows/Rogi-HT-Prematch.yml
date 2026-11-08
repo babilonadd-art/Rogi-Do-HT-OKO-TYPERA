@@ -1,0 +1,44 @@
+name: Rogi HT Prematch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rogi-ht-prematch
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja bibliotek
+        run: pip install -r requirements.txt
+      - name: Kontrola składni
+        run: python -m py_compile Main.py
+      - name: Skan przedmeczowych rogów HT
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python Main.py
+      - name: Zapis bazy typów HT
+        run: |
+          if [ -f okotypera_ht.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_ht.db
+            git diff --cached --quiet || git commit -m "Update HT corners picks database"
+            git pull --rebase origin main
+            git push
+          fi
