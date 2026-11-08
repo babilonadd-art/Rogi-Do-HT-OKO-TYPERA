@@ -7,11 +7,11 @@ import requests
 
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
-DB="okotypera_rogi.db"
+DB="okotypera_ht.db"
 TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
-MAX_DAILY_COUPONS=2
+MAX_DAILY_PICKS=2
 # Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
 DAILY_LIMIT_RESET_AT="2026-11-07T14:41:00+01:00"
 SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
@@ -21,8 +21,8 @@ MIN_TEAM_AVG=2.2
 MIN_COMBINED_AVG=5.5
 MIN_HIT_RATE=0.60
 HT_CORNERS_LINE=4.5
-MIN_ODDS=1.60
-MAX_ODDS=2.50
+MIN_ODDS=1.70
+MAX_ODDS=2.60
 SB_TOURNAMENT_NAMES=None
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 sb=requests.Session()
@@ -937,24 +937,73 @@ def settle_ako_coupons(c):
         if not send(msg): logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
 
 
+def settle_ht_picks(c):
+    """Settle only HT corner picks from the matching Open Matchday result row."""
+    pending=c.execute(
+        "SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING' AND market_type='HT'"
+    ).fetchall()
+    now_ts=int(datetime.now(timezone.utc).timestamp())
+    for event_id,league,home,away,start_ts in pending:
+        # Give the match time to finish and the result feed time to update.
+        if now_ts < int(start_ts)+3*60*60:
+            continue
+        rows=load_matchday_results(league)
+        if not rows:
+            continue
+        match_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+        found=None
+        for row in rows:
+            if str(row.get("date") or "")[:10] != match_date:
+                continue
+            rh=row.get("home") or ""
+            ra=row.get("away") or ""
+            direct=team_similarity(home,rh)+team_similarity(away,ra)
+            reverse=team_similarity(home,ra)+team_similarity(away,rh)
+            if max(direct,reverse) < 1.65:
+                continue
+            try:
+                hc=int(float(row.get("home_corners_1h")))
+                ac=int(float(row.get("away_corners_1h")))
+            except (TypeError,ValueError):
+                continue
+            found=(hc+ac,direct>=reverse)
+            break
+        if not found:
+            logging.info("Rozliczenie HT: brak potwierdzonych danych dla %s - %s",home,away)
+            continue
+        total,_=found
+        result="WON" if total>=5 else "LOST"
+        c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",
+                  (result,total,datetime.now(TZ).isoformat(),event_id))
+        c.commit()
+        odds_row=c.execute("SELECT odds FROM picks WHERE event_id=?",(event_id,)).fetchone()
+        odds=float(odds_row[0]) if odds_row and odds_row[0] is not None else 0.0
+        profit=STAKE*(odds-1.0) if result=="WON" and odds>0 else (-STAKE if result=="LOST" else 0.0)
+        msg=(f"📊 ROZLICZENIE — ROGI HT\n\n⚽ {home} – {away}\n"
+             f"📌 Over 4.5 rożnych do przerwy\n"
+             f"🚩 Rożne HT: {total}\n💹 Kurs: {odds:.2f}\n"
+             f"{'🟢 WYGRANY' if result=='WON' else '🔴 PRZEGRANY'}\n"
+             f"💰 Stawka: {STAKE} zł\n🏦 Wynik: {profit:+.2f} zł")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia HT event=%s",event_id)
+
+
 def main():
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
-    ensure_coupon_schema(c)
-    settle_ako_coupons(c)
+    settle_ht_picks(c)
     local=datetime.now(TZ)
     day_key=local.date().isoformat()
     sent_today=c.execute(
-        "SELECT COUNT(*) FROM coupons WHERE sent_at LIKE ?",
+        "SELECT COUNT(*) FROM picks WHERE sent_at LIKE ? AND market_type='HT'",
         (day_key+"%",)
     ).fetchone()[0]
-    if sent_today >= MAX_DAILY_COUPONS:
-        logging.info("Osiągnięto dzienny limit kuponów AKO: %s/%s",sent_today,MAX_DAILY_COUPONS)
+    if sent_today >= MAX_DAILY_PICKS:
+        logging.info("Dzienny limit typów HT osiągnięty: %s/%s",sent_today,MAX_DAILY_PICKS)
         c.close()
         return
-    coupon_id=f"{day_key}-{sent_today+1:02d}"
 
     day_start=datetime.combine(local.date(),datetime.min.time(),TZ)
     day_end=datetime.combine(local.date(),datetime.max.time(),TZ)
@@ -974,6 +1023,7 @@ def main():
         "POR_1_primeira-liga":6,"UEFA_1_champions-league":7,
         "UEFA_1_europa-league":8,"UEFA_1_conference-league":9
     }
+    used={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
     raw=[]
     for listed in events:
         fx=listed.get("fixture") or {}
@@ -993,68 +1043,80 @@ def main():
         league=extract_league_name(listed) or "Liga niepodana przez Superbet"
         folder=matchday_folder(league)
         raw.append((league_priority.get(folder,20),kickoff,int(event_id),home,away,league))
-    raw.sort(key=lambda x:(x[0],x[1]))
-    shortlist=raw[:SHORTLIST_SIZE]
-    logging.info("Superbet: %s meczów przedmeczowych dziś; szczegółowo sprawdzam TOP %s",len(raw),len(shortlist))
+    raw=[item for item in raw if item[2] not in used]
+    logging.info("Superbet: %s meczów do oceny po odjęciu już użytych",len(raw))
 
-    # Nie wykorzystuj ponownie meczu, który był już częścią wcześniejszego kuponu.
-    used_event_ids={row[0] for row in c.execute("SELECT event_id FROM coupon_legs").fetchall()}
-    shortlist=[item for item in shortlist if item[2] not in used_event_ids]
-    logging.info("Po odrzuceniu wcześniej użytych spotkań pozostało %s meczów",len(shortlist))
+    profiled=[]
+    # Rank all fixtures with available HT-corner history before requesting detailed odds.
+    for priority,kickoff,eid,home,away,league in raw:
+        quality,quality_detail=evaluate_matchday_quality(league,home,away,kickoff)
+        if quality is not True:
+            logging.info("Odrzucono %s - %s | %s",home,away,quality_detail)
+            continue
+        score,profile_detail=matchday_candidate_profile(league,home,away,kickoff)
+        if score is None:
+            continue
+        profiled.append({
+            "priority":priority,"start_ts":kickoff,"event_id":eid,"home":home,
+            "away":away,"league":league,"score":score,"profile":profile_detail
+        })
+    profiled.sort(key=lambda x:(-x["score"],x["priority"],x["start_ts"]))
+    shortlist=profiled[:SHORTLIST_SIZE]
+    logging.info("Jakość historii: %s; do kontroli kursów TOP %s",len(profiled),len(shortlist))
 
     available=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(winner_market_selection,eid,home,away,league,kickoff)
-                 for priority,kickoff,eid,home,away,league in shortlist]
+        futures=[pool.submit(superbet_ht_over_odds,item["event_id"],HT_CORNERS_LINE) for item in shortlist]
         for item,future in zip(shortlist,futures):
             try:
-                market=future.result()
+                price=future.result()
             except Exception:
-                logging.exception("Błąd sprawdzania rynku 1X2")
-                market=None
-            if not market:
-                continue
-            priority,kickoff,eid,home,away,league=item
-            available.append({
-                "priority":priority,"start_ts":kickoff,"event_id":eid,"home":home,
-                "away":away,"league":league,"selection":market["selection"],
-                "odds":market["odds"],"form":market["form"]
-            })
-    logging.info("Selekcja 1X2: %s mecze przeszły kontrolę formy; kursy: %s",
-                 len(available), [round(item["odds"],2) for item in available])
-    coupon=choose_four_leg_coupon(available)
-    if not coupon:
-        logging.info("Po sprawdzeniu TOP %s nie znaleziono 4 aktywnych zwycięstw 1/2 z kursem AKO 5–10; nie publikuję kuponu na siłę", SHORTLIST_SIZE)
+                logging.exception("Błąd pobierania kursu HT")
+                price=None
+            if price is not None:
+                item["odds"]=price
+                available.append(item)
+    available.sort(key=lambda x:(-x["score"],x["priority"],x["start_ts"]))
+    remaining=MAX_DAILY_PICKS-sent_today
+    selected=available[:remaining]
+    if not selected:
+        logging.info("Brak meczów spełniających jakość historii i kurs 1.70–2.60; bez typowania na siłę")
         c.close()
         return
-    legs,total_odds=coupon
-    # Linki pobieramy dopiero dla wybranej czwórki, nie dla całej shortlisty.
-    for leg in legs:
-        link=superbet_match_url(leg["event_id"],leg["home"],leg["away"],leg["start_ts"])
-        leg["url"]=link
 
-    # Ostatnia kontrola rynku tuż przed publikacją; bez meczu live i bez zmiany typu.
-    refreshed=[]
-    for leg in legs:
-        fresh=winner_market_selection(leg["event_id"],leg["home"],leg["away"],leg["league"],leg["start_ts"])
-        if not fresh or fresh["selection"]!=leg["selection"]:
-            logging.info("Kupon anulowany przed wysyłką — rynek/typ zmienił się dla %s - %s",leg["home"],leg["away"])
-            c.close()
-            return
-        refreshed.append((leg,fresh["odds"]))
-    fresh_total=1.0
-    for _,price in refreshed: fresh_total*=price
-    if not COUPON_MIN_ODDS<=fresh_total<=COUPON_MAX_ODDS:
-        logging.info("Kupon anulowany — świeży kurs łączny %.2f poza zakresem 5–10",fresh_total)
-        c.close()
-        return
-    total_odds=round(fresh_total,2)
+    for item in selected:
+        # Refresh exact market immediately before publishing.
+        fresh=superbet_ht_over_odds(item["event_id"],HT_CORNERS_LINE)
+        if fresh is None:
+            logging.info("Pominięto %s - %s: rynek HT zniknął lub kurs wyszedł poza zakres",item["home"],item["away"])
+            continue
+        kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
+        link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
+        msg=(f"🕒 {kickoff:%d.%m.%Y %H:%M}\n"
+             f"🏆 {item['league']}\n"
+             f"⚽ {item['home']} – {item['away']}\n"
+             f"📌 Typ: Over 4.5 rzutów rożnych do HT\n"
+             f"💹 Kurs Superbet: {fresh:.2f}\n"
+             f"📊 Analiza HT: {item['profile']}\n"
+             f"💰 Stawka informacyjna: {STAKE} zł\n"
+             f"🔗 Mecz: {link}")
+        if send(msg):
+            c.execute("""INSERT OR IGNORE INTO picks
+                (event_id,league,home,away,start_ts,sent_at,status,odds,market_type)
+                VALUES(?,?,?,?,?,?,'PENDING',?,'HT')""",
+                (item["event_id"],item["league"],item["home"],item["away"],
+                 item["start_ts"],local.isoformat(),fresh))
+            c.commit()
+            logging.info("Wysłano typ HT %s - %s | kurs %.2f | score %.2f",
+                         item["home"],item["away"],fresh,item["score"])
+        else:
+            logging.error("Nie udało się wysłać typu HT %s - %s",item["home"],item["away"])
+        time.sleep(.3)
+    c.close()
 
-    msg=(f"🕒 KUPON DNIA | {local:%d.%m.%Y}\n"
-         f"🎯 AKO — 4 ZWYCIĘSTWA DRUŻYN (CAŁY MECZ)\n"
-         f"💹 KURS ŁĄCZNY: {total_odds:.2f}\n\n")
-    for index,(leg,price) in enumerate(refreshed,1):
-        kickoff=datetime.fromtimestamp(leg["start_ts"],timezone.utc).astimezone(TZ)
+
+if __name__=="__main__": main()
+)
         team=leg["home"] if leg["selection"]=="1" else leg["away"]
         msg+=(f"{index}. 🕒 {kickoff:%H:%M}\n"
               f"⚽ {leg['home']} – {leg['away']}\n"
