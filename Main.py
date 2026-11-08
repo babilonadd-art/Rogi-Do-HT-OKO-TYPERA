@@ -1232,6 +1232,9 @@ def main():
         start_ts INTEGER NOT NULL,sent_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',
         ft_corners INTEGER,settled_at TEXT,odds REAL)""")
     c.commit()
+    c.execute("""CREATE TABLE IF NOT EXISTS daily_headers(
+        day_key TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
+    c.commit()
     # Finish any legacy HT picks already issued; new picks are FT only.
     settle_ht_picks(c)
     settle_ft_picks(c)
@@ -1332,6 +1335,18 @@ def main():
             continue
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
+        header=c.execute("SELECT 1 FROM daily_headers WHERE day_key=?",(day_key,)).fetchone()
+        if not header:
+            day_header=(f"📅 𝗧𝗬𝗣𝗬 𝗡𝗔 𝗗𝗭𝗜𝗘𝗡 {local:%d.%m.%Y}\n"
+                        f"⚽ 𝗥𝗢𝗚𝗜 𝗙𝗧 — 𝗢𝗩𝗘𝗥 𝟵.𝟱\n"
+                        f"🎯 Maksymalnie {MAX_DAILY_PICKS} typów — tylko najlepsze mecze")
+            if not send(day_header):
+                logging.error("Nie udało się wysłać nagłówka dnia %s; typ wstrzymany",day_key)
+                c.close()
+                return
+            c.execute("INSERT OR IGNORE INTO daily_headers(day_key,sent_at) VALUES(?,?)",
+                      (day_key,local.isoformat()))
+            c.commit()
         msg=(f"📅 DATA: {kickoff:%d.%m.%Y}\n"
              f"🕒 Godzina: {kickoff:%H:%M}\n"
              f"🏆 {item['league']}\n"
