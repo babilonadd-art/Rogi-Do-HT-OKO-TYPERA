@@ -12,8 +12,12 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
 MAX_DAILY_PICKS=8
-# Jednorazowe wyzerowanie licznika dziennego od tej chwili; historia typów pozostaje zachowana.
-DAILY_LIMIT_RESET_AT="2026-11-08T16:43:55+01:00"
+FT_CORNERS_LINE=9.5
+FT_HISTORY=8
+FT_MIN_SAMPLE=5
+FT_MIN_TEAM_AVG=3.5
+FT_MIN_COMBINED_AVG=10.5
+FT_MIN_HIT_RATE=0.65
 SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
@@ -197,6 +201,62 @@ def superbet_event_for_match(home,away,start_ts,events):
         if best is None or score>best[0]:
             best=(score,event)
     return best[1] if best else None
+
+def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
+    """Return odds only for the exact active full-time match-corners Over line."""
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events",[])
+    if not events:
+        return None
+    if len(events)==1:
+        event=events[0]
+        returned_id=event.get("event_id") or event.get("id")
+        if returned_id is not None and str(returned_id)!=str(event_id):
+            return None
+    else:
+        event=next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
+        if event is None:
+            return None
+    fixture=event.get("fixture") or {}
+    offer_states=fixture.get("offer_state_status") or {}
+    if offer_states and offer_states.get("1") not in (1,"1"):
+        return None
+    if (event.get("inplay_stats_metadata") or {}).get("status") not in (None,"","NOT_STARTED"):
+        return None
+    for market in event.get("markets") or []:
+        name=re.sub(r"\\s+"," ",str(market.get("name") or "").strip().lower())
+        has_corners=any(term in name for term in ("corner","corners","roż","rzutów rożnych","suma rzutów"))
+        if not has_corners:
+            continue
+        # Reject all half markets and team-only totals; accept only the match total.
+        if any(term in name for term in ("1st half","first half","1. połowa","1 połowa","pierwsza połowa",
+                                         "2nd half","second half","2. połowa","2 połowa","druga połowa",
+                                         "home","away","gospodarze","goście","drużyn","team total")):
+            continue
+        if market.get("status") not in (None,1,"1","ACTIVE","active"):
+            continue
+        for odd in market.get("odds") or []:
+            meta=odd.get("metadata") or {}
+            raw_line=meta.get("special_bet_value",odd.get("special_bet_value"))
+            try:
+                odd_line=float(str(raw_line).replace(",","."))
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
+            if not re.search(r"\\b(powyżej|powyzej|over)\\b",selection):
+                continue
+            if abs(odd_line-float(line))>0.001:
+                continue
+            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+                continue
+            if str(meta.get("offer_state_id",1))!="1" or not MIN_ODDS<=price<=MAX_ODDS:
+                continue
+            logging.info("Superbet FT corners: event %s | %s | Over %.1f | kurs %.2f",event_id,market.get("name"),line,price)
+            return price
+    logging.info("Superbet: brak aktywnego rynku FT rożne Over %.1f dla event %s",line,event_id)
+    return None
+
 
 def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
     """Return a price only when this exact event has an active HT total-corners Over line."""
@@ -394,6 +454,69 @@ def recent_team_ht_corner_history(team,rows,fixture_date):
     result=matched[:HISTORY]
     _matchday_history_cache[cache_key]=result
     return result
+
+def recent_team_ft_corner_history(team,rows,fixture_date):
+    """Recent full-time corner totals for a team, excluding the fixture date and later."""
+    matched=[]
+    for row in rows:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            home_c=int(float(row["home_corners"]))
+            away_c=int(float(row["away_corners"]))
+        except (KeyError,TypeError,ValueError):
+            continue
+        hsim=team_similarity(team,row.get("home",""))
+        assim=team_similarity(team,row.get("away",""))
+        if hsim>=0.74 and hsim>assim+0.05:
+            matched.append((match_date,home_c,away_c,home_c+away_c))
+        elif assim>=0.74 and assim>hsim+0.05:
+            matched.append((match_date,away_c,home_c,home_c+away_c))
+    matched.sort(key=lambda item:item[0],reverse=True)
+    return matched[:FT_HISTORY]
+
+
+def evaluate_ft_matchday_quality(league,home,away,start_ts):
+    rows=load_matchday_results(league)
+    if rows is None:
+        return False,"brak danych Open Matchday FT dla ligi"
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    hh=recent_team_ft_corner_history(home,rows,fixture_date)
+    ah=recent_team_ft_corner_history(away,rows,fixture_date)
+    if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
+        return False,f"za mała próba FT: {home} {len(hh)}/{FT_HISTORY}, {away} {len(ah)}/{FT_HISTORY}"
+    home_avg=sum(x[1] for x in hh)/len(hh)
+    away_avg=sum(x[1] for x in ah)/len(ah)
+    totals=[x[3] for x in hh]+[x[3] for x in ah]
+    combined_avg=sum(totals)/len(totals)
+    hit_rate=sum(1 for total in totals if total>=10)/len(totals)
+    passed=(home_avg>=FT_MIN_TEAM_AVG and away_avg>=FT_MIN_TEAM_AVG
+            and combined_avg>=FT_MIN_COMBINED_AVG and hit_rate>=FT_MIN_HIT_RATE)
+    detail=(f"próba FT {len(hh)}+{len(ah)}, średnie rożne drużyn {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, Over 9.5 w {hit_rate*100:.0f}%")
+    return passed,detail
+
+
+def ft_matchday_candidate_profile(league,home,away,start_ts):
+    rows=load_matchday_results(league)
+    if rows is None:
+        return None,"brak danych Open Matchday FT"
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    hh=recent_team_ft_corner_history(home,rows,fixture_date)
+    ah=recent_team_ft_corner_history(away,rows,fixture_date)
+    if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
+        return None,"za mała próbka FT"
+    home_avg=sum(x[1] for x in hh)/len(hh)
+    away_avg=sum(x[1] for x in ah)/len(ah)
+    totals=[x[3] for x in hh]+[x[3] for x in ah]
+    combined_avg=sum(totals)/len(totals)
+    hit_rate=sum(1 for total in totals if total>=10)/len(totals)
+    score=hit_rate*100+min(home_avg,away_avg)*3+combined_avg*2+min(len(hh),len(ah))*0.5
+    detail=(f"próba {len(hh)}+{len(ah)}, średnie FT {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, Over 9.5 w {hit_rate*100:.0f}%")
+    return score,detail
+
 
 def evaluate_matchday_quality(league,home,away,start_ts):
     rows=load_matchday_results(league)
@@ -951,6 +1074,53 @@ def settle_ako_coupons(c):
         if not send(msg): logging.error("Nie udało się wysłać rozliczenia kuponu %s",coupon_id)
 
 
+def settle_ft_picks(c):
+    """Settle FT corner picks only from confirmed full-time corner totals in Open Matchday."""
+    pending=c.execute(
+        "SELECT event_id,league,home,away,start_ts,odds FROM ft_picks WHERE status='PENDING'"
+    ).fetchall()
+    now_ts=int(datetime.now(timezone.utc).timestamp())
+    for event_id,league,home,away,start_ts,odds in pending:
+        if now_ts<int(start_ts)+3*60*60:
+            continue
+        rows=load_matchday_results(league)
+        if not rows:
+            continue
+        match_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+        found=None
+        for row in rows:
+            if str(row.get("date") or "")[:10]!=match_date:
+                continue
+            rh=row.get("home") or ""; ra=row.get("away") or ""
+            direct=team_similarity(home,rh)+team_similarity(away,ra)
+            reverse=team_similarity(home,ra)+team_similarity(away,rh)
+            if max(direct,reverse)<1.65:
+                continue
+            try:
+                hc=int(float(row.get("home_corners")))
+                ac=int(float(row.get("away_corners")))
+            except (TypeError,ValueError):
+                continue
+            found=(hc+ac)
+            break
+        if found is None:
+            logging.info("Rozliczenie FT: brak potwierdzonych danych dla %s - %s",home,away)
+            continue
+        result="WON" if found>=10 else "LOST"
+        c.execute("UPDATE ft_picks SET status=?,ft_corners=?,settled_at=? WHERE event_id=?",
+                  (result,found,datetime.now(TZ).isoformat(),event_id))
+        c.commit()
+        price=float(odds or 0)
+        profit=STAKE*(price-1.0) if result=="WON" and price>0 else -STAKE
+        msg=(f"📊 ROZLICZENIE — ROGI FT\n\n⚽ {home} – {away}\n"
+             f"📌 Over 9.5 rzutów rożnych — CAŁY MECZ\n"
+             f"🚩 Rożne FT: {found}\n💹 Kurs: {price:.2f}\n"
+             f"{'🟢 WYGRANY' if result=='WON' else '🔴 PRZEGRANY'}\n"
+             f"💰 Stawka: {STAKE} zł\n🏦 Wynik: {profit:+.2f} zł")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia FT event=%s",event_id)
+
+
 def settle_ht_picks(c):
     """Settle only HT corner picks from the matching Open Matchday result row."""
     pending=c.execute(
@@ -1057,15 +1227,21 @@ def main():
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_picks(
+        event_id INTEGER PRIMARY KEY,league TEXT NOT NULL,home TEXT NOT NULL,away TEXT NOT NULL,
+        start_ts INTEGER NOT NULL,sent_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',
+        ft_corners INTEGER,settled_at TEXT,odds REAL)""")
+    c.commit()
+    # Finish any legacy HT picks already issued; new picks are FT only.
     settle_ht_picks(c)
+    settle_ft_picks(c)
     local=datetime.now(TZ)
     day_key=local.date().isoformat()
     sent_today=c.execute(
-        "SELECT COUNT(*) FROM picks WHERE sent_at LIKE ? AND sent_at >= ? AND market_type='HT'",
-        (day_key+"%",DAILY_LIMIT_RESET_AT)
+        "SELECT COUNT(*) FROM ft_picks WHERE sent_at LIKE ?",(day_key+"%",)
     ).fetchone()[0]
-    if sent_today >= MAX_DAILY_PICKS:
-        logging.info("Dzienny limit typów HT osiągnięty: %s/%s",sent_today,MAX_DAILY_PICKS)
+    if sent_today>=MAX_DAILY_PICKS:
+        logging.info("Dzienny limit typów FT osiągnięty: %s/%s",sent_today,MAX_DAILY_PICKS)
         c.close()
         return
 
@@ -1087,7 +1263,7 @@ def main():
         "POR_1_primeira-liga":6,"UEFA_1_champions-league":7,
         "UEFA_1_europa-league":8,"UEFA_1_conference-league":9
     }
-    used={int(row[0]) for row in c.execute("SELECT event_id FROM picks").fetchall()}
+    used={int(row[0]) for row in c.execute("SELECT event_id FROM ft_picks").fetchall()}
     raw=[]
     for listed in events:
         fx=listed.get("fixture") or {}
@@ -1108,15 +1284,15 @@ def main():
         folder=matchday_folder(league)
         raw.append((league_priority.get(folder,20),kickoff,int(event_id),home,away,league))
     raw=[item for item in raw if item[2] not in used]
-    logging.info("Superbet: %s meczów do oceny po odjęciu już użytych",len(raw))
+    logging.info("Superbet: %s meczów FT do oceny po odjęciu już wysłanych",len(raw))
 
     profiled=[]
     for priority,kickoff,eid,home,away,league in raw:
-        quality,quality_detail=evaluate_matchday_quality(league,home,away,kickoff)
-        if quality is not True:
-            logging.info("Odrzucono %s - %s | %s",home,away,quality_detail)
+        passed,quality_detail=evaluate_ft_matchday_quality(league,home,away,kickoff)
+        if not passed:
+            logging.info("Odrzucono FT %s - %s | %s",home,away,quality_detail)
             continue
-        score,profile_detail=matchday_candidate_profile(league,home,away,kickoff)
+        score,profile_detail=ft_matchday_candidate_profile(league,home,away,kickoff)
         if score is None:
             continue
         profiled.append({
@@ -1125,16 +1301,16 @@ def main():
         })
     profiled.sort(key=lambda x:(-x["score"],x["priority"],x["start_ts"]))
     shortlist=profiled[:SHORTLIST_SIZE]
-    logging.info("Jakość historii: %s; do kontroli kursów TOP %s",len(profiled),len(shortlist))
+    logging.info("Jakość historii FT: %s; do kontroli kursów TOP %s",len(profiled),len(shortlist))
 
     available=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(superbet_ht_over_odds,item["event_id"],HT_CORNERS_LINE) for item in shortlist]
+        futures=[pool.submit(superbet_ft_corners_over_odds,item["event_id"],FT_CORNERS_LINE) for item in shortlist]
         for item,future in zip(shortlist,futures):
             try:
                 price=future.result()
             except Exception:
-                logging.exception("Błąd pobierania kursu HT")
+                logging.exception("Błąd pobierania kursu FT rożnych")
                 price=None
             if price is not None:
                 item["odds"]=price
@@ -1143,36 +1319,39 @@ def main():
     remaining=MAX_DAILY_PICKS-sent_today
     selected=available[:remaining]
     if not selected:
-        logging.info("Brak meczów spełniających jakość historii i kurs 1.70–2.60; bez typowania na siłę")
+        logging.info("Brak wystarczająco dobrych meczów dla FT Over 9.5 i kursu %.2f–%.2f; bez typowania na siłę",
+                     MIN_ODDS,MAX_ODDS)
         c.close()
         return
 
     for item in selected:
-        fresh=superbet_ht_over_odds(item["event_id"],HT_CORNERS_LINE)
+        fresh=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
         if fresh is None:
-            logging.info("Pominięto %s - %s: rynek HT zniknął lub kurs wyszedł poza zakres",item["home"],item["away"])
+            logging.info("Pominięto %s - %s: rynek FT Over 9.5 zniknął lub kurs wyszedł poza zakres",
+                         item["home"],item["away"])
             continue
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
-        msg=(f"🕒 {kickoff:%d.%m.%Y %H:%M}\n"
+        msg=(f"📅 DATA: {kickoff:%d.%m.%Y}\n"
+             f"🕒 Godzina: {kickoff:%H:%M}\n"
              f"🏆 {item['league']}\n"
              f"⚽ {item['home']} – {item['away']}\n"
-             f"📌 Typ: Over 4.5 rzutów rożnych do HT\n"
+             f"📌 TYP: OVER 9.5 RZUTÓW ROŻNYCH — FT (CAŁY MECZ)\n"
              f"💹 Kurs Superbet: {fresh:.2f}\n"
-             f"📊 Analiza HT: {item['profile']}\n"
+             f"📊 Analiza FT: {item['profile']}\n"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Mecz: {link}")
         if send(msg):
-            c.execute("""INSERT OR IGNORE INTO picks
-                (event_id,league,home,away,start_ts,sent_at,status,odds,market_type)
-                VALUES(?,?,?,?,?,?,'PENDING',?,'HT')""",
+            c.execute("""INSERT OR IGNORE INTO ft_picks
+                (event_id,league,home,away,start_ts,sent_at,status,odds)
+                VALUES(?,?,?,?,?,?,'PENDING',?)""",
                 (item["event_id"],item["league"],item["home"],item["away"],
                  item["start_ts"],local.isoformat(),fresh))
             c.commit()
-            logging.info("Wysłano typ HT %s - %s | kurs %.2f | score %.2f",
+            logging.info("Wysłano typ FT %s - %s | kurs %.2f | score %.2f",
                          item["home"],item["away"],fresh,item["score"])
         else:
-            logging.error("Nie udało się wysłać typu HT %s - %s",item["home"],item["away"])
+            logging.error("Nie udało się wysłać typu FT %s - %s",item["home"],item["away"])
         time.sleep(.3)
     c.close()
 
