@@ -988,6 +988,56 @@ def settle_ht_picks(c):
             logging.error("Nie udało się wysłać rozliczenia HT event=%s",event_id)
 
 
+def settle_ht_picks(c):
+    """Settle only HT corner picks from the matching Open Matchday result row."""
+    pending=c.execute(
+        "SELECT event_id,league,home,away,start_ts FROM picks WHERE status='PENDING' AND market_type='HT'"
+    ).fetchall()
+    now_ts=int(datetime.now(timezone.utc).timestamp())
+    for event_id,league,home,away,start_ts in pending:
+        if now_ts < int(start_ts)+3*60*60:
+            continue
+        rows=load_matchday_results(league)
+        if not rows:
+            continue
+        match_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+        found=None
+        for row in rows:
+            if str(row.get("date") or "")[:10] != match_date:
+                continue
+            rh=row.get("home") or ""
+            ra=row.get("away") or ""
+            direct=team_similarity(home,rh)+team_similarity(away,ra)
+            reverse=team_similarity(home,ra)+team_similarity(away,rh)
+            if max(direct,reverse) < 1.65:
+                continue
+            try:
+                hc=int(float(row.get("home_corners_1h")))
+                ac=int(float(row.get("away_corners_1h")))
+            except (TypeError,ValueError):
+                continue
+            found=(hc+ac,direct>=reverse)
+            break
+        if not found:
+            logging.info("Rozliczenie HT: brak potwierdzonych danych dla %s - %s",home,away)
+            continue
+        total,_=found
+        result="WON" if total>=5 else "LOST"
+        c.execute("UPDATE picks SET status=?,ht_corners=?,settled_at=? WHERE event_id=?",
+                  (result,total,datetime.now(TZ).isoformat(),event_id))
+        c.commit()
+        odds_row=c.execute("SELECT odds FROM picks WHERE event_id=?",(event_id,)).fetchone()
+        odds=float(odds_row[0]) if odds_row and odds_row[0] is not None else 0.0
+        profit=STAKE*(odds-1.0) if result=="WON" and odds>0 else (-STAKE if result=="LOST" else 0.0)
+        msg=(f"📊 ROZLICZENIE — ROGI HT\n\n⚽ {home} – {away}\n"
+             f"📌 Over 4.5 rożnych do przerwy\n"
+             f"🚩 Rożne HT: {total}\n💹 Kurs: {odds:.2f}\n"
+             f"{'🟢 WYGRANY' if result=='WON' else '🔴 PRZEGRANY'}\n"
+             f"💰 Stawka: {STAKE} zł\n🏦 Wynik: {profit:+.2f} zł")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia HT event=%s",event_id)
+
+
 def main():
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
@@ -1047,7 +1097,6 @@ def main():
     logging.info("Superbet: %s meczów do oceny po odjęciu już użytych",len(raw))
 
     profiled=[]
-    # Rank all fixtures with available HT-corner history before requesting detailed odds.
     for priority,kickoff,eid,home,away,league in raw:
         quality,quality_detail=evaluate_matchday_quality(league,home,away,kickoff)
         if quality is not True:
@@ -1085,7 +1134,6 @@ def main():
         return
 
     for item in selected:
-        # Refresh exact market immediately before publishing.
         fresh=superbet_ht_over_odds(item["event_id"],HT_CORNERS_LINE)
         if fresh is None:
             logging.info("Pominięto %s - %s: rynek HT zniknął lub kurs wyszedł poza zakres",item["home"],item["away"])
@@ -1112,32 +1160,6 @@ def main():
         else:
             logging.error("Nie udało się wysłać typu HT %s - %s",item["home"],item["away"])
         time.sleep(.3)
-    c.close()
-
-
-if __name__=="__main__": main()
-)
-        team=leg["home"] if leg["selection"]=="1" else leg["away"]
-        msg+=(f"{index}. 🕒 {kickoff:%H:%M}\n"
-              f"⚽ {leg['home']} – {leg['away']}\n"
-              f"🏆 {leg['league']}\n"
-              f"📌 Typ: WYGRANA {team} ({leg['selection']}) — cały mecz\n"
-              f"💹 Kurs: {price:.2f}\n"
-              f"🔗 Mecz: {leg['url']}\n\n")
-    msg+=(f"💰 Stawka na kupon: {STAKE} zł\n"
-          f"⚠️ Kupon AKO wygrywa tylko wtedy, gdy wejdą wszystkie 4 zdarzenia.")
-    if send(msg):
-        c.execute("INSERT INTO coupons(coupon_id,sent_at,odds,stake,status) VALUES(?,?,?,?, 'PENDING')",
-                  (coupon_id,local.isoformat(),total_odds,STAKE))
-        for leg,price in refreshed:
-            c.execute("""INSERT INTO coupon_legs(event_id,coupon_id,league,home,away,start_ts,selection,odds)
-                         VALUES(?,?,?,?,?,?,?,?)""",
-                      (leg["event_id"],coupon_id,leg["league"],leg["home"],leg["away"],
-                       leg["start_ts"],leg["selection"],price))
-        c.commit()
-        logging.info("Wysłano kupon AKO %s | 4 mecze | kurs %.2f",coupon_id,total_odds)
-    else:
-        logging.error("Nie udało się wysłać kuponu AKO %s do Telegrama",coupon_id)
     c.close()
 
 
