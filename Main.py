@@ -1234,11 +1234,218 @@ def settle_ht_picks(c):
             logging.error("Nie udało się wysłać rozliczenia HT event=%s",event_id)
 
 
+
+# --- Monitoring anomalii kursów HT/FT przed meczem ---
+HTFT_MONITOR_HOURS = 48
+HTFT_MONITOR_MAX_EVENTS = 180
+HTFT_ALERT_DROP_PCT = 0.15       # spadek kursu o co najmniej 15% od pierwszej obserwacji
+HTFT_ALERT_PROBABILITY_PP = 0.05 # wzrost fair probability o 5 p.p. po zdjęciu marży
+HTFT_MIN_SNAPSHOTS = 2
+
+def fetch_superbet_event_detail(event_id):
+    payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
+    events=payload.get("events") or []
+    if len(events)==1:
+        event=events[0]
+        returned_id=event.get("event_id") or event.get("id")
+        if returned_id is not None and str(returned_id)!=str(event_id):
+            return None
+        return event
+    return next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
+
+def htft_market_outcomes(event):
+    """Read only an explicitly labelled pre-match half-time/full-time market."""
+    found=[]
+    for market in event.get("markets") or []:
+        raw_name=str(market.get("name") or "")
+        name=re.sub(r"\s+"," ",raw_name.strip().lower())
+        explicit_htft=(
+            ("ht/ft" in name or "half time/full time" in name or
+             "half-time/full-time" in name or "half time / full time" in name or
+             "do przerwy/koniec" in name or "do przerwy / wynik końcowy" in name or
+             "wynik do przerwy/wynik końcowy" in name or
+             "wynik do przerwy / wynik końcowy" in name)
+        )
+        if not explicit_htft or market.get("status") not in (None,1,"1","ACTIVE","active"):
+            continue
+        outcomes=[]
+        for odd in market.get("odds") or []:
+            meta=odd.get("metadata") or {}
+            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+                continue
+            if str(meta.get("offer_state_id",1))!="1":
+                continue
+            try:
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            labels=[odd.get("name"),odd.get("label"),meta.get("name"),meta.get("info")]
+            label=" ".join(str(x).strip() for x in labels if x is not None)
+            compact=re.sub(r"[^0-9xX12]","",label).lower()
+            # Exact HT/FT outcome tokens only; do not infer from team names.
+            match=re.search(r"(?<![0-9])([12xX])\s*[/\-]\s*([12xX])(?![0-9])",label)
+            if not match:
+                match=re.search(r"(?<![0-9])([12xX])([12xX])(?![0-9])",compact)
+            if not match:
+                continue
+            selection=f"{match.group(1).upper()}/{match.group(2).upper()}"
+            if selection not in ("1/2","2/1"):
+                continue
+            if price<=1.0 or price>1000:
+                continue
+            outcomes.append({"selection":selection,"odds":price,"label":label})
+        if outcomes:
+            # Fair probability uses all active outcomes in this same HT/FT market.
+            implied=[1.0/x["odds"] for x in outcomes]
+            total=sum(implied)
+            for item,p in zip(outcomes,implied):
+                item["fair_probability"]=p/total if total else None
+                item["market_name"]=raw_name
+            found.extend(outcomes)
+    return found
+
+def monitor_htft_odds(c):
+    now=datetime.now(TZ)
+    start=datetime.now(timezone.utc)
+    end=start+timedelta(hours=HTFT_MONITOR_HOURS)
+    events=superbet_football_events(start,end)
+    events.sort(key=lambda e: (e.get("fixture") or {}).get("utc_date",""))
+    events=events[:HTFT_MONITOR_MAX_EVENTS]
+    c.execute("""CREATE TABLE IF NOT EXISTS htft_odds_snapshots(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL,
+        selection TEXT NOT NULL,home TEXT,away TEXT,league TEXT,start_ts INTEGER,
+        odds REAL NOT NULL,fair_probability REAL,observed_at TEXT NOT NULL)""")
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_htft_snapshots
+        ON htft_odds_snapshots(event_id,selection,observed_at)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS htft_odds_alerts(
+        event_id INTEGER NOT NULL,selection TEXT NOT NULL,last_alert_odds REAL,
+        last_alert_probability REAL,last_alert_at TEXT,PRIMARY KEY(event_id,selection))""")
+    c.commit()
+    candidates=[]
+    for listed in events:
+        fx=listed.get("fixture") or {}
+        eid=listed.get("event_id")
+        if not eid:
+            continue
+        try:
+            kickoff=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
+        except Exception:
+            continue
+        parts=str(fx.get("event_name") or "").split("·",1)
+        if len(parts)!=2:
+            continue
+        home,away=(x.strip() for x in parts)
+        candidates.append((int(eid),home,away,kickoff,extract_league_name(listed) or "Liga niepodana"))
+    logging.info("HT/FT monitoring: sprawdzam %s spotkań z najbliższych %s godzin",len(candidates),HTFT_MONITOR_HOURS)
+    details={}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures={pool.submit(fetch_superbet_event_detail,x[0]):x for x in candidates}
+        for future,meta in futures.items():
+            try:
+                details[meta[0]]=future.result()
+            except Exception:
+                logging.exception("HT/FT: błąd pobierania szczegółów eventu %s",meta[0])
+    checked=0
+    alerts_sent=0
+    for eid,home,away,kickoff,league in candidates:
+        event=details.get(eid)
+        if not event:
+            continue
+        fixture=event.get("fixture") or {}
+        offer_states=fixture.get("offer_state_status") or {}
+        if offer_states and offer_states.get("1") not in (1,"1"):
+            continue
+        phase=(event.get("inplay_stats_metadata") or {}).get("status")
+        if phase not in (None,"","NOT_STARTED"):
+            continue
+        outcomes=htft_market_outcomes(event)
+        if not outcomes:
+            continue
+        checked+=1
+        for outcome in outcomes:
+            selection=outcome["selection"]
+            odds=outcome["odds"]
+            fair=outcome["fair_probability"]
+            previous=c.execute("""SELECT odds,fair_probability FROM htft_odds_snapshots
+                WHERE event_id=? AND selection=? ORDER BY id DESC LIMIT 1""",(eid,selection)).fetchone()
+            first=c.execute("""SELECT odds,fair_probability FROM htft_odds_snapshots
+                WHERE event_id=? AND selection=? ORDER BY id ASC LIMIT 1""",(eid,selection)).fetchone()
+            c.execute("""INSERT INTO htft_odds_snapshots
+                (event_id,selection,home,away,league,start_ts,odds,fair_probability,observed_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                (eid,selection,home,away,league,kickoff,odds,fair,now.isoformat()))
+            if not previous or not first:
+                continue
+            count=c.execute("SELECT COUNT(*) FROM htft_odds_snapshots WHERE event_id=? AND selection=?",
+                            (eid,selection)).fetchone()[0]
+            if count<HTFT_MIN_SNAPSHOTS:
+                continue
+            base_odds=float(first[0])
+            base_prob=first[1]
+            drop=(base_odds-odds)/base_odds if base_odds>0 else 0
+            prob_move=(fair-float(base_prob)) if fair is not None and base_prob is not None else 0
+            # Trigger only on meaningful cumulative repricing, not tiny tick noise.
+            anomaly=(drop>=HTFT_ALERT_DROP_PCT or prob_move>=HTFT_ALERT_PROBABILITY_PP)
+            if not anomaly:
+                continue
+            prior_alert=c.execute("""SELECT last_alert_odds,last_alert_probability,last_alert_at
+                FROM htft_odds_alerts WHERE event_id=? AND selection=?""",(eid,selection)).fetchone()
+            if prior_alert:
+                last_alert_odds,last_alert_prob,last_alert_at=prior_alert
+                try:
+                    age=(now-datetime.fromisoformat(last_alert_at)).total_seconds()/3600
+                except Exception:
+                    age=999
+                further_drop=(last_alert_odds-odds)/last_alert_odds if last_alert_odds else 0
+                further_prob=(fair-last_alert_prob) if fair is not None and last_alert_prob is not None else 0
+                if age<2 or (further_drop<0.08 and further_prob<0.03):
+                    continue
+            kickoff_local=datetime.fromtimestamp(kickoff,timezone.utc).astimezone(TZ)
+            link=superbet_match_url(eid,home,away,kickoff)
+            reasons=[]
+            if drop>=HTFT_ALERT_DROP_PCT:
+                reasons.append(f"kurs spadł o {drop*100:.1f}% (z {base_odds:.2f} do {odds:.2f})")
+            if prob_move>=HTFT_ALERT_PROBABILITY_PP:
+                reasons.append(f"prawdopodobieństwo bez marży wzrosło o {prob_move*100:.1f} p.p.")
+            msg=("🚨 ANOMALIA KURSU HT/FT — PRZED MECZEM\n\n"
+                 f"🏆 {league}\n⚽ {home} – {away}\n"
+                 f"🕒 {kickoff_local:%d.%m.%Y %H:%M}\n"
+                 f"🎯 Rynek: {outcome['market_name']}\n"
+                 f"📌 Wynik HT/FT: {selection}\n"
+                 f"💹 Kurs bazowy: {base_odds:.2f} → obecny: {odds:.2f}\n"
+                 f"📈 Sygnał: {'; '.join(reasons)}\n"
+                 f"📊 Obserwacje: {count}; fair probability: {fair*100:.1f}%\n"
+                 "⚠️ To sygnał ruchu rynku, nie dowód ustawienia meczu.\n"
+                 f"🔗 {link}")
+            if send(msg):
+                c.execute("""INSERT INTO htft_odds_alerts
+                    (event_id,selection,last_alert_odds,last_alert_probability,last_alert_at)
+                    VALUES(?,?,?,?,?)
+                    ON CONFLICT(event_id,selection) DO UPDATE SET
+                    last_alert_odds=excluded.last_alert_odds,
+                    last_alert_probability=excluded.last_alert_probability,
+                    last_alert_at=excluded.last_alert_at""",
+                    (eid,selection,odds,fair,now.isoformat()))
+                alerts_sent+=1
+                logging.warning("HT/FT ANOMALIA %s %s-%s %s: %.2f -> %.2f",
+                                selection,home,away,eid,base_odds,odds)
+            c.commit()
+    c.commit()
+    logging.info("HT/FT monitoring zakończony: rynki=%s, alerty wysłane=%s",checked,alerts_sent)
+
+
 def main():
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
+    # Rozlicz stare kupony/typy, po czym przejdź do monitoringu HT/FT.
+    settle_ht_picks(c)
+    settle_ft_picks(c)
+    monitor_htft_odds(c)
+    c.close()
+    return
+
     c.execute("""CREATE TABLE IF NOT EXISTS ft_picks(
         event_id INTEGER PRIMARY KEY,league TEXT NOT NULL,home TEXT NOT NULL,away TEXT NOT NULL,
         start_ts INTEGER NOT NULL,sent_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',
