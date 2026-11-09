@@ -12,12 +12,12 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
 MAX_DAILY_PICKS=2
-FT_CORNERS_LINE=9.5
+FT_CORNERS_LINE=8.5
 FT_HISTORY=8
 FT_MIN_SAMPLE=5
 FT_MIN_TEAM_AVG=3.5
-FT_MIN_COMBINED_AVG=10.5
-FT_MIN_HIT_RATE=0.65
+FT_MIN_COMBINED_AVG=9.5
+FT_MIN_HIT_RATE=0.60
 SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
@@ -534,11 +534,11 @@ def evaluate_ft_matchday_quality(league,home,away,start_ts):
     away_avg=sum(x[1] for x in ah)/len(ah)
     totals=[x[3] for x in hh]+[x[3] for x in ah]
     combined_avg=sum(totals)/len(totals)
-    hit_rate=sum(1 for total in totals if total>=10)/len(totals)
+    hit_rate=sum(1 for total in totals if total>=9)/len(totals)
     passed=(home_avg>=FT_MIN_TEAM_AVG and away_avg>=FT_MIN_TEAM_AVG
             and combined_avg>=FT_MIN_COMBINED_AVG and hit_rate>=FT_MIN_HIT_RATE)
     detail=(f"próba FT {len(hh)}+{len(ah)}, średnie rożne drużyn {home_avg:.2f}/{away_avg:.2f}, "
-            f"średnia łączna {combined_avg:.2f}, Over 9.5 w {hit_rate*100:.0f}%")
+            f"średnia łączna {combined_avg:.2f}, Over 8.5 w {hit_rate*100:.0f}%")
     return passed,detail
 
 
@@ -1406,7 +1406,7 @@ def htft_market_outcomes(event):
             })
     return found
 
-def monitor_htft_odds(c):
+def monitor_ft_corners(c):
     now=datetime.now(TZ)
     start=datetime.now(timezone.utc)
     end=start+timedelta(hours=HTFT_MONITOR_HOURS)
@@ -1559,6 +1559,93 @@ def monitor_htft_odds(c):
             c.commit()
     c.commit()
     logging.info("HT/FT monitoring zakończony: rynki=%s, alerty wysłane=%s",checked,alerts_sent)
+
+
+
+FT_DAILY_TARGET=10
+FT_DAILY_MAX=10
+
+def monitor_ft_corners(c):
+    """Wybiera do 10 najmocniejszych przedmeczowych spotkań FT Over 8.5."""
+    now=datetime.now(TZ)
+    start=now.replace(hour=0,minute=0,second=0,microsecond=0)
+    end=now.replace(hour=23,minute=59,second=59,microsecond=0)
+    events=superbet_football_events(start,end)
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_picks(
+        event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,
+        odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL)""")
+    sent_ids={int(x[0]) for x in c.execute(
+        "SELECT event_id FROM ft_corner_picks WHERE substr(sent_at,1,10)=?",
+        (now.date().isoformat(),)).fetchall()}
+    candidates=[]
+    for listed in events:
+        fx=listed.get("fixture") or {}
+        eid=listed.get("event_id")
+        if not eid or int(eid) in sent_ids:
+            continue
+        parts=str(fx.get("event_name") or "").split("·",1)
+        if len(parts)!=2:
+            continue
+        try:
+            kickoff=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
+        except Exception:
+            continue
+        if kickoff<=int(now.timestamp()):
+            continue
+        home,away=(x.strip() for x in parts)
+        league=extract_league_name(listed) or "Liga niepodana"
+        score,detail=ft_matchday_candidate_profile(league,home,away,kickoff)
+        if score is None:
+            continue
+        candidates.append({"event_id":int(eid),"home":home,"away":away,"league":league,
+                           "start_ts":kickoff,"profile_score":score,"profile":detail})
+    logging.info("FT Over 8.5: wydarzenia=%s, z historią=%s, już wysłane dziś=%s",
+                 len(events),len(candidates),len(sent_ids))
+    def inspect(item):
+        price=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
+        if price is None:
+            return None
+        item["odds"]=price
+        return item
+    qualified=[]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures=[pool.submit(inspect,item) for item in candidates]
+        for future in as_completed(futures):
+            try:
+                item=future.result()
+                if item:
+                    qualified.append(item)
+            except Exception:
+                logging.exception("FT Over 8.5: błąd odczytu rynku")
+    qualified.sort(key=lambda x:(-x["profile_score"],abs(x["odds"]-1.90),x["start_ts"]))
+    selected=qualified[:FT_DAILY_MAX]
+    logging.info("FT Over 8.5: dokładny rynek 8.5 dostępny w %s meczach; wybrano %s; cel dzienny=%s",
+                 len(qualified),len(selected),FT_DAILY_TARGET)
+    for item in selected:
+        kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
+        link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
+        msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n\n"
+             f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
+             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
+             "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
+             f"💹 Kurs Superbet: {item['odds']:.2f}\n"
+             f"📊 Historia: {item['profile']}\n"
+             f"💰 Stawka informacyjna: {STAKE} zł\n🔗 {link}")
+        if send(msg):
+            c.execute("""INSERT OR IGNORE INTO ft_corner_picks
+                (event_id,league,home,away,start_ts,odds,profile,sent_at)
+                VALUES(?,?,?,?,?,?,?,?)""",
+                (item["event_id"],item["league"],item["home"],item["away"],
+                 item["start_ts"],item["odds"],item["profile"],now.isoformat()))
+            c.commit()
+            sent_ids.add(item["event_id"])
+            logging.info("FT Over 8.5: wysłano %s - %s @ %.2f",item["home"],item["away"],item["odds"])
+        else:
+            logging.error("FT Over 8.5: nie wysłano eventu %s",item["event_id"])
+        time.sleep(0.3)
+    if len(sent_ids)<FT_DAILY_TARGET:
+        logging.warning("FT Over 8.5: cel 10 typów nieosiągnięty — potwierdzonych i wysłanych %s; nie dobieram spotkań bez rynku lub danych",
+                        len(sent_ids))
 
 
 def main():
