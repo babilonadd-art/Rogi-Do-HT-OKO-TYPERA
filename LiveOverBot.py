@@ -68,7 +68,7 @@ def event_is_still_live(event):
     rejected = {"NOT_STARTED", "NOT_LIVE", "PREMATCH", "PRE_MATCH", "FINISHED", "ENDED",
                 "CANCELLED", "POSTPONED", "ABANDONED", "SUSPENDED"}
     live_tokens = ("LIVE", "INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF",
-                   "HALFTIME", "1H", "2H", "IN PROGRESS", "IN_PROGRESS")
+                   "HALFTIME", "1H", "2H", "STARTED", "IN PROGRESS", "IN_PROGRESS")
     return any(v not in rejected and any(token in v for token in live_tokens) for v in values)
 
 
