@@ -87,6 +87,7 @@ def both_halves_market(event,side,home,away):
         if not team_key or team_key not in compact_market: continue
         # Szczegóły wydarzenia zawierają aktualnie wystawione selekcje;
         # nie filtrujemy po niejednolitych statusach API Superbet.
+        for o in m.get("odds") or []:
             meta=o.get("metadata") or {}
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
             if label not in ("tak","yes"): continue
