@@ -1292,10 +1292,11 @@ def htft_market_outcomes(event):
             continue
         # Remove bookmaker margin across every available HT/FT outcome, not just 1/2 and 2/1.
         total=sum(1.0*x["odds"]**-1 for x in all_outcomes)
-        if total<=0:
-            continue
+        complete_market=len({x["selection"] for x in all_outcomes})==9
         for item in all_outcomes:
-            item["fair_probability"]=(1.0/item["odds"])/total
+            # Only calculate no-vig probability when all nine HT/FT outcomes are present.
+            item["fair_probability"]=((1.0/item["odds"])/total
+                                      if complete_market and total>0 else None)
             item["market_name"]=raw_name
             if item["selection"] in ("1/2","2/1"):
                 found.append(item)
