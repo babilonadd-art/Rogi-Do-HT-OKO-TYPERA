@@ -98,9 +98,8 @@ try:
             scripts = [value.strip("\\'\\\"") for value in script_tags]
             print("EVENT_PAGE_SCRIPT_COUNT", len(scripts), "SCRIPT_URLS", scripts)
             try:
-                app_cfg = s.get("https://superbet.pl/static/js/fetchConfig/app", timeout=20).json()
-                print("APP_CONFIG_KEYS", sorted(app_cfg.keys()) if isinstance(app_cfg, dict) else type(app_cfg).__name__)
-                print("APP_CONFIG_SAMPLE", short(app_cfg, 5000))
+                app_resp = s.get("https://superbet.pl/static/js/fetchConfig/app", timeout=20)
+                print("APP_CONFIG_STATUS", app_resp.status_code, "BODY", short(app_resp.text, 6000)))
             except Exception as cfg_exc:
                 print("APP_CONFIG_ERROR", type(cfg_exc).__name__, str(cfg_exc)[:150])
             asset_links = re.findall(r'<link[^>]+href=([^ >]+)', page.text, re.I)
