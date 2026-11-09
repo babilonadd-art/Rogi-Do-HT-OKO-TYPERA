@@ -1332,45 +1332,47 @@ def htft_market_outcomes(event):
             item["market_name"]=raw_name
             if item["selection"] in ("1/2","2/1"):
                 found.append(item)
-    # Superbet may expose HT/FT as a SuperBets combo rather than a named market.
-    # Normalize alternate field names, but accept only a genuine 1st-half result
-    # followed by a full-time result (1/2 or 2/1); never treat double-chance legs as 1X2.
-    superbets=event.get("superbets") or []
-    if isinstance(superbets,dict):
-        superbets=list(superbets.values())
-    for combo_market in superbets:
-        if not isinstance(combo_market,dict):
-            continue
+    # Superbet may expose HT/FT as a SuperBets combo either at event level
+    # or nested in the markets collection. Inspect both containers.
+    combo_sources=[]
+    for source in (event.get("superbets") or [], event.get("markets") or []):
+        if isinstance(source,dict):
+            source=list(source.values())
+        if isinstance(source,list):
+            combo_sources.extend(x for x in source if isinstance(x,dict))
+    seen_combo_ids=set()
+    for combo_market in combo_sources:
         odds_rows=combo_market.get("odds") or combo_market.get("selections") or []
         if isinstance(odds_rows,dict):
             odds_rows=list(odds_rows.values())
         for odd in odds_rows:
             if not isinstance(odd,dict):
                 continue
-            if odd.get("status") not in (None,1,"1","ACTIVE","active",True) or odd.get("display") is False:
-                continue
             meta=odd.get("metadata") or {}
-            if str(meta.get("offer_state_id",1)) not in ("1","None"):
-                continue
-            components=odd.get("odd_components") or odd.get("components") or meta.get("odd_components") or []
+            components=(odd.get("odd_components") or odd.get("components") or
+                        meta.get("odd_components") or odd.get("oddComponents") or [])
             if isinstance(components,dict):
                 components=list(components.values())
             if len(components)!=2:
                 continue
+            if odd.get("status") not in (None,1,"1","ACTIVE","active",True) or odd.get("display") is False:
+                continue
+            if str(meta.get("offer_state_id",1)) not in ("1","None"):
+                continue
             def component_market(component):
                 return " ".join(str(component.get(k) or "") for k in
-                    ("market_line_name","market_name","marketName","market","name")).strip().lower()
+                    ("market_line_name","market_name","marketName","market","name","marketLineName")).strip().lower()
             def component_pick(component):
                 value=(component.get("odd_name") or component.get("selection") or
                        component.get("outcome") or component.get("label") or
-                       (component.get("metadata") or {}).get("name"))
+                       component.get("oddName") or (component.get("metadata") or {}).get("name"))
                 return str(value or "").strip().upper()
             first_half=next((x for x in components if isinstance(x,dict) and
-                ("1st half" in component_market(x) or "first half" in component_market(x) or
-                 "1. połowa" in component_market(x) or "pierwsza połowa" in component_market(x))),None)
+                any(term in component_market(x) for term in
+                    ("1st half","first half","1. połowa","pierwsza połowa","half time","half-time"))),None)
             full_time=next((x for x in components if isinstance(x,dict) and
-                ("full time" in component_market(x) or "full-time" in component_market(x) or
-                 "wynik końcowy" in component_market(x))),None)
+                any(term in component_market(x) for term in
+                    ("full time","full-time","wynik końcowy","wynik koncowy"))),None)
             if not first_half or not full_time:
                 continue
             ht=component_pick(first_half)
@@ -1383,6 +1385,10 @@ def htft_market_outcomes(event):
                 continue
             if price<=1.0 or price>1000:
                 continue
+            unique=(ht,ft,round(price,4))
+            if unique in seen_combo_ids:
+                continue
+            seen_combo_ids.add(unique)
             found.append({
                 "selection":f"{ht}/{ft}","odds":price,
                 "fair_probability":None,
@@ -1445,8 +1451,19 @@ def monitor_htft_odds(c):
         phase=(event.get("inplay_stats_metadata") or {}).get("status")
         if phase not in (None,"","NOT_STARTED"):
             continue
+        # Prefer the detailed event, but fall back to the listing record if its
+        # detail response is partial or lacks market collections.
+        if not (event.get("markets") or event.get("superbets")):
+            listed_event=next((x for x in events if str(x.get("event_id"))==str(eid)),None)
+            if listed_event and (listed_event.get("markets") or listed_event.get("superbets")):
+                event=listed_event
         outcomes=htft_market_outcomes(event)
         if not outcomes:
+            if checked<3:
+                logging.info("HT/FT: brak rozpoznanego rynku event=%s; pola=%s; rynki=%s; superbets=%s",
+                    eid,list(event.keys()),
+                    [str(x.get("name") or "") for x in (event.get("markets") or [])[:12]],
+                    len(event.get("superbets") or []))
             continue
         checked+=1
         for outcome in outcomes:
