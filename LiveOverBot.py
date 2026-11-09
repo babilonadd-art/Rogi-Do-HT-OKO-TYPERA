@@ -359,6 +359,10 @@ def main():
                 phases.append("FT")
             if not phases:
                 continue
+            market_names = [str(m.get("name") or m.get("market_name") or "") for m in (detail.get("markets") or [])]
+            logging.info("LIVE DIAG id=%s %s-%s minute=%s score=%s phases=%s detail_keys=%s markets=%d names=%s",
+                         event_id, home, away, minute, score, phases, sorted(detail.keys()),
+                         len(market_names), market_names[:30])
             total = sum(score)
             for phase in phases:
                 for market in exact_live_over_markets(detail, phase, total):
