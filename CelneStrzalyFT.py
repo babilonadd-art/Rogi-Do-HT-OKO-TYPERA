@@ -240,11 +240,6 @@ def main():
         detail = event_detail(event_id) or listed
         if not (detail.get("markets") or []):
             detail = listed
-        if getattr(inspect, "_catalogued", 0) < 10:
-            inspect._catalogued = getattr(inspect, "_catalogued", 0) + 1
-            names = [text_fields(m)[:140] for m in (detail.get("markets") or [])]
-            logging.info("KATALOG TEST %s - %s | markets=%d | nazwy=%s",
-                         home, away, len(names), names)
         pick, diagnostics = team_shots_market(detail, home, away)
         return (item, pick, diagnostics)
 
