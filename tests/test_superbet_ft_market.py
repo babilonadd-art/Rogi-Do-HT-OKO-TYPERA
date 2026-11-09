@@ -43,13 +43,15 @@ class SuperbetFTCornersTests(unittest.TestCase):
                 self.assertIsNone(Main.superbet_ft_corners_over_odds(123))
 
     @patch("Main.superbet_api")
-    def test_rejects_wrong_line_under_and_out_of_range(self, api):
+    def test_ignores_odds_range_but_requires_exact_over_85_market(self, api):
         api.return_value=payload("Liczba rzutów rożnych",[
             selection("Poniżej 8.5"),
             selection("Powyżej 9.5",line=9.5),
-            selection("Powyżej 8.5",price=1.69),
-            selection("Powyżej 8.5",price=2.61)])
-        self.assertIsNone(Main.superbet_ft_corners_over_odds(123))
+            selection("Powyżej 8.5",price=1.20)])
+        self.assertEqual(Main.superbet_ft_corners_over_odds(123),1.20)
+        api.return_value=payload("Liczba rzutów rożnych",[
+            selection("Powyżej 8.5",price=9.99)])
+        self.assertEqual(Main.superbet_ft_corners_over_odds(123),9.99)
 
     @patch("Main.superbet_api")
     def test_rejects_inactive_hidden_or_live_market(self, api):
@@ -114,6 +116,17 @@ class SuperbetFTCornersTests(unittest.TestCase):
         score,detail=Main.ft_matchday_candidate_profile("Test League","Home","Away",1794000000)
         self.assertIsNone(score)
 
+
+    def test_ukrainian_leagues_are_excluded(self):
+        for league in ("Ukraine Premier League","Ukraina Premier League","Ukraińska Premier Liga"):
+            self.assertTrue(Main.excluded_corner_league(league))
+        for league in ("Uzbekistan Pro League","Kazakhstan Premier League","China Super League"):
+            self.assertFalse(Main.excluded_corner_league(league))
+
+    def test_exotic_league_aliases_are_mapped_when_data_exists(self):
+        self.assertEqual(Main.matchday_folder("Kazakhstan Premier League"),"KAZ_1_premier-league")
+        self.assertEqual(Main.matchday_folder("China Super League"),"CHN_1_super-league")
+        self.assertEqual(Main.matchday_folder("Australia A-League"),"AUS_1_a-league")
 
     def test_league_corner_profile_uses_recent_ft_totals_and_over85_rate(self):
         rows=[{"date":f"2026-10-{day:02d}","home_corners":"6","away_corners":"4"}
