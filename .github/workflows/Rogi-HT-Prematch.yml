@@ -2,6 +2,11 @@ name: FT — Over 8.5 rzutów rożnych
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "Main.py"
+      - "tests/**"
+      - ".github/workflows/Rogi-HT-Prematch.yml"
   schedule:
     - cron: "*/5 * * * *" # co 5 minut; wyszukuje mecze FT Over 8.5 rożnych
 
