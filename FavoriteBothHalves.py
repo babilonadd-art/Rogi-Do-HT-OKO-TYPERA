@@ -89,8 +89,8 @@ def both_halves_market(event,side,home,away):
         # nie filtrujemy po niejednolitych statusach API Superbet.
         for o in m.get("odds") or []:
             meta=o.get("metadata") or {}
-            label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
-            if label not in ("tak","yes"): continue
+            labels={words(v) for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info")) if v}
+            if not labels.intersection({"tak","yes"}): continue
             price=get_odds(o)
             if price is not None and 1.01<=price<=100:
                 return price,str(m.get("name") or f"{team} zdobędzie gola w obu połowach")
