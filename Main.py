@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
 TZ=ZoneInfo("Europe/Warsaw")
@@ -847,13 +848,21 @@ def superbet_event_phase(event):
 
 
 def superbet_match_url(event_id,home,away,start_ts):
-    """Prefer a provider-supplied direct corners-market URL; otherwise the exact event URL."""
+    """Build the Superbet event URL focused on the full-time corners market."""
+    def corners_market_url(url):
+        if not isinstance(url,str) or not url.startswith(("https://","http://")):
+            return None
+        parts=urlsplit(url)
+        query=dict(parse_qsl(parts.query,keep_blank_values=True))
+        # Restored from the previously working Superbet PL link implementation.
+        query["marketGroup"]="111"
+        return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
+
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=superbet_events_from_payload(payload)
     event=events[0] if len(events)==1 else next(
         (e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
-    if not event:
-        return None
+
     url_keys=("url","event_url","eventUrl","permalink","web_url","webUrl","deep_link","deepLink")
     def valid_url(obj):
         if not isinstance(obj,dict):
@@ -863,17 +872,20 @@ def superbet_match_url(event_id,home,away,start_ts):
             if isinstance(value,str) and value.startswith("https://") and "superbet" in value.lower():
                 return value
         return None
-    for market in event.get("markets") or []:
-        market_name=str(market.get("name") or "").lower()
-        if not any(term in market_name for term in ("roż","rzutów rożnych","corner")):
-            continue
-        direct=valid_url(market)
-        if direct:
-            return direct
-    supplied=valid_url(event) or valid_url(event.get("fixture") or {})
-    if supplied:
-        return supplied
-    # Superbet's public event-page route uses /kursy/pilka-nozna/<home>-vs-<away>-<event_id>.
+
+    if event:
+        for market in event.get("markets") or []:
+            market_name=str(market.get("name") or "").lower()
+            if not any(term in market_name for term in ("roż","rzutów rożnych","corner")):
+                continue
+            direct=valid_url(market)
+            if direct:
+                return direct
+        supplied=valid_url(event) or valid_url(event.get("fixture") or {})
+        if supplied:
+            return corners_market_url(supplied)
+
+    # Keep the link usable even when Superbet's event-detail API temporarily fails.
     def slug(value):
         raw=str(value or "").replace("ł","l").replace("Ł","L")
         ascii_name=unicodedata.normalize("NFKD",raw).encode("ascii","ignore").decode().lower()
@@ -881,7 +893,8 @@ def superbet_match_url(event_id,home,away,start_ts):
     home_slug,away_slug=slug(home),slug(away)
     if not home_slug or not away_slug:
         return None
-    return f"https://superbet.pl/kursy/pilka-nozna/{home_slug}-vs-{away_slug}-{int(event_id)}"
+    event_url=f"https://superbet.pl/kursy/pilka-nozna/{home_slug}-vs-{away_slug}-{int(event_id)}"
+    return corners_market_url(event_url)
 
 
 def matchday_candidate_profile(league,home,away,start_ts):
