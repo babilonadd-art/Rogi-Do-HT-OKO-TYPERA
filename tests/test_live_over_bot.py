@@ -66,5 +66,15 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.market_phase("1. połowa - liczba goli"), "HT")
 
 
+    def test_second_half_goal_market_is_not_full_time(self):
+        for name in ("2. połowa - liczba goli", "Druga połowa - gole", "2nd Half Total Goals", "II połowa - liczba goli"):
+            self.assertEqual(bot.market_phase(name), "2H", name)
+            self.assertEqual(bot.exact_live_over_markets(event(name, 2.5), "FT", 2), [])
+
+    def test_generic_full_match_goal_market_remains_ft(self):
+        self.assertEqual(bot.market_phase("Liczba goli"), "FT")
+        self.assertEqual(bot.market_phase("Total Goals"), "FT")
+
+
 if __name__ == "__main__":
     unittest.main()
