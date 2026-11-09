@@ -1,9 +1,9 @@
-name: HT/FT — monitoring anomalii kursów
+name: FT — Over 8.5 rzutów rożnych
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *" # co 5 minut; monitoruje zmiany kursów HT/FT
+    - cron: "*/5 * * * *" # co 5 minut; wyszukuje mecze FT Over 8.5 rożnych
 
 permissions:
   contents: write
@@ -27,14 +27,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Kontrola składni
         run: python -m py_compile Main.py
-      - name: Testy logiki HT/FT
+      - name: Testy logiki typów
         run: python -m unittest discover -s tests -p "test_*.py"
-      - name: Monitoring anomalii kursów HT/FT
+      - name: Wyszukiwanie typów FT Over 8.5 rożnych
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python Main.py
-      - name: Zapis historii kursów i limitu dziennego
+      - name: Zapis wysłanych typów FT
         run: |
           if [ -f okotypera_ht.db ]; then
             git config user.name "github-actions[bot]"
