@@ -329,7 +329,12 @@ def main():
                 logging.warning("LIVE DETAIL SAMPLE id=%s keys=%s fixture_keys=%s metadata=%s minute=%s score=%s market_names=%s",
                                 event_id, sorted(detail.keys()), sorted((detail.get("fixture") or {}).keys()),
                                 metadata, minute, score,
-                                [m.get("name") for m in (detail.get("markets") or [])[:12]])
+                                [m.get("name") for m in (detail.get("markets") or [])[:12]],
+                                str(detail.get("inplay_stats"))[:1800],
+                                [{"market": m.get("name"), "odds": [
+                                    {"name": o.get("name"), "metadata": o.get("metadata")}
+                                    for o in (m.get("odds") or [])[:6]
+                                ]} for m in (detail.get("markets") or [])[:2])
                 detail_diagnostics += 1
             if minute is None or score is None:
                 continue
