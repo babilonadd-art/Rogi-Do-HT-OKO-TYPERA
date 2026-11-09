@@ -118,7 +118,7 @@ def event_minute(event):
     """Czyta minutę tylko z jawnie nazwanych pól czasu meczu."""
     keys = {
         "minute", "match_minute", "current_minute", "elapsed_minute",
-        "elapsed_minutes", "minute_number", "timer_minute", "inplay_minute", "currentminute", "elapsedtime_minute", "period_minute", "event_minute",
+        "elapsed_minutes", "minutes", "minute_number", "timer_minute", "inplay_minute", "currentminute", "elapsedtime_minute", "period_minute", "event_minute",
     }
     clock_keys = {"clock", "timer", "match_time", "elapsed_time", "game_time"}
     found = []
@@ -170,15 +170,15 @@ def event_score(event):
                 if isinstance(value, dict):
                     lower_keys = {str(k).lower(): k for k in value}
                     if str(key).lower() in ("score", "scores", "scoreboard", "current_score"):
-                        home_key = next((lower_keys[k] for k in ("home", "home_score", "homescore", "team1", "participant1") if k in lower_keys), None)
-                        away_key = next((lower_keys[k] for k in ("away", "away_score", "awayscore", "team2", "participant2") if k in lower_keys), None)
+                        home_key = next((lower_keys[k] for k in ("home", "home_score", "homescore", "home_team_score", "team1", "participant1") if k in lower_keys), None)
+                        away_key = next((lower_keys[k] for k in ("away", "away_score", "awayscore", "away_team_score", "team2", "participant2") if k in lower_keys), None)
                         home = number(value[home_key]) if home_key is not None else None
                         away = number(value[away_key]) if away_key is not None else None
                         if home is not None and away is not None:
                             found.append((home, away))
                     # Superbet czasem podaje home_score/away_score bez wrappera score.
-                    home_key = next((lower_keys[k] for k in ("home_score", "homescore") if k in lower_keys), None)
-                    away_key = next((lower_keys[k] for k in ("away_score", "awayscore") if k in lower_keys), None)
+                    home_key = next((lower_keys[k] for k in ("home_score", "homescore", "home_team_score") if k in lower_keys), None)
+                    away_key = next((lower_keys[k] for k in ("away_score", "awayscore", "away_team_score") if k in lower_keys), None)
                     if home_key is not None and away_key is not None:
                         home, away = number(value[home_key]), number(value[away_key])
                         if home is not None and away is not None:
@@ -204,7 +204,7 @@ def market_phase(name):
     if any(term in n for term in ft_terms):
         return "FT"
     # Nienazwany jako połowa rynek "Total Goals" jest standardowo rynkiem FT.
-    if any(word in n for word in ("total", "gole", "goals", "bramki", "suma goli")):
+    if any(word in n for word in ("total", "gole", "goli", "goals", "bramki", "suma goli")):
         return "FT"
     return None
 
@@ -225,7 +225,7 @@ def exact_live_over_markets(event, phase, current_total):
         low_name = name.lower()
         if any(word in low_name for word in ("corner", "roż", "kart", "cards", "team total", "drużyn")):
             continue
-        if market.get("status") not in (None, 1, "1", "ACTIVE", "active"):
+        if market.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active"):
             continue
         for odd in market.get("odds") or []:
             meta = odd.get("metadata") or {}
@@ -242,9 +242,9 @@ def exact_live_over_markets(event, phase, current_total):
                 continue
             if abs(line - target_line) > 0.001:
                 continue
-            if odd.get("status") not in (1, "1", "ACTIVE", "active") or odd.get("display") is False:
+            if odd.get("status") not in (1, 2, "1", "2", "ACTIVE", "active") or odd.get("display") is False:
                 continue
-            if str(meta.get("offer_state_id", 1)) != "1":
+            if str(meta.get("offer_state_id", 1)) not in ("1", "2"):
                 continue
             if not MIN_ODDS <= price <= MAX_ODDS:
                 continue
@@ -313,7 +313,6 @@ def main():
     try:
         events = live_superbet_events()
         candidates = []
-        detail_diagnostics = 0
         for listed in events:
             event_id = listed.get("event_id") or listed.get("id")
             if not event_id:
@@ -324,18 +323,6 @@ def main():
                 continue
             minute = event_minute(detail)
             score = event_score(detail)
-            if (minute is None or score is None) and detail_diagnostics < 3:
-                metadata = detail.get("inplay_stats_metadata") or {}
-                logging.warning("LIVE DETAIL SAMPLE id=%s keys=%s fixture_keys=%s metadata=%s minute=%s score=%s market_names=%s",
-                                event_id, sorted(detail.keys()), sorted((detail.get("fixture") or {}).keys()),
-                                metadata, minute, score,
-                                [m.get("name") for m in (detail.get("markets") or [])[:12]],
-                                str(detail.get("inplay_stats"))[:1800],
-                                [{"market": m.get("name"), "odds": [
-                                    {"name": o.get("name"), "metadata": o.get("metadata")}
-                                    for o in (m.get("odds") or [])[:6]
-                                ]} for m in (detail.get("markets") or [])[:2]])
-                detail_diagnostics += 1
             if minute is None or score is None:
                 continue
             home, away = event_teams(detail)
