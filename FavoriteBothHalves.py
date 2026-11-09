@@ -83,7 +83,7 @@ def both_halves_market(event,side,home,away):
         compact_market=words(name)
         # W Superbet rynek nazywa się np. "Sabadell zdobędzie gola w obu połowach".
         # Nazwa drużyny jest w tytule rynku, a selekcja TAK ma metadane "tak".
-        if not any(k in compact_market for k in ("obupolowach","obu polowach")): continue
+        if not any(k in compact_market for k in ("obupołowach","obupolowach","obu polowach")): continue
         if not team_key or team_key not in compact_market: continue
         # Szczegóły wydarzenia zawierają aktualnie wystawione selekcje;
         # nie filtrujemy po niejednolitych statusach API Superbet.
