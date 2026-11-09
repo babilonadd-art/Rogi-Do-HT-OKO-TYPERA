@@ -271,10 +271,13 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
             meta=odd.get("metadata") or {}
             raw_line=meta.get("special_bet_value",odd.get("special_bet_value"))
             try:
-                odd_line=float(str(raw_line).replace(",","."))
-                price=float(odd.get("price"))
+                odd_line=float(str(raw_line).replace(",","." ))
             except (TypeError,ValueError):
                 continue
+            try:
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                price=0.0
             selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
             if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
                 continue
@@ -282,9 +285,9 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
                 continue
             if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
                 continue
-            if str(meta.get("offer_state_id",1))!="1" or not MIN_ODDS<=price<=MAX_ODDS:
+            if str(meta.get("offer_state_id",1))!="1":
                 continue
-            logging.info("Superbet FT corners: event %s | %s | Over %.1f | kurs %.2f",event_id,market.get("name"),line,price)
+            logging.info("Superbet FT corners: event %s | active Over %.1f market (odds ignored)",event_id,line)
             return price
     logging.info("Superbet: brak aktywnego rynku FT rożne Over %.1f dla event %s",line,event_id)
     return None
@@ -1639,8 +1642,13 @@ def monitor_ft_corners(c):
 FT_DAILY_TARGET=10
 FT_DAILY_MAX=10
 
+def excluded_corner_league(league):
+    name=normalized_team(league)
+    return any(token in name for token in ("ukraine","ukrain","ukraina","ukrainska","ukr"))
+
+
 def monitor_ft_corners(c):
-    """Wybiera do 10 najmocniejszych przedmeczowych spotkań FT Over 8.5."""
+    """Wybiera do 10 najmocniejszych przedmeczowych spotkań FT Over 8.5 bez filtra kursowego."""
     now=datetime.now(TZ)
     start=now.replace(hour=0,minute=0,second=0,microsecond=0)
     end=now.replace(hour=23,minute=59,second=59,microsecond=0)
@@ -1668,6 +1676,9 @@ def monitor_ft_corners(c):
             continue
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed) or "Liga niepodana"
+        if excluded_corner_league(league):
+            logging.info("FT Over 8.5: pominięto wykluczoną ligę %s",league)
+            continue
         score,detail=ft_matchday_candidate_profile(league,home,away,kickoff)
         if score is None:
             continue
@@ -1691,7 +1702,7 @@ def monitor_ft_corners(c):
                     qualified.append(item)
             except Exception:
                 logging.exception("FT Over 8.5: błąd odczytu rynku")
-    qualified.sort(key=lambda x:(-x["profile_score"],abs(x["odds"]-1.90),x["start_ts"]))
+    qualified.sort(key=lambda x:(-x["profile_score"],x["start_ts"]))
     remaining=max(0,FT_DAILY_MAX-len(sent_ids))
     selected=qualified[:remaining]
     logging.info("FT Over 8.5: dokładny rynek 8.5 dostępny w %s meczach; wybrano %s; cel dzienny=%s",
@@ -1703,7 +1714,6 @@ def monitor_ft_corners(c):
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
              f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
              "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
-             f"💹 Kurs Superbet: {item['odds']:.2f}\n"
              f"📊 Historia: {item['profile']}\n"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Superbet — otwórz mecz, następnie Rzuty rożne → Liczba rzutów rożnych: {link}")
@@ -1715,7 +1725,7 @@ def monitor_ft_corners(c):
                  item["start_ts"],item["odds"],item["profile"],now.isoformat()))
             c.commit()
             sent_ids.add(item["event_id"])
-            logging.info("FT Over 8.5: wysłano %s - %s @ %.2f",item["home"],item["away"],item["odds"])
+            logging.info("FT Over 8.5: wysłano %s - %s (kurs nie wpływa na wybór)",item["home"],item["away"])
         else:
             logging.error("FT Over 8.5: nie wysłano eventu %s",item["event_id"])
         time.sleep(0.3)
