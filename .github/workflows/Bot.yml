@@ -4,7 +4,9 @@ on:
   push:
     paths:
       - 'LiveOverBot.py'
+      - 'HTGoalBot.py'
       - 'tests/test_live_over_bot.py'
+      - 'tests/test_ht_goal_bot.py'
       - '.github/workflows/Bot.yml'
   workflow_dispatch:
   schedule:
@@ -34,6 +36,12 @@ jobs:
         run: python -m py_compile LiveOverBot.py
       - name: Testy logiki typowania
         run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Skan Algorytmu 2 — gol do przerwy
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PITCHAPI_API_KEY: ${{ secrets.PITCHAPI_API_KEY }}
+        run: python HTGoalBot.py
       - name: Skan LIVE OVER z Superbet
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
