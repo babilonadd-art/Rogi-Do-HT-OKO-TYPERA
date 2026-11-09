@@ -1299,6 +1299,40 @@ def htft_market_outcomes(event):
             item["market_name"]=raw_name
             if item["selection"] in ("1/2","2/1"):
                 found.append(item)
+    # Some Superbet combination selections are exposed under event["superbets"],
+    # not event["markets"]. Accept only a two-leg 1st-half-result + full-time-result combo.
+    for combo_market in event.get("superbets") or []:
+        for odd in combo_market.get("odds") or []:
+            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+                continue
+            meta=odd.get("metadata") or {}
+            if str(meta.get("offer_state_id",1))!="1":
+                continue
+            components=odd.get("odd_components") or []
+            if len(components)!=2:
+                continue
+            first_half=next((x for x in components
+                if str(x.get("market_line_name") or "").strip().lower().startswith("1st half")),None)
+            full_time=next((x for x in components
+                if str(x.get("market_line_name") or "").strip().lower()=="full time"),None)
+            if not first_half or not full_time:
+                continue
+            ht=str(first_half.get("odd_name") or "").strip().upper()
+            ft=str(full_time.get("odd_name") or "").strip().upper()
+            if ht not in ("1","2") or ft not in ("1","2") or ht==ft:
+                continue
+            try:
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            if price<=1.0 or price>1000:
+                continue
+            found.append({
+                "selection":f"{ht}/{ft}","odds":price,
+                "fair_probability":None,
+                "label":str(meta.get("name") or ""),
+                "market_name":"Superbets — kombinacja HT/FT"
+            })
     return found
 
 def monitor_htft_odds(c):
@@ -1411,7 +1445,7 @@ def monitor_htft_odds(c):
                  f"📌 Wynik HT/FT: {selection}\n"
                  f"💹 Kurs bazowy: {base_odds:.2f} → obecny: {odds:.2f}\n"
                  f"📈 Sygnał: {'; '.join(reasons)}\n"
-                 f"📊 Obserwacje: {count}; fair probability: {fair*100:.1f}%\n"
+                 f"📊 Obserwacje: {count}; fair probability: {fair*100:.1f}%\n" if fair is not None else f"📊 Obserwacje: {count}; prawdopodobieństwo bez marży: brak pełnego rynku\n"
                  "⚠️ To sygnał ruchu rynku, nie dowód ustawienia meczu.\n"
                  f"🔗 {link}")
             if send(msg):
