@@ -1439,6 +1439,7 @@ def monitor_htft_odds(c):
             except Exception:
                 logging.exception("HT/FT: błąd pobierania szczegółów eventu %s",meta[0])
     checked=0
+    diagnostics=0
     alerts_sent=0
     for eid,home,away,kickoff,league in candidates:
         event=details.get(eid)
@@ -1459,7 +1460,8 @@ def monitor_htft_odds(c):
                 event=listed_event
         outcomes=htft_market_outcomes(event)
         if not outcomes:
-            if checked<3:
+            if diagnostics<3:
+                diagnostics+=1
                 logging.info("HT/FT: brak rozpoznanego rynku event=%s; pola=%s; rynki=%s; superbets=%s",
                     eid,list(event.keys()),
                     [str(x.get("name") or "") for x in (event.get("markets") or [])[:12]],
