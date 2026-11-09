@@ -183,7 +183,7 @@ def main():
         # Ostatnia kontrola rynku i kursów na świeżych danych przed publikacją.
         e=detail(x["id"])
         if not e: continue
-        fav=fav_side(e,home,away)
+        fav=fav_side(e,x["home"],x["away"])
         if not fav or (x["team"]!=(x["home"] if fav["side"]=="home" else x["away"])): continue
         price,market=both_halves_market(e,fav["side"],x["home"],x["away"])
         if price is None: continue
