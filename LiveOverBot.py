@@ -19,9 +19,10 @@ FT_MIN_MINUTE = 46
 FT_MAX_MINUTE = 75
 HT_MAX_LINE = 1.5
 FT_MAX_LINE = 2.5
-MIN_ODDS = 1.20
-MAX_ODDS = 6.00
-MAX_PICKS_PER_RUN = 5
+# Luźniejsze widełki, ale nadal wymagamy prawdziwego, aktywnego kursu Superbet.
+MIN_ODDS = 1.05
+MAX_ODDS = 10.00
+MAX_PICKS_PER_RUN = 10
 STAKE = 10
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -238,7 +239,7 @@ def exact_live_over_markets(event, phase, current_total):
         low_name = name.lower()
         if any(word in low_name for word in ("corner", "roż", "kart", "cards", "team total", "drużyn")):
             continue
-        if market.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active"):
+        if market.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active", "OPEN", "open", "AVAILABLE", "available", True):
             continue
         for odd in market.get("odds") or []:
             meta = odd.get("metadata") or {}
@@ -257,7 +258,7 @@ def exact_live_over_markets(event, phase, current_total):
             # przy 1 golu Over 1.5 itd. Nie przeskakujemy od razu na wyższą linię.
             if abs(line - min_line) > 0.001 or line > max_line + 0.001:
                 continue
-            if odd.get("status") not in (1, 2, "1", "2", "ACTIVE", "active") or odd.get("display") is False:
+            if odd.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active", "OPEN", "open", "AVAILABLE", "available", "TRADING", "trading", True) or odd.get("display") is False:
                 continue
             if str(meta.get("offer_state_id", 1)) not in ("1", "2"):
                 continue
