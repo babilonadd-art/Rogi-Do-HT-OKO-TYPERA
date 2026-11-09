@@ -47,7 +47,7 @@ class HTFTMarketTests(unittest.TestCase):
 
     def test_one_match_is_not_counted_twice(self):
         sent = {101}
-        self.assertTrue(daily_htft_alert_allowed(sent, 101))
+        self.assertFalse(daily_htft_alert_allowed(sent, 101))
         self.assertTrue(daily_htft_alert_allowed(sent, 202))
 
     def test_same_side_results_are_excluded(self):
