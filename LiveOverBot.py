@@ -196,10 +196,15 @@ def event_score(event):
 
 def market_phase(name):
     n = re.sub(r"\s+", " ", str(name or "").lower())
+    # Najpierw wyklucz drugą połowę — nie wolno jej pomylić z rynkiem FT.
+    second_half_terms = ("2nd half", "second half", "2. połowa", "2 połowa",
+                         "druga połowa", "ii połowa", "2 poł.", "2 poł")
+    if any(term in n for term in second_half_terms):
+        return "2H"
     ht_terms = ("1st half", "first half", "1. połowa", "1 połowa", "pierwsza połowa",
-                "1 poł.", "1 poł")
+                "i połowa", "1 poł.", "1 poł")
     ft_terms = ("full time", "full-time", "cały mecz", "caly mecz", "wynik meczu",
-                "pełny mecz", "pelny mecz", "90 minut")
+                "pełny mecz", "pelny mecz", "90 minut", "mecz - liczba goli")
     if any(term in n for term in ht_terms):
         return "HT"
     if any(term in n for term in ft_terms):
