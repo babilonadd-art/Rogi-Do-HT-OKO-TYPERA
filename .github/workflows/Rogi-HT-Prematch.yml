@@ -1,14 +1,14 @@
-name: PRZEDMECZ — Faworyt strzeli w obu połowach
+name: CELNE STRZAŁY FT — Superbet
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "FavoriteBothHalves.py"
+      - "CelneStrzalyFT.py"
       - "tests/**"
       - ".github/workflows/Rogi-HT-Prematch.yml"
   schedule:
-    - cron: "*/5 * * * *" # co 5 minut; skan rynku faworyt strzeli w obu połowach
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
@@ -31,28 +31,19 @@ jobs:
       - name: Instalacja bibliotek
         run: pip install -r requirements.txt
       - name: Kontrola składni
-        run: python -m py_compile FavoriteBothHalves.py
-      - name: Testy logiki typów
-        run: python -m unittest discover -s tests -p "test_*.py"
-      - name: Wyszukiwanie typów faworyt strzeli w obu połowach
+        run: python -m py_compile CelneStrzalyFT.py
+      - name: Skan rynku celnych strzałów FT w Superbet
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python FavoriteBothHalves.py
-      - name: Zapis wysłanych typów FT
+        run: python CelneStrzalyFT.py
+      - name: Zapis historii wysłanych typów
         run: |
-          if [ -f okotypera_rogi.db ]; then
+          if [ -f celne_strzaly_ft.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            # py_compile modyfikuje śledzone cache Pythona; przywróć je przed rebase.
-            git restore --worktree -- __pycache__ tests/__pycache__ 2>/dev/null || true
-            git add okotypera_rogi.db
-            for marker in RESET_FT_PICKS DELETE_TELEGRAM_MESSAGES FT_ALREADY_SENT; do
-              if [ -e "$marker" ] || git ls-files --error-unmatch "$marker" >/dev/null 2>&1; then
-                git add -A -- "$marker"
-              fi
-            done
-            git diff --cached --quiet || git commit -m "Persist favorite both-halves picks"
+            git add celne_strzaly_ft.db
+            git diff --cached --quiet || git commit -m "Persist FT shots picks"
             git pull --rebase origin main
             git push
           fi
