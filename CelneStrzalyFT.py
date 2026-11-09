@@ -153,8 +153,10 @@ def main():
         return
     now = datetime.now(TZ)
     day = now.date().isoformat()
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=1)
+    # Przeszukujemy najbliższe 48 godzin, ale limit 10 typów liczymy osobno
+    # dla bieżącego dnia w strefie Europe/Warsaw.
+    start = now
+    end = now + timedelta(hours=48)
     connection = sqlite3.connect(DB)
     connection.execute("""CREATE TABLE IF NOT EXISTS sent_shots_ft(
         event_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, home TEXT, away TEXT,
@@ -203,22 +205,19 @@ def main():
         if not (detail.get("markets") or []):
             detail = listed
         market_rows = detail.get("markets") or []
-        if not getattr(inspect, "_diagnosed", False):
-            inspect._diagnosed = True
-            logging.info("DIAG celne strzały: %s - %s | markets=%d | przykładowe nazwy=%s",
+        diagnosed = getattr(inspect, "_diagnosed", 0)
+        if diagnosed < 3:
+            inspect._diagnosed = diagnosed + 1
+            logging.info("DIAG Superbet %s - %s | markets=%d | nazwy rynków=%s",
                          home, away, len(market_rows),
-                         [str(m.get("name") or m.get("label") or m.get("market_name") or "")[:140]
-                          for m in market_rows
-                          if any(k in normalize(m.get("name") or m.get("label") or m.get("market_name") or "")
-                                 for k in ("strzal", "shot", "bramke"))])
-            for market in market_rows[:8]:
-                outcomes = market.get("odds") or []
-                if outcomes:
-                    logging.info("DIAG outcome %s: %s",
-                                 str(market.get("name") or market.get("label") or "")[:100],
-                                 [{"name": o.get("name"), "label": o.get("label"),
-                                   "price": o.get("price"), "metadata": o.get("metadata")}
-                                  for o in outcomes[:5]])
+                         [str(m.get("name") or m.get("label") or m.get("market_name") or "")[:100]
+                          for m in market_rows])
+            for market in market_rows:
+                market_title = str(market.get("name") or market.get("label") or "")
+                if any(k in normalize(market_title) for k in ("strzal", "shot", "bramke")):
+                    logging.info("DIAG SHOT MARKET %s | outcomes=%s", market_title[:120],
+                                 [{"price": o.get("price"), "metadata": o.get("metadata")}
+                                  for o in (market.get("odds") or [])[:8]])
         pick, diagnostics = team_shots_market(detail, home, away)
         return (item, pick, diagnostics)
 
