@@ -1438,6 +1438,8 @@ def monitor_htft_odds(c):
                 reasons.append(f"kurs spadł o {drop*100:.1f}% (z {base_odds:.2f} do {odds:.2f})")
             if prob_move>=HTFT_ALERT_PROBABILITY_PP:
                 reasons.append(f"prawdopodobieństwo bez marży wzrosło o {prob_move*100:.1f} p.p.")
+            probability_text=(f"fair probability: {fair*100:.1f}%" if fair is not None
+                               else "prawdopodobieństwo bez marży: brak pełnego rynku")
             msg=("🚨 ANOMALIA KURSU HT/FT — PRZED MECZEM\n\n"
                  f"🏆 {league}\n⚽ {home} – {away}\n"
                  f"🕒 {kickoff_local:%d.%m.%Y %H:%M}\n"
@@ -1445,7 +1447,7 @@ def monitor_htft_odds(c):
                  f"📌 Wynik HT/FT: {selection}\n"
                  f"💹 Kurs bazowy: {base_odds:.2f} → obecny: {odds:.2f}\n"
                  f"📈 Sygnał: {'; '.join(reasons)}\n"
-                 f"📊 Obserwacje: {count}; fair probability: {fair*100:.1f}%\n" if fair is not None else f"📊 Obserwacje: {count}; prawdopodobieństwo bez marży: brak pełnego rynku\n"
+                 f"📊 Obserwacje: {count}; {probability_text}\n"
                  "⚠️ To sygnał ruchu rynku, nie dowód ustawienia meczu.\n"
                  f"🔗 {link}")
             if send(msg):
