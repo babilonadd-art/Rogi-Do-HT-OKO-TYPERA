@@ -253,9 +253,9 @@ def exact_live_over_markets(event, phase, current_total):
             )).lower()
             if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
-            # Dopuszczamy kazda dostepna linie wymagajaca co najmniej
-            # jednego kolejnego gola, do limitu HT/FT.
-            if line < min_line - 0.001 or line > max_line + 0.001:
+            # Gramy wyłącznie najbliższą linię: przy 0:0 Over 0.5,
+            # przy 1 golu Over 1.5 itd. Nie przeskakujemy od razu na wyższą linię.
+            if abs(line - min_line) > 0.001 or line > max_line + 0.001:
                 continue
             if odd.get("status") not in (1, 2, "1", "2", "ACTIVE", "active") or odd.get("display") is False:
                 continue
