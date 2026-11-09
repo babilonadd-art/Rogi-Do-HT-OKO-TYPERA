@@ -142,7 +142,10 @@ def main():
         smarkets = se.get("markets") or []
         logging.info("DIAG %s - %s | event_keys=%s | markets=%d",
                      shome, saway, list(se.keys())[:20], len(smarkets))
-        for market in smarkets[:35]:
+        for market in smarkets:
+            mt = market_text(market)
+            if not any(k in mt for k in ("1x2", "wynik meczu", "obu poł", "obu pol", "strzeli", "gole w każdej", "gole w kazdej")):
+                continue
             selections = []
             for odd in (market.get("odds") or [])[:12]:
                 meta = odd.get("metadata") or {}
@@ -151,7 +154,7 @@ def main():
                     "price": odd.get("price"), "meta_name": meta.get("name"),
                     "meta_info": meta.get("info")
                 })
-            logging.info("DIAG MARKET %s | %s", market_text(market)[:140], selections)
+            logging.info("DIAG MARKET %s | %s", mt[:140], selections)
     qualified=[]
     def inspect(item):
         eid,home,away,kickoff,listed_event=item
