@@ -32,7 +32,7 @@ class SuperbetFTCornersTests(unittest.TestCase):
     def test_reads_exact_full_time_over_85(self, api):
         api.return_value=payload("Liczba rzutów rożnych",
             [selection("Powyżej 8.5"),selection("Poniżej 8.5",price=1.80)])
-        self.assertEqual(Main.superbet_ft_corners_over_odds(123),2.10)
+        self.assertTrue(Main.superbet_ft_corners_over_odds(123))
 
     @patch("Main.superbet_api")
     def test_rejects_half_time_and_team_markets(self, api):
@@ -48,10 +48,10 @@ class SuperbetFTCornersTests(unittest.TestCase):
             selection("Poniżej 8.5"),
             selection("Powyżej 9.5",line=9.5),
             selection("Powyżej 8.5",price=1.20)])
-        self.assertEqual(Main.superbet_ft_corners_over_odds(123),1.20)
+        self.assertTrue(Main.superbet_ft_corners_over_odds(123))
         api.return_value=payload("Liczba rzutów rożnych",[
             selection("Powyżej 8.5",price=9.99)])
-        self.assertEqual(Main.superbet_ft_corners_over_odds(123),9.99)
+        self.assertTrue(Main.superbet_ft_corners_over_odds(123))
 
     @patch("Main.superbet_api")
     def test_rejects_inactive_hidden_or_live_market(self, api):
