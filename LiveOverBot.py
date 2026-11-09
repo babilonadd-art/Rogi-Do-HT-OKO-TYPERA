@@ -14,7 +14,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
 # LIVE: HT do 35. minuty (maks. linia Over 1.5), FT od 46. do 75. minuty (maks. linia Over 2.5).
-HT_MAX_MINUTE = 35
+HT_MAX_MINUTE = 0  # HT obsługuje osobny Algorytm 2 z PitchAPI
 FT_MIN_MINUTE = 46
 FT_MAX_MINUTE = 75
 HT_MAX_LINE = 1.5
