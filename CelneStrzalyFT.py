@@ -1,0 +1,266 @@
+import os, re, sqlite3, logging, unicodedata
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+
+API = "https://production-superbet-offer-pl.freetls.fastly.net"
+TZ = ZoneInfo("Europe/Warsaw")
+DB = "celne_strzaly_ft.db"
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT = os.getenv("TELEGRAM_CHAT_ID")
+MAX_DAILY = 10
+MIN_ODDS = 1.70
+MAX_ODDS = 2.50
+PREFERRED_LINES = (2.5, 3.5, 4.5)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+    "Accept": "application/json,*/*",
+    "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+    "Origin": "https://superbet.pl",
+    "Referer": "https://superbet.pl/",
+})
+
+def api(path, params=None):
+    response = session.get(API + path, params=params, timeout=35)
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+def event_list(start, end):
+    payload = api("/v3/pl-PL/events", {
+        "startDate": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "endDate": end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+    })
+    events = payload.get("events") or payload.get("data") or []
+    if isinstance(events, dict):
+        events = list(events.values())
+    return [x for x in events if isinstance(x, dict)]
+
+def event_detail(event_id):
+    payload = api("/v3/pl-PL/events", {"events": str(event_id)})
+    events = payload.get("events") or payload.get("data") or []
+    if isinstance(events, dict):
+        events = list(events.values())
+    if not isinstance(events, list):
+        return None
+    return next((x for x in events if str(x.get("event_id") or x.get("id")) == str(event_id)), None)
+
+def normalize(value):
+    value = unicodedata.normalize("NFKD", str(value or "").lower())
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", value)
+
+def text_fields(obj):
+    meta = obj.get("metadata") or {}
+    return " ".join(str(v or "") for v in (
+        obj.get("name"), obj.get("label"), obj.get("market_name"), obj.get("marketName"),
+        meta.get("name"), meta.get("info"), meta.get("label"), meta.get("team"),
+        meta.get("participant"), meta.get("competitor")
+    ))
+
+def is_active(obj):
+    status = str(obj.get("status") or "").upper()
+    return status not in {"0", "SUSPENDED", "CLOSED", "INACTIVE", "DISABLED", "HIDDEN"} and obj.get("display") is not False
+
+def over_line(label):
+    raw = str(label or "").lower().replace(",", ".")
+    match = re.search(r"(?:over|above|more than|powyzej|ponad|wiecej|\+)\s*(\d+(?:\.\d+)?)", raw)
+    if not match:
+        match = re.search(r"(\d+(?:\.\d+)?)\s*\+", raw)
+    if not match:
+        return None
+    try:
+        line = float(match.group(1))
+        return line if line in PREFERRED_LINES else None
+    except ValueError:
+        return None
+
+def team_shots_market(event, home, away):
+    picks = []
+    diagnostics = []
+    for market in event.get("markets") or []:
+        market_name = text_fields(market)
+        compact = normalize(market_name)
+        if not any(term in compact for term in (
+            "celnestrzaly", "strzalecelne", "strzalynabramke", "shotsontarget",
+            "shotsongoal", "teamshotsontarget", "teamshotsongoal"
+        )):
+            continue
+        # Odrzucamy rynki HT/1. połowy oraz rynki zawodników.
+        if any(term in compact for term in ("1polowa", "pierwsz pol", "firsthalf", "1sthalf", "zawodnik", "player")):
+            continue
+        for outcome in market.get("odds") or []:
+            if not is_active(outcome):
+                continue
+            outcome_text = text_fields(outcome)
+            combined = normalize(market_name + " " + outcome_text)
+            line = over_line(market_name + " " + outcome_text)
+            if line is None:
+                continue
+            # Wymagamy jednoznacznego przypisania rynku do jednej z drużyn.
+            home_key, away_key = normalize(home), normalize(away)
+            meta = outcome.get("metadata") or {}
+            market_meta = market.get("metadata") or {}
+            team_hint = normalize(" ".join(str(v or "") for v in (
+                meta.get("team"), meta.get("participant"), meta.get("competitor"),
+                market_meta.get("team"), market_meta.get("participant"), market_meta.get("competitor")
+            )))
+            home_match = (home_key and home_key in combined) or (home_key and home_key in team_hint)
+            away_match = (away_key and away_key in combined) or (away_key and away_key in team_hint)
+            if home_match == away_match:
+                continue
+            try:
+                price = float(outcome.get("price") or meta.get("price"))
+            except (TypeError, ValueError):
+                continue
+            if not MIN_ODDS <= price <= MAX_ODDS:
+                continue
+            team = home if home_match else away
+            picks.append({
+                "team": team, "line": line, "odds": price,
+                "market": str(market.get("name") or market.get("label") or "Celne strzały drużyny FT")
+            })
+        if len(diagnostics) < 4:
+            diagnostics.append(market_name[:180])
+    if not picks:
+        return None, diagnostics
+    # Preferujemy wyższą linię przy zbliżonym kursie; kurs nadal musi być realnie dostępny.
+    picks.sort(key=lambda x: (abs(x["odds"] - 2.00), -x["line"]))
+    return picks[0], diagnostics
+
+def send(message):
+    if not TOKEN or not CHAT:
+        logging.error("Brak sekretów TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
+        return False
+    response = requests.post(
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        data={"chat_id": CHAT, "text": message, "disable_web_page_preview": True},
+        timeout=25
+    )
+    try:
+        data = response.json()
+        return bool(response.ok and data.get("ok"))
+    except Exception:
+        return False
+
+def main():
+    if not TOKEN or not CHAT:
+        logging.error("Brak sekretów Telegrama")
+        return
+    now = datetime.now(TZ)
+    day = now.date().isoformat()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    connection = sqlite3.connect(DB)
+    connection.execute("""CREATE TABLE IF NOT EXISTS sent_shots_ft(
+        event_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, home TEXT, away TEXT,
+        team TEXT, line REAL, odds REAL, kickoff TEXT
+    )""")
+    sent = {row[0] for row in connection.execute(
+        "SELECT event_id FROM sent_shots_ft WHERE substr(sent_at,1,10)=?", (day,)
+    )}
+    logging.info("Celne strzały FT: wysłane dziś %d/%d", len(sent), MAX_DAILY)
+    if len(sent) >= MAX_DAILY:
+        logging.info("Osiągnięto dzienny limit")
+        connection.close()
+        return
+
+    events = event_list(start, end)
+    candidates = []
+    for event in events:
+        fixture = event.get("fixture") or {}
+        if str(fixture.get("sport_id", event.get("sport_id", "5"))) != "5":
+            continue
+        phase = str((event.get("inplay_stats_metadata") or {}).get("status") or "").upper()
+        if phase not in ("", "NOT_STARTED"):
+            continue
+        event_id = str(event.get("event_id") or event.get("id") or "")
+        if not event_id or event_id in sent:
+            continue
+        name = str(fixture.get("event_name") or "")
+        parts = re.split(r"\s*[·–-]\s*", name, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        home, away = (x.strip() for x in parts)
+        try:
+            kickoff = datetime.fromisoformat(str(fixture.get("utc_date")).replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if kickoff <= datetime.now(timezone.utc):
+            continue
+        candidates.append((event_id, home, away, kickoff, event))
+    logging.info("Superbet: %d meczów przedmeczowych do sprawdzenia", len(candidates))
+
+    def inspect(item):
+        event_id, home, away, kickoff, listed = item
+        detail = event_detail(event_id) or listed
+        if not (detail.get("markets") or []):
+            detail = listed
+        pick, diagnostics = team_shots_market(detail, home, away)
+        return (item, pick, diagnostics)
+
+    qualified = []
+    market_count = 0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(inspect, item) for item in candidates]
+        for future in as_completed(futures):
+            try:
+                item, pick, diagnostics = future.result()
+                if diagnostics:
+                    market_count += len(diagnostics)
+                if pick:
+                    qualified.append((item, pick))
+            except Exception:
+                logging.exception("Błąd analizy rynku celnych strzałów")
+    qualified.sort(key=lambda pair: (abs(pair[1]["odds"] - 2.00), -pair[1]["line"], pair[0][3]))
+    selected = qualified[:max(0, MAX_DAILY - len(sent))]
+    logging.info("Rynki celnych strzałów FT rozpoznane: %d; typy spełniające kurs: %d; wybrane: %d",
+                 market_count, len(qualified), len(selected))
+
+    for item, pick in selected:
+        event_id, home, away, kickoff, _ = item
+        # Ostatnia kontrola świeżego rynku i kursu bezpośrednio przed publikacją.
+        fresh = event_detail(event_id)
+        if not fresh:
+            continue
+        current, _ = team_shots_market(fresh, home, away)
+        if not current or current["team"] != pick["team"] or current["line"] != pick["line"]:
+            logging.info("Pominięto %s: rynek zniknął lub zmienił się", event_id)
+            continue
+        if not MIN_ODDS <= current["odds"] <= MAX_ODDS:
+            continue
+        number = len(sent) + 1
+        local_kickoff = kickoff.astimezone(TZ)
+        link = f"https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/{event_id}"
+        message = (
+            "🎯 CELNE STRZAŁY DRUŻYNY — FT\n"
+            f"🔢 TYP NR.{number}\n"
+            f"📅 {local_kickoff:%d.%m.%Y} | 🕒 {local_kickoff:%H:%M}\n\n"
+            f"⚔️ {home} – {away}\n"
+            f"🏹 Drużyna: {current['team']}\n"
+            f"📌 Typ: {current['team']} — over {current['line']:.1f} celnych strzałów (FT)\n"
+            f"💹 Kurs Superbet: {current['odds']:.2f}\n"
+            f"🔗 Otwórz mecz w Superbet: {link}"
+        )
+        if send(message):
+            connection.execute(
+                "INSERT OR IGNORE INTO sent_shots_ft VALUES(?,?,?,?,?,?,?,?)",
+                (event_id, now.isoformat(), home, away, current["team"],
+                 current["line"], current["odds"], local_kickoff.isoformat())
+            )
+            connection.commit()
+            sent.add(event_id)
+            logging.info("Wysłano TYP NR.%d: %s - %s | %s over %.1f | kurs %.2f",
+                         number, home, away, current["team"], current["line"], current["odds"])
+        else:
+            logging.error("Telegram nie potwierdził wysłania eventu %s", event_id)
+    connection.close()
+
+if __name__ == "__main__":
+    main()
