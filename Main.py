@@ -543,6 +543,7 @@ def evaluate_ft_matchday_quality(league,home,away,start_ts):
 
 
 def ft_matchday_candidate_profile(league,home,away,start_ts):
+    """Strictly qualify fixtures using each team's recent FT corner history."""
     rows=load_matchday_results(league)
     if rows is None:
         return None,"brak danych Open Matchday FT"
@@ -550,15 +551,26 @@ def ft_matchday_candidate_profile(league,home,away,start_ts):
     hh=recent_team_ft_corner_history(home,rows,fixture_date)
     ah=recent_team_ft_corner_history(away,rows,fixture_date)
     if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
-        return None,"za mała próbka FT"
+        return None,f"za mała próba FT ({len(hh)}+{len(ah)})"
     home_avg=sum(x[1] for x in hh)/len(hh)
     away_avg=sum(x[1] for x in ah)/len(ah)
     totals=[x[3] for x in hh]+[x[3] for x in ah]
     combined_avg=sum(totals)/len(totals)
-    hit_rate=sum(1 for total in totals if total>=10)/len(totals)
-    score=hit_rate*100+min(home_avg,away_avg)*3+combined_avg*2+min(len(hh),len(ah))*0.5
-    detail=(f"próba {len(hh)}+{len(ah)}, średnie FT {home_avg:.2f}/{away_avg:.2f}, "
-            f"średnia łączna {combined_avg:.2f}, Over 9.5 w {hit_rate*100:.0f}%")
+    hit_rate=sum(1 for total in totals if total>=9)/len(totals)
+    recent_totals=[x[3] for x in hh[:5]]+[x[3] for x in ah[:5]]
+    recent_hit=sum(1 for total in recent_totals if total>=9)/len(recent_totals)
+    if min(home_avg,away_avg)<FT_MIN_TEAM_AVG:
+        return None,f"za mało rożnych własnych: {home_avg:.2f}/{away_avg:.2f}"
+    if combined_avg<FT_MIN_COMBINED_AVG:
+        return None,f"średnia łączna tylko {combined_avg:.2f}"
+    if hit_rate<FT_MIN_HIT_RATE:
+        return None,f"Over 8.5 historycznie tylko {hit_rate*100:.0f}%"
+    if recent_hit<0.50:
+        return None,f"ostatnie 5: Over 8.5 tylko {recent_hit*100:.0f}%"
+    score=(hit_rate*100)+(recent_hit*35)+(combined_avg*4)+(min(home_avg,away_avg)*5)
+    detail=(f"próba {len(hh)}+{len(ah)}, rożne własne {home_avg:.2f}/{away_avg:.2f}, "
+            f"średnia łączna {combined_avg:.2f}, Over 8.5: {hit_rate*100:.0f}% "
+            f"(ostatnie 5: {recent_hit*100:.0f}%)")
     return score,detail
 
 
@@ -751,18 +763,30 @@ def superbet_event_phase(event):
 
 
 def superbet_match_url(event_id,home,away,start_ts):
-    """Use a match URL supplied by Superbet; never query SofaScore for a fixture."""
+    """Prefer a provider-supplied direct corners-market URL; otherwise the exact event URL."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
-    events=payload.get("events") or []
+    events=superbet_events_from_payload(payload)
     event=events[0] if len(events)==1 else next(
         (e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
-    if event:
-        for obj in (event,event.get("fixture") or {}):
-            for key in ("url","event_url","eventUrl","permalink","web_url","webUrl"):
-                value=obj.get(key) if isinstance(obj,dict) else None
-                if isinstance(value,str) and value.startswith("https://") and "superbet" in value.lower():
-                    return value
-    return "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna"
+    if not event:
+        return None
+    url_keys=("url","event_url","eventUrl","permalink","web_url","webUrl","deep_link","deepLink")
+    def valid_url(obj):
+        if not isinstance(obj,dict):
+            return None
+        for key in url_keys:
+            value=obj.get(key)
+            if isinstance(value,str) and value.startswith("https://") and "superbet" in value.lower():
+                return value
+        return None
+    for market in event.get("markets") or []:
+        market_name=str(market.get("name") or "").lower()
+        if not any(term in market_name for term in ("roż","rzutów rożnych","corner")):
+            continue
+        direct=valid_url(market)
+        if direct:
+            return direct
+    return valid_url(event) or valid_url(event.get("fixture") or {})
 
 
 def matchday_candidate_profile(league,home,away,start_ts):
@@ -1625,6 +1649,9 @@ def monitor_ft_corners(c):
     for item in selected:
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
+        if not link:
+            logging.error("FT Over 8.5: brak potwierdzonego linku Superbet do meczu %s; pomijam wysyłkę",item["event_id"])
+            continue
         msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n\n"
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
              f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
@@ -1655,7 +1682,7 @@ def main():
         return
     c=db_open()
     try:
-        monitor_htft_odds(c)
+        monitor_ft_corners(c)
     finally:
         c.close()
 
