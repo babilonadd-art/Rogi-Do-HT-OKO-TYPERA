@@ -8,6 +8,7 @@ on:
       - 'Main.py'
       - '.github/workflows/Rogi-HT-Prematch.yml'
       - 'requirements.txt'
+      - 'tests/**'
   schedule:
     # Przesunięcie poza pełne interwały ogranicza opóźnienia harmonogramu GitHub Actions.
     - cron: "2-59/5 * * * *"
