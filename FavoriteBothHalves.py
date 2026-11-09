@@ -205,7 +205,7 @@ def main():
         msg=("⚽ TYP — FAWORYT STRZELI W OBU POŁOWACH\n"
              f"🔢 TYP NR.{number}\n📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
              f"⚔️ {x['home']} – {x['away']}\n"
-             f"⭐ Faworyt: {x['team']} (kurs 1X2: {fav['odds']:.2f})\n"
+             f"⭐ Faworyt rynku: {x['team']} (kurs obu połówek: {price:.2f})\n"
              f"🎯 Typ: {x['team']} strzeli gola w 1. i 2. połowie — TAK\n"
              f"💹 Kurs Superbet: {price:.2f}\n💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Mecz w Superbet: {url}")
