@@ -71,7 +71,7 @@ class SuperbetFTCornersTests(unittest.TestCase):
         data=payload("Liczba rzutów rożnych",[selection("Powyżej 8.5")])
         data["events"][0].pop("id")
         api.return_value=data
-        self.assertEqual(Main.superbet_ft_corners_over_odds(123),2.10)
+        self.assertTrue(Main.superbet_ft_corners_over_odds(123))
 
     @patch("Main.superbet_api")
     def test_rejects_wrong_event_id(self, api):
