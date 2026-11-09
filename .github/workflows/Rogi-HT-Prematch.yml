@@ -48,9 +48,11 @@ jobs:
             # py_compile modyfikuje śledzone cache Pythona; przywróć je przed rebase.
             git restore --worktree -- __pycache__ tests/__pycache__ 2>/dev/null || true
             git add okotypera_ht.db
-            if [ -e RESET_FT_PICKS ] || git ls-files --error-unmatch RESET_FT_PICKS >/dev/null 2>&1; then
-              git add -A -- RESET_FT_PICKS
-            fi
+            for marker in RESET_FT_PICKS DELETE_TELEGRAM_MESSAGES FT_ALREADY_SENT; do
+              if [ -e "$marker" ] || git ls-files --error-unmatch "$marker" >/dev/null 2>&1; then
+                git add -A -- "$marker"
+              fi
+            done
             git diff --cached --quiet || git commit -m "Persist FT corner picks and reset marker"
             git pull --rebase origin main
             git push
