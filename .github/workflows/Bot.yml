@@ -41,7 +41,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PITCHAPI_API_KEY: ${{ secrets.PITCHAPI_API_KEY }}
-        run: python HTGoalBot.py
+        run: |
+          for attempt in {1..8}; do
+            python HTGoalBot.py
+            sleep 30
+          done
       - name: Skan LIVE OVER z Superbet
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
