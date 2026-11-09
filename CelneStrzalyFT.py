@@ -141,6 +141,10 @@ def main():
         if not event_id or event_id in sent:
             continue
         matched_quotes += sum(1 for q in (match.get("quotes") or []) if str(q.get("group_id")) == GROUP_ID and q.get("suspended") is not True)
+        if matched_quotes and not getattr(main, "_sampled", False):
+            sample = [q for q in (match.get("quotes") or []) if str(q.get("group_id")) == GROUP_ID]
+            logging.info("PRZYKLADOWE QUOTES 50530: %s", sample[:12])
+            main._sampled = True
         pick = get_pick(match)
         if pick:
             kickoff = datetime.fromisoformat(str(match["kickoff_utc"]).replace("Z", "+00:00"))
