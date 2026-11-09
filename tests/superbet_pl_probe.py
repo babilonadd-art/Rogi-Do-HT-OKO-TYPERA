@@ -40,9 +40,17 @@ for listed in future[:40]:
         if not full:
             continue
         ev = full[0]
+        if len(corner_market_hits)<3:
+            print("EVENT_DETAIL_KEYS", sorted(ev.keys()))
+            print("EVENT_FIXTURE_KEYS", sorted((ev.get("fixture") or {}).keys()))
+            print("EVENT_URL_FIELDS", {k:ev.get(k) for k in ("url","event_url","eventUrl","permalink","web_url","webUrl","deep_link","deepLink") if ev.get(k)})
+            print("FIXTURE_URL_FIELDS", {k:(ev.get("fixture") or {}).get(k) for k in ("url","event_url","eventUrl","permalink","web_url","webUrl","deep_link","deepLink") if (ev.get("fixture") or {}).get(k)})
         for market in ev.get("markets", []):
             name = str(market.get("name", ""))
             if re.search(r"rożn|rożnych|rzutów rożnych", name, re.I):
+                if len(corner_market_hits)<3:
+                    print("CORNER_MARKET_KEYS", sorted(market.keys()), "MARKET_URL_FIELDS",
+                          {k:market.get(k) for k in ("url","event_url","eventUrl","permalink","web_url","webUrl","deep_link","deepLink") if market.get(k)})
                 odds = []
                 for odd in market.get("odds", []):
                     meta = odd.get("metadata", {})
