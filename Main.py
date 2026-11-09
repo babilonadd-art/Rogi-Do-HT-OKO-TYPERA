@@ -1277,7 +1277,7 @@ HTFT_MAX_DAILY_ALERTS = 2
 
 def daily_htft_alert_allowed(sent_event_ids, event_id, limit=HTFT_MAX_DAILY_ALERTS):
     """One alert per match and no more than two distinct matches per Warsaw day."""
-    return int(event_id) in sent_event_ids or len(sent_event_ids) < limit
+    return int(event_id) not in sent_event_ids and len(sent_event_ids) < limit
 
 def fetch_superbet_event_detail(event_id):
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
