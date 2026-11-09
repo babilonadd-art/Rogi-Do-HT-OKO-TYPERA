@@ -115,6 +115,20 @@ def corners_from_live(live):
     return None
 
 
+def corners_from_match_stats(payload):
+    for period in payload.get("periods") or []:
+        if str(period.get("period", "")).lower() not in ("firsthalf", "1h", "first_half"):
+            continue
+        for group in period.get("groups") or []:
+            for item in group.get("items") or []:
+                key = re.sub(r"[^a-z]", "", str(item.get("key") or item.get("title") or "").lower())
+                if key in {"corners", "cornerkicks", "totalcorners", "cornerswon"}:
+                    home, away = _numeric(item.get("home")), _numeric(item.get("away"))
+                    if home is not None and away is not None:
+                        return home + away
+    return None
+
+
 def first_goal_minute(events):
     goals = []
     for event in events or []:
@@ -201,7 +215,9 @@ def db_mark_sent(event_id):
 
 def qualifies(match_id, current_score):
     live = pitch_get(f"/v1/matches/{match_id}/live")
-    if not live.get("live") or live.get("stale") is True:
+    if not live.get("live"):
+        return None
+    if live.get("age_seconds") is not None and int(live.get("age_seconds") or 0) > 120:
         return None
     clock = live.get("clock") or {}
     minute = int(clock.get("minute") or 0)
@@ -240,6 +256,11 @@ def qualifies(match_id, current_score):
         return None
 
     corners = corners_from_live(live)
+    if corners is None:
+        try:
+            corners = corners_from_match_stats(pitch_get(f"/v1/matches/{match_id}/stats"))
+        except Exception as exc:
+            log.info("Nie udało się pobrać statystyk rożnych: %s", exc)
     if corners is None or corners < 2:
         return None
 
