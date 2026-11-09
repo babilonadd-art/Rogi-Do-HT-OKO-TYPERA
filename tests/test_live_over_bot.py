@@ -19,6 +19,7 @@ def event(market_name, line, price=2.2):
 class LiveOverBotTests(unittest.TestCase):
     def test_live_status_recognized_across_nested_fields(self):
         self.assertTrue(bot.event_is_still_live({"fixture": {"status": "IN_PLAY"}}))
+        self.assertTrue(bot.event_is_still_live({"fixture": {"status": "STARTED"}}))
         self.assertTrue(bot.event_is_still_live({"inplay_stats_metadata": {"status": "SECOND_HALF"}}))
 
     def test_prematch_and_finished_are_rejected(self):
