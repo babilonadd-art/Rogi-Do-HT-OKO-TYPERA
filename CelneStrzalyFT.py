@@ -156,7 +156,8 @@ def main():
     # Przeszukujemy najbliższe 48 godzin, ale limit 10 typów liczymy osobno
     # dla bieżącego dnia w strefie Europe/Warsaw.
     start = now
-    end = now + timedelta(hours=48)
+    today_end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    tomorrow_end = today_end + timedelta(days=1)
     connection = sqlite3.connect(DB)
     connection.execute("""CREATE TABLE IF NOT EXISTS sent_shots_ft(
         event_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, home TEXT, away TEXT,
@@ -171,7 +172,16 @@ def main():
         connection.close()
         return
 
-    events = event_list(start, end)
+    # Superbet odrzuca zakresy dłuższe niż doba, dlatego pobieramy
+    # pozostałą część dzisiaj i jutro jako dwa osobne zapytania.
+    events = event_list(start, today_end)
+    events.extend(event_list(today_end, tomorrow_end))
+    unique_events = {}
+    for event in events:
+        event_id = str(event.get("event_id") or event.get("id") or "")
+        if event_id:
+            unique_events[event_id] = event
+    events = list(unique_events.values())
     candidates = []
     for event in events:
         fixture = event.get("fixture") or {}
