@@ -94,13 +94,13 @@ class SuperbetFTCornersTests(unittest.TestCase):
         data["events"][0]["fixture"]["event_url"]="https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test-event"
         api.return_value=data
         self.assertEqual(Main.superbet_match_url(123,"Home","Away",0),
-                         "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test-event?marketGroup=111")
+                         "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test-event?t=offer-prematch-18232&mdt=o&marketGroup=111")
 
     @patch("Main.superbet_api")
     def test_builds_exact_superbet_event_route_when_api_omits_url(self, api):
         api.return_value=payload("Liczba rzutów rożnych",[selection("Powyżej 8.5")])
         self.assertEqual(Main.superbet_match_url(123,"Botosani","Otelul Galati",0),
-                         "https://superbet.pl/kursy/pilka-nozna/botosani-vs-otelul-galati-123?marketGroup=111")
+                         "https://superbet.pl/kursy/pilka-nozna/botosani-vs-otelul-galati-123?t=offer-prematch-18232&mdt=o&marketGroup=111")
 
     @patch("Main.load_matchday_results")
     @patch("Main.recent_team_ft_corner_history")
