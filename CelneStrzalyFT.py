@@ -85,10 +85,10 @@ def team_shots_market(event, home, away):
     for market in event.get("markets") or []:
         market_name = text_fields(market)
         compact = normalize(market_name)
-        if not any(term in compact for term in (
-            "celnestrzaly", "strzalecelne", "strzalynabramke", "shotsontarget",
-            "shotsongoal", "teamshotsontarget", "teamshotsongoal"
-        )):
+        has_shot_term = ("strzal" in compact and "celn" in compact) or any(
+            term in compact for term in ("shotsontarget", "shotsongoal", "teamshotsontarget", "teamshotsongoal")
+        )
+        if not has_shot_term:
             continue
         # Odrzucamy rynki HT/1. połowy oraz rynki zawodników.
         if any(term in compact for term in ("1polowa", "pierwsz pol", "firsthalf", "1sthalf", "zawodnik", "player")):
@@ -208,7 +208,9 @@ def main():
             logging.info("DIAG celne strzały: %s - %s | markets=%d | przykładowe nazwy=%s",
                          home, away, len(market_rows),
                          [str(m.get("name") or m.get("label") or m.get("market_name") or "")[:140]
-                          for m in market_rows[:35]])
+                          for m in market_rows
+                          if any(k in normalize(m.get("name") or m.get("label") or m.get("market_name") or "")
+                                 for k in ("strzal", "shot", "bramke"))])
             for market in market_rows[:8]:
                 outcomes = market.get("odds") or []
                 if outcomes:
