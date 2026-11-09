@@ -235,7 +235,7 @@ def superbet_event_for_match(home,away,start_ts,events):
     return best[1] if best else None
 
 def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Return True only when the exact active FT match-corners Over line exists; never read odds."""
+    """Return the current price only when the exact active FT match-corners Over line exists."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
@@ -283,8 +283,14 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
                 continue
             if str(meta.get("offer_state_id",1))!="1":
                 continue
-            logging.info("Superbet FT corners: event %s | active Over %.1f market (no odds read)",event_id,line)
-            return True
+            try:
+                price=float(odd.get("price"))
+            except (TypeError,ValueError):
+                continue
+            if price<=1.0:
+                continue
+            logging.info("Superbet FT corners: event %s | active Over %.1f | kurs %.2f",event_id,line,price)
+            return price
     logging.info("Superbet: brak aktywnego rynku FT rożne Over %.1f dla event %s",line,event_id)
     return None
 
@@ -1702,10 +1708,10 @@ def monitor_ft_corners(c):
     logging.info("FT Over 8.5: wydarzenia=%s, z historią=%s, już wysłane dziś=%s",
                  len(events),len(candidates),len(sent_ids))
     def inspect(item):
-        market_available=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
-        if not market_available:
+        market_odds=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
+        if market_odds is None:
             return None
-        item["odds"]=0.0  # pole techniczne bazy; kurs nie jest pobierany ani używany
+        item["odds"]=market_odds  # aktualny kurs Superbet; nie wpływa na selekcję spotkań
         return item
     qualified=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -1733,6 +1739,7 @@ def monitor_ft_corners(c):
              f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
              "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
+             f"💹 Kurs Superbet: {item['odds']:.2f}\n"
              f"📊 Historia: {item['profile']}\n"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Superbet — otwórz mecz, następnie Rzuty rożne → Liczba rzutów rożnych: {link}")
@@ -1744,7 +1751,7 @@ def monitor_ft_corners(c):
                  item["start_ts"],item["odds"],item["profile"],now.isoformat()))
             c.commit()
             sent_ids.add(item["event_id"])
-            logging.info("FT Over 8.5: wysłano %s - %s (kurs nie wpływa na wybór)",item["home"],item["away"])
+            logging.info("FT Over 8.5: wysłano %s - %s | kurs %.2f (kurs nie wpływa na wybór)",item["home"],item["away"],item["odds"])
         else:
             logging.error("FT Over 8.5: nie wysłano eventu %s",item["event_id"])
         time.sleep(0.3)
