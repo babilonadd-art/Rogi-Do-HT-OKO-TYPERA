@@ -41,14 +41,14 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5), "HT", 0), [])
 
     def test_relaxed_odds_and_multiple_goal_lines(self):
-        self.assertEqual((bot.MIN_ODDS, bot.MAX_ODDS), (1.05, 10.00))
+        self.assertEqual((bot.MIN_ODDS, bot.MAX_ODDS), (1.60, 2.80))
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.25), "FT", 0)[0]["line"], 0.5)
         # Przy 0:0 bot nie może przeskoczyć na Over 1.5.
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 0), [])
         # Po jednym golu właściwą następną linią jest Over 1.5.
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 1)[0]["line"], 1.5)
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.04), "FT", 0), [])
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 9.99), "FT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.59), "FT", 0), [])
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.79), "FT", 0)[0]["line"], 0.5)
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 3.5, 2.2), "FT", 0), [])
 
     def test_phase_windows_and_line_caps(self):
