@@ -221,20 +221,6 @@ def main():
         detail = event_detail(event_id) or listed
         if not (detail.get("markets") or []):
             detail = listed
-        market_rows = detail.get("markets") or []
-        diagnosed = getattr(inspect, "_diagnosed", 0)
-        if diagnosed < 3:
-            inspect._diagnosed = diagnosed + 1
-            logging.info("DIAG Superbet %s - %s | markets=%d | nazwy rynków=%s",
-                         home, away, len(market_rows),
-                         [str(m.get("name") or m.get("label") or m.get("market_name") or "")[:100]
-                          for m in market_rows])
-            for market in market_rows:
-                market_title = str(market.get("name") or market.get("label") or "")
-                if any(k in normalize(market_title) for k in ("strzal", "shot", "bramke")):
-                    logging.info("DIAG SHOT MARKET %s | outcomes=%s", market_title[:120],
-                                 [{"price": o.get("price"), "metadata": o.get("metadata")}
-                                  for o in (market.get("odds") or [])[:8]])
         pick, diagnostics = team_shots_market(detail, home, away)
         return (item, pick, diagnostics)
 
