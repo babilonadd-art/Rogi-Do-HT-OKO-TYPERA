@@ -85,9 +85,8 @@ def both_halves_market(event,side,home,away):
         # Nazwa drużyny jest w tytule rynku, a selekcja TAK ma metadane "tak".
         if not any(k in compact_market for k in ("obupolowach","obu polowach")): continue
         if not team_key or team_key not in compact_market: continue
-        if not active(m): continue
-        for o in m.get("odds") or []:
-            if not active(o): continue
+        # Szczegóły wydarzenia zawierają aktualnie wystawione selekcje;
+        # nie filtrujemy po niejednolitych statusach API Superbet.
             meta=o.get("metadata") or {}
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
             if label not in ("tak","yes"): continue
