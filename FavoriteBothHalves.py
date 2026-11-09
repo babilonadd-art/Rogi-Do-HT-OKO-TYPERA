@@ -134,6 +134,24 @@ def main():
         if kickoff<=datetime.now(timezone.utc): continue
         candidates.append((eid,home,away,kickoff,e))
     logging.info("Superbet: %d meczów przedmeczowych do sprawdzenia",len(candidates))
+    # Diagnostyka rzeczywistej struktury oferty Superbet — tylko kilka meczów,
+    # aby ustalić nazwy rynków i selekcji zamiast zgadywać etykiety.
+    for sample in candidates[:5]:
+        sid, shome, saway, _, listed_event = sample
+        se = detail(sid) or listed_event
+        smarkets = se.get("markets") or []
+        logging.info("DIAG %s - %s | event_keys=%s | markets=%d",
+                     shome, saway, list(se.keys())[:20], len(smarkets))
+        for market in smarkets[:35]:
+            selections = []
+            for odd in (market.get("odds") or [])[:12]:
+                meta = odd.get("metadata") or {}
+                selections.append({
+                    "name": odd.get("name"), "label": odd.get("label"),
+                    "price": odd.get("price"), "meta_name": meta.get("name"),
+                    "meta_info": meta.get("info")
+                })
+            logging.info("DIAG MARKET %s | %s", market_text(market)[:140], selections)
     qualified=[]
     def inspect(item):
         eid,home,away,kickoff,listed_event=item
