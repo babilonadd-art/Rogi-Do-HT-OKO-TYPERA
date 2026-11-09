@@ -34,7 +34,8 @@ def events_today():
     return [x for x in arr if isinstance(x,dict)]
 
 def active(x):
-    return x.get("status") in (1,"1","ACTIVE","active",None) and x.get("display") is not False
+    status=str(x.get("status") or "").upper()
+    return status not in ("0","SUSPENDED","CLOSED","INACTIVE","DISABLED","HIDDEN") and x.get("display") is not False
 
 def words(x):
     return re.sub(r"[^a-z0-9ąćęłńóśźż]+","",str(x or "").lower())
@@ -57,7 +58,6 @@ def fav_side(event,home,away):
         for o in m.get("odds") or []:
             if not active(o): continue
             meta=o.get("metadata") or {}
-            if str(meta.get("offer_state_id",1))!="1": continue
             price=get_odds(o)
             if price is None or not 1.01<=price<=20: continue
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
@@ -89,7 +89,6 @@ def both_halves_market(event,side,home,away):
         for o in m.get("odds") or []:
             if not active(o): continue
             meta=o.get("metadata") or {}
-            if str(meta.get("offer_state_id",1))!="1": continue
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
             if label not in ("tak","yes"): continue
             price=get_odds(o)
