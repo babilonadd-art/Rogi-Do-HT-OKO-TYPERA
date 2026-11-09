@@ -235,7 +235,7 @@ def superbet_event_for_match(home,away,start_ts,events):
     return best[1] if best else None
 
 def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
-    """Return odds only for the exact active full-time match-corners Over line."""
+    """Return True only when the exact active FT match-corners Over line exists; never read odds."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
