@@ -77,6 +77,53 @@ for listed in future[:40]:
 print("FOOTBALL_EVENTS", len(football), "FUTURE", len(future))
 print("ALL_CORNER_MARKETS_FOUND", len(corner_market_hits))
 print("ALL_CORNER_MARKET_SAMPLES", short(corner_market_hits[:60], 30000))
+
+# Inspect the public event page frontend for supported market-focus URL parameters.
+try:
+    sample = next((x for x in corner_market_hits if x.get("market_name") == "Liczba rzutów rożnych"), None)
+    if sample:
+        event_id = sample["event_id"]
+        fx = next((e.get("fixture", {}) for e in future if e.get("event_id") == event_id), {})
+        names = str(fx.get("event_name", "")).split("·", 1)
+        def slug_part(value):
+            import unicodedata
+            value = str(value or "").replace("ł", "l").replace("Ł", "L")
+            value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+            return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", value)).strip("-")
+        if len(names) == 2:
+            event_url = f"https://superbet.pl/kursy/pilka-nozna/{slug_part(names[0])}-vs-{slug_part(names[1])}-{event_id}"
+            page = s.get(event_url, timeout=35)
+            print("EVENT_PAGE_STATUS", page.status_code, "URL", page.url, "HTML_LEN", len(page.text))
+            scripts = re.findall(r'<script[^>]+src=["\\']([^"\\']+)', page.text, re.I)
+            print("EVENT_PAGE_SCRIPT_COUNT", len(scripts))
+            terms = ("marketId", "market_id", "market-id", "marketGroup", "market-group", "expandedMarket", "marketSlug")
+            inspected = 0
+            for script_url in scripts:
+                if script_url.startswith("//"):
+                    script_url = "https:" + script_url
+                elif script_url.startswith("/"):
+                    script_url = "https://superbet.pl" + script_url
+                elif not script_url.startswith("http"):
+                    continue
+                try:
+                    js = s.get(script_url, timeout=20).text
+                    found = []
+                    low = js.lower()
+                    for term in terms:
+                        pos = low.find(term.lower())
+                        if pos >= 0:
+                            found.append((term, re.sub(r"\\s+", " ", js[max(0,pos-180):pos+260])[:440]))
+                    if found:
+                        print("FRONTEND_MARKET_TERMS", script_url, found[:8])
+                    inspected += 1
+                    if inspected >= 18:
+                        break
+                except Exception as exc:
+                    print("SCRIPT_FETCH_ERROR", type(exc).__name__)
+            print("EVENT_PAGE_SCRIPTS_INSPECTED", inspected)
+except Exception as exc:
+    print("EVENT_PAGE_PROBE_ERROR", type(exc).__name__, str(exc)[:200])
+
 print("PROBE_FINISHED")
 
 
