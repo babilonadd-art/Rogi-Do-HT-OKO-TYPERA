@@ -1,14 +1,16 @@
-name: HTFT Odds Anomaly Monitor
+name: HT/FT — monitoring anomalii kursów
 
 on:
-  workflow_dispatch: # ręczne uruchomienie wyłącznie po ponownym włączeniu przez właściciela
+  workflow_dispatch:
+  schedule:
+    - cron: "0,30 * * * *" # co 30 minut; buduje historię kursów
 
 permissions:
   contents: write
 
 concurrency:
   group: rogi-ht-prematch
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -25,10 +27,20 @@ jobs:
         run: pip install -r requirements.txt
       - name: Kontrola składni
         run: python -m py_compile Main.py
-      - name: Testy rozpoznawania rynków HT/FT
-        run: python tests/test_htft_market.py
-      - name: Monitoring anomalii kursów HT/FT przed meczem
+      - name: Testy logiki HT/FT
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Monitoring anomalii kursów HT/FT
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python Main.py
+      - name: Zapis historii kursów i limitu dziennego
+        run: |
+          if [ -f okotypera_ht.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_ht.db
+            git diff --cached --quiet || git commit -m "Persist HTFT odds monitoring history"
+            git pull --rebase origin main
+            git push
+          fi
