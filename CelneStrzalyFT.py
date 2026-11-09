@@ -55,7 +55,9 @@ def event_detail(event_id):
     return next((x for x in events if str(x.get("event_id") or x.get("id")) == str(event_id)), None)
 
 def normalize(value):
-    value = unicodedata.normalize("NFKD", str(value or "").lower())
+    # Litera ł nie rozkłada się w NFKD, więc mapujemy ją jawnie.
+    raw = str(value or "").lower().replace("ł", "l")
+    value = unicodedata.normalize("NFKD", raw)
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", "", value)
 
