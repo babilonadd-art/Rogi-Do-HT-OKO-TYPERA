@@ -35,7 +35,7 @@ jobs:
       - name: Kontrola składni
         run: python -m py_compile Main.py
       - name: Testy rozpoznawania rynków HT/FT
-        run: python -m unittest tests.test_htft_market
+        run: python tests/test_htft_market.py
       - name: Monitoring anomalii kursów HT/FT przed meczem
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
