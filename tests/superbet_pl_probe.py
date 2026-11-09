@@ -112,7 +112,7 @@ try:
                 try:
                     js = s.get(script_url, timeout=20).text
                     if "index." in script_url:
-                        chunks = re.findall(r'["\\']([^"\\']+\\.js(?:\\?[^"\\']*)?)["\\']', js)
+                        chunks = re.findall(r"([A-Za-z0-9_./-]+\\.js)", js)
                         print("MAIN_BUNDLE_INFO", script_url, "LEN", len(js), "CHUNKS", chunks[:35])
                         for pattern in (r".{0,90}market.{0,90}", r".{0,90}event.{0,90}", r".{0,90}corner.{0,90}"):
                             matches = re.findall(pattern, js, re.I)
