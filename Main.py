@@ -1281,7 +1281,7 @@ def htft_market_outcomes(event):
                 continue
             labels=[odd.get("name"),odd.get("label"),meta.get("name"),meta.get("info")]
             label=" ".join(str(x).strip() for x in labels if x is not None)
-            match=re.search(r"(?<![0-9])([1xX])\s*[/\-]\s*([1xX])(?![0-9])",label)
+            match=re.search(r"(?<![0-9])([12xX])\s*[/\-]\s*([12xX])(?![0-9])",label)
             if not match:
                 continue
             selection=f"{match.group(1).upper()}/{match.group(2).upper()}"
