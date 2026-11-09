@@ -786,7 +786,18 @@ def superbet_match_url(event_id,home,away,start_ts):
         direct=valid_url(market)
         if direct:
             return direct
-    return valid_url(event) or valid_url(event.get("fixture") or {})
+    supplied=valid_url(event) or valid_url(event.get("fixture") or {})
+    if supplied:
+        return supplied
+    # Superbet's public event-page route uses /kursy/pilka-nozna/<home>-vs-<away>-<event_id>.
+    def slug(value):
+        raw=str(value or "").replace("ł","l").replace("Ł","L")
+        ascii_name=unicodedata.normalize("NFKD",raw).encode("ascii","ignore").decode().lower()
+        return re.sub(r"-+","-",re.sub(r"[^a-z0-9]+","-",ascii_name)).strip("-")
+    home_slug,away_slug=slug(home),slug(away)
+    if not home_slug or not away_slug:
+        return None
+    return f"https://superbet.pl/kursy/pilka-nozna/{home_slug}-vs-{away_slug}-{int(event_id)}"
 
 
 def matchday_candidate_profile(league,home,away,start_ts):
@@ -1649,16 +1660,14 @@ def monitor_ft_corners(c):
     for item in selected:
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
-        if not link:
-            logging.error("FT Over 8.5: brak potwierdzonego linku Superbet do meczu %s; pomijam wysyłkę",item["event_id"])
-            continue
         msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n\n"
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
              f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
              "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
              f"💹 Kurs Superbet: {item['odds']:.2f}\n"
              f"📊 Historia: {item['profile']}\n"
-             f"💰 Stawka informacyjna: {STAKE} zł\n🔗 {link}")
+             f"💰 Stawka informacyjna: {STAKE} zł\n"
+             f"🔗 Superbet — otwórz mecz, następnie Rzuty rożne → Liczba rzutów rożnych: {link}")
         if send(msg):
             c.execute("""INSERT OR IGNORE INTO ft_corner_picks
                 (event_id,league,home,away,start_ts,odds,profile,sent_at)
