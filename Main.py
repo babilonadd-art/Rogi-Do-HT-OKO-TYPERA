@@ -1439,9 +1439,7 @@ def main():
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return
     c=db_open()
-    # Rozlicz stare kupony/typy, po czym przejdź do monitoringu HT/FT.
-    settle_ht_picks(c)
-    settle_ft_picks(c)
+    # Monitoring kursów HT/FT działa niezależnie od starej bazy typów rożnych.
     monitor_htft_odds(c)
     c.close()
     return
