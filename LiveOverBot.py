@@ -85,6 +85,13 @@ def live_superbet_events():
     live = [e for e in football if event_is_still_live(e)]
     logging.info("Superbet: %d wydarzeń LIVE piłki nożnej z %d wydarzeń piłkarskich (%d wszystkich)",
                  len(live), len(football), len(events))
+    if live:
+        for sample in live[:3]:
+            logging.info("LIVE SAMPLE id=%s status=%s minute=%s score=%s fixture_keys=%s metadata_keys=%s",
+                         sample.get("event_id") or sample.get("id"), _status_values(sample)[:8],
+                         event_minute(sample), event_score(sample),
+                         sorted((sample.get("fixture") or {}).keys()),
+                         sorted((sample.get("inplay_stats_metadata") or {}).keys()))
     if not live and football:
         # Diagnostyka bez wypisywania całych payloadów ani danych wrażliwych.
         samples = []
