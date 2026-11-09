@@ -1723,11 +1723,15 @@ def monitor_ft_corners(c):
     logging.info("FT Over 8.5: dokładny rynek 8.5 dostępny w %s meczach; wybrano %s; cel dzienny=%s",
                  len(qualified),len(selected),FT_DAILY_TARGET)
     for item in selected:
+        # Numeracja dzienna: kolejny numer wyliczany z typów skutecznie zapisanych dziś.
+        # Numer zwiększa się dopiero po udanej wysyłce, więc skany co 5 minut nie robią luk.
+        type_no=len(sent_ids)+1
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
-        msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n\n"
+        msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n"
+             f"🔢 TYP NR.{type_no}\n"
+             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
-             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
              "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
              f"📊 Historia: {item['profile']}\n"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
