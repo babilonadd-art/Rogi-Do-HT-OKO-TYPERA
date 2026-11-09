@@ -13,12 +13,15 @@ DB = "okotypera_rogi.db"
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
-# Późne typy LIVE: wyłącznie pełny mecz, minuty 60–85.
-MIN_MINUTE = 60
-MAX_MINUTE = 85
+# LIVE: HT do 35. minuty (maks. linia Over 1.5), FT od 46. do 75. minuty (maks. linia Over 2.5).
+HT_MAX_MINUTE = 35
+FT_MIN_MINUTE = 46
+FT_MAX_MINUTE = 75
+HT_MAX_LINE = 1.5
+FT_MAX_LINE = 2.5
 MIN_ODDS = 1.90
-MAX_ODDS = 10.00
-MAX_PICKS_PER_RUN = 3
+MAX_ODDS = 3.50
+MAX_PICKS_PER_RUN = 5
 STAKE = 10
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -41,6 +44,34 @@ def superbet_api(path, params=None):
     return payload
 
 
+def _status_values(event):
+    values = []
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                key_l = str(key).lower()
+                if key_l in ("status", "event_status", "inplay_status", "match_status") and value is not None:
+                    values.append(str(value).upper())
+                if key_l in ("is_live", "islive", "inplay", "is_inplay", "isinplay") and isinstance(value, bool):
+                    values.append("LIVE" if value else "NOT_LIVE")
+                if isinstance(value, (dict, list)):
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+    walk(event)
+    return values
+
+
+def event_is_still_live(event):
+    values = _status_values(event)
+    rejected = {"NOT_STARTED", "NOT_LIVE", "PREMATCH", "PRE_MATCH", "FINISHED", "ENDED",
+                "CANCELLED", "POSTPONED", "ABANDONED", "SUSPENDED"}
+    live_tokens = ("LIVE", "INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF",
+                   "HALFTIME", "1H", "2H", "IN PROGRESS", "IN_PROGRESS")
+    return any(v not in rejected and any(token in v for token in live_tokens) for v in values)
+
+
 def live_superbet_events():
     now = datetime.now(timezone.utc)
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -50,20 +81,20 @@ def live_superbet_events():
         "endDate": end.isoformat().replace("+00:00", "Z"),
     })
     events = payload.get("events") or []
-    live = []
-    for event in events:
-        fixture = event.get("fixture") or {}
-        if str(fixture.get("sport_id")) != "5":
-            continue
-        metadata = event.get("inplay_stats_metadata") or {}
-        status = str(metadata.get("status") or "").upper()
-        if status in ("", "NOT_STARTED", "FINISHED", "ENDED", "CANCELLED", "POSTPONED", "ABANDONED"):
-            continue
-        if status in ("LIVE", "INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF", "HALFTIME", "1H", "2H") or any(
-            word in status for word in ("LIVE", "INPLAY", "IN_PLAY", "PERIOD", "HALF")
-        ):
-            live.append(event)
-    logging.info("Superbet: %d wydarzeń LIVE piłki nożnej z %d wydarzeń", len(live), len(events))
+    football = [e for e in events if str((e.get("fixture") or {}).get("sport_id")) == "5"]
+    live = [e for e in football if event_is_still_live(e)]
+    logging.info("Superbet: %d wydarzeń LIVE piłki nożnej z %d wydarzeń piłkarskich (%d wszystkich)",
+                 len(live), len(football), len(events))
+    if not live and football:
+        # Diagnostyka bez wypisywania całych payloadów ani danych wrażliwych.
+        samples = []
+        for event in football:
+            vals = _status_values(event)
+            if vals:
+                samples.append(vals[:8])
+            if len(samples) >= 5:
+                break
+        logging.warning("Brak rozpoznanych LIVE. Przykładowe statusy Superbet: %s", samples or "brak pól statusu")
     return live
 
 
@@ -155,25 +186,37 @@ def event_score(event):
     return found[0] if found else None
 
 
-def event_is_still_live(event):
-    status = str((event.get("inplay_stats_metadata") or {}).get("status") or "").upper()
-    return bool(status) and status not in (
-        "NOT_STARTED", "FINISHED", "ENDED", "CANCELLED", "POSTPONED", "ABANDONED"
-    )
+def market_phase(name):
+    n = re.sub(r"\\s+", " ", str(name or "").lower())
+    ht_terms = ("1st half", "first half", "1. połowa", "1 połowa", "pierwsza połowa",
+                "1 poł.", "1 poł")
+    ft_terms = ("full time", "full-time", "cały mecz", "caly mecz", "wynik meczu",
+                "pełny mecz", "pelny mecz", "90 minut")
+    if any(term in n for term in ht_terms):
+        return "HT"
+    if any(term in n for term in ft_terms):
+        return "FT"
+    # Nienazwany jako połowa rynek "Total Goals" jest standardowo rynkiem FT.
+    if any(word in n for word in ("total", "gole", "goals", "bramki", "suma goli")):
+        return "FT"
+    return None
 
 
-def exact_live_fulltime_over_markets(event):
-    """Zwraca wyłącznie aktywne selekcje OVER z dokładną linią z rynku Superbet."""
+def exact_live_over_markets(event, phase, current_total):
+    """Pobiera aktywną linię na następnego gola, z limitem linii dla danej połowy."""
     if not event_is_still_live(event):
+        return []
+    max_line = HT_MAX_LINE if phase == "HT" else FT_MAX_LINE
+    target_line = current_total + 0.5
+    if target_line > max_line:
         return []
     results = []
     for market in event.get("markets") or []:
-        name = re.sub(r"\s+", " ", str(market.get("name") or "").strip().lower())
-        if not any(word in name for word in ("total", "gole", "goals", "bramki", "suma goli")):
+        name = str(market.get("name") or "")
+        if market_phase(name) != phase:
             continue
-        if any(word in name for word in ("corner", "roż", "kart", "cards", "rzut", "team total", "drużyn")):
-            continue
-        if any(word in name for word in ("1st half", "first half", "1. połowa", "1 połowa", "pierwsza połowa", "2nd half", "second half", "2. połowa", "2 połowa")):
+        low_name = name.lower()
+        if any(word in low_name for word in ("corner", "roż", "kart", "cards", "team total", "drużyn")):
             continue
         if market.get("status") not in (None, 1, "1", "ACTIVE", "active"):
             continue
@@ -188,7 +231,9 @@ def exact_live_fulltime_over_markets(event):
             labels = " ".join(str(v or "") for v in (
                 odd.get("name"), odd.get("label"), meta.get("name"), meta.get("info")
             )).lower()
-            if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
+            if not re.search(r"\\b(over|powyżej|powyzej|üst)\\b", labels):
+                continue
+            if abs(line - target_line) > 0.001:
                 continue
             if odd.get("status") not in (1, "1", "ACTIVE", "active") or odd.get("display") is False:
                 continue
@@ -196,7 +241,7 @@ def exact_live_fulltime_over_markets(event):
                 continue
             if not MIN_ODDS <= price <= MAX_ODDS:
                 continue
-            results.append({"line": line, "odds": price, "market": market.get("name") or "Total Goals"})
+            results.append({"line": line, "odds": price, "market": name})
     return results
 
 
@@ -266,14 +311,19 @@ def main():
             if not event_id:
                 continue
             minute = event_minute(listed)
-            if minute is None or not MIN_MINUTE <= minute <= MAX_MINUTE:
-                continue
             score = event_score(listed)
-            if score is None:
-                logging.info("Pominięto event %s: brak jawnego wyniku LIVE", event_id)
+            if minute is None or score is None:
                 continue
             home, away = event_teams(listed)
             if not home or not away:
+                continue
+            # HT: wyłącznie 1–35'. FT: wyłącznie 46–75'.
+            phases = []
+            if 1 <= minute <= HT_MAX_MINUTE:
+                phases.append("HT")
+            if FT_MIN_MINUTE <= minute <= FT_MAX_MINUTE:
+                phases.append("FT")
+            if not phases:
                 continue
             detail = superbet_event_details(event_id)
             if not detail or not event_is_still_live(detail):
@@ -281,49 +331,61 @@ def main():
             detail_minute = event_minute(detail)
             if detail_minute is not None:
                 minute = detail_minute
-            if not MIN_MINUTE <= minute <= MAX_MINUTE:
-                continue
             detail_score = event_score(detail)
             if detail_score is not None:
                 score = detail_score
-            for market in exact_live_fulltime_over_markets(detail):
-                line = market["line"]
-                key = f"{event_id}|FT|OVER|{line:.2f}"
-                if conn.execute("SELECT 1 FROM live_over_sent WHERE pick_key=?", (key,)).fetchone():
-                    continue
-                candidates.append({
-                    "event_id": str(event_id), "home": home, "away": away,
-                    "minute": minute, "score": score, "line": line,
-                    "odds": market["odds"], "url": superbet_url(detail), "key": key,
-                })
-        # Dla jednego meczu publikuj tylko jeden rynek: najwyższy kurs w zadanym zakresie.
-        best_by_event = {}
+            # Po ponownym pobraniu zawsze sprawdzamy granice minuty.
+            phases = []
+            if 1 <= minute <= HT_MAX_MINUTE:
+                phases.append("HT")
+            if FT_MIN_MINUTE <= minute <= FT_MAX_MINUTE:
+                phases.append("FT")
+            if not phases:
+                continue
+            total = sum(score)
+            for phase in phases:
+                for market in exact_live_over_markets(detail, phase, total):
+                    key = f"{event_id}|{phase}|OVER|{market['line']:.2f}"
+                    if conn.execute("SELECT 1 FROM live_over_sent WHERE pick_key=?", (key,)).fetchone():
+                        continue
+                    candidates.append({
+                        "event_id": str(event_id), "phase": phase, "home": home, "away": away,
+                        "minute": minute, "score": score, "line": market["line"],
+                        "odds": market["odds"], "url": superbet_url(detail), "key": key,
+                    })
+        # Jedna selekcja na mecz i fazę; preferuj kurs bliższy środkowi zakresu, nie najwyższy za wszelką cenę.
+        best = {}
         for item in candidates:
-            current = best_by_event.get(item["event_id"])
-            if current is None or item["odds"] > current["odds"]:
-                best_by_event[item["event_id"]] = item
-        picks = sorted(best_by_event.values(), key=lambda x: (-x["odds"], -x["minute"]))[:MAX_PICKS_PER_RUN]
+            group_key = (item["event_id"], item["phase"])
+            current = best.get(group_key)
+            if current is None or abs(item["odds"] - 2.35) < abs(current["odds"] - 2.35):
+                best[group_key] = item
+        picks = sorted(best.values(), key=lambda x: (x["phase"] != "HT", abs(x["odds"] - 2.35)))[:MAX_PICKS_PER_RUN]
         logging.info("Superbet LIVE: %d kandydatów, %d wybranych do wysyłki", len(candidates), len(picks))
         for pick in picks:
-            # Ostatnia kontrola: pobierz świeże dane i upewnij się, że rynek nadal istnieje.
             fresh = superbet_event_details(pick["event_id"])
             if not fresh or not event_is_still_live(fresh):
                 continue
             fresh_minute = event_minute(fresh)
-            if fresh_minute is None or not MIN_MINUTE <= fresh_minute <= MAX_MINUTE:
+            fresh_score = event_score(fresh)
+            if fresh_minute is None or fresh_score is None:
                 continue
-            fresh_markets = exact_live_fulltime_over_markets(fresh)
+            if pick["phase"] == "HT" and not 1 <= fresh_minute <= HT_MAX_MINUTE:
+                continue
+            if pick["phase"] == "FT" and not FT_MIN_MINUTE <= fresh_minute <= FT_MAX_MINUTE:
+                continue
+            fresh_markets = exact_live_over_markets(fresh, pick["phase"], sum(fresh_score))
             matching = next((m for m in fresh_markets if abs(m["line"] - pick["line"]) < 0.001), None)
             if not matching:
                 continue
-            fresh_score = event_score(fresh) or pick["score"]
             home, away = event_teams(fresh)
             if not home or not away:
                 home, away = pick["home"], pick["away"]
+            phase_label = "DO PRZERWY (HT)" if pick["phase"] == "HT" else "DO KOŃCA MECZU (FT)"
             message = (
-                f"🔴 LIVE OVER | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
+                f"🔴 LIVE LATE OVER | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
                 f"⚽ {home} – {away}\n"
-                f"📌 Typ: OVER {matching['line']:.1f} GOLI — CAŁY MECZ\n"
+                f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
                 f"💹 Kurs Superbet LIVE: {matching['odds']:.2f}\n"
                 f"💰 Stawka: {STAKE} zł\n"
                 f"🔗 Mecz: {superbet_url(fresh)}"
@@ -335,8 +397,8 @@ def main():
                      home, away, matching["line"], matching["odds"], fresh_minute),
                 )
                 conn.commit()
-                logging.info("Wysłano LIVE OVER %s - %s | linia %.1f | kurs %.2f",
-                             home, away, matching["line"], matching["odds"])
+                logging.info("Wysłano LIVE %s %s - %s | linia %.1f | kurs %.2f",
+                             pick["phase"], home, away, matching["line"], matching["odds"])
     finally:
         conn.close()
 
