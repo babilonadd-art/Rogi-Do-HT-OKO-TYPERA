@@ -94,7 +94,8 @@ try:
             event_url = f"https://superbet.pl/kursy/pilka-nozna/{slug_part(names[0])}-vs-{slug_part(names[1])}-{event_id}"
             page = s.get(event_url, timeout=35)
             print("EVENT_PAGE_STATUS", page.status_code, "URL", page.url, "HTML_LEN", len(page.text))
-            scripts = re.findall(r'<script[^>]+src=["\\']([^"\\']+)', page.text, re.I)
+            script_tags = re.findall(r'<script[^>]+src=([^ >]+)', page.text, re.I)
+            scripts = [value.strip("\\'\\\"") for value in script_tags]
             print("EVENT_PAGE_SCRIPT_COUNT", len(scripts))
             terms = ("marketId", "market_id", "market-id", "marketGroup", "market-group", "expandedMarket", "marketSlug")
             inspected = 0
