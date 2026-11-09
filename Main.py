@@ -1618,7 +1618,8 @@ def monitor_ft_corners(c):
             except Exception:
                 logging.exception("FT Over 8.5: błąd odczytu rynku")
     qualified.sort(key=lambda x:(-x["profile_score"],abs(x["odds"]-1.90),x["start_ts"]))
-    selected=qualified[:FT_DAILY_MAX]
+    remaining=max(0,FT_DAILY_MAX-len(sent_ids))
+    selected=qualified[:remaining]
     logging.info("FT Over 8.5: dokładny rynek 8.5 dostępny w %s meczach; wybrano %s; cel dzienny=%s",
                  len(qualified),len(selected),FT_DAILY_TARGET)
     for item in selected:
