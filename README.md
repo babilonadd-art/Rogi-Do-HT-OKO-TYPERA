@@ -1,31 +1,30 @@
 # Rogi Do HT OKO TYPERA
 
-Bot Telegram do przedmeczowych typów **Over 9.5 rzutów rożnych — FT (cały mecz)**.
+Bot Telegram monitorujący **przedmeczowe anomalie kursów HT/FT** dla piłkarskich spotkań w Superbet.
 
-## Ustawienia
-- Źródło terminarza i kursów: Superbet.
-- Rynek: wyłącznie pełny mecz — Over 9.5 rzutów rożnych FT; rynki HT, 1. połowy, 2. połowy i rożne drużynowe są odrzucane.
-- Akceptowany kurs: **1.70–2.60** (włącznie).
-- Maksymalnie **8 typów dziennie**. To limit maksymalny, nie liczba do wypełnienia — bot może wysłać mniej lub zero typów.
-- Selekcja opiera się na ostatnich meczach drużyn z Open Matchday: wymaga co najmniej 5 spotkań na drużynę, średnio minimum 3.5 rożnego dla każdej drużyny, średniej sumy co najmniej 10.5 i skuteczności Over 9.5 na poziomie co najmniej 65% w badanej próbce.
-- Kandydaci są oceniani i sortowani według jakości historii; kurs jest sprawdzany bezpośrednio w aktywnym rynku Superbet, a przed wysłaniem sprawdzany ponownie. Brak odpowiednio dobrych spotkań oznacza brak typu — bot nie typuje na siłę.
-- Każdy typ zaczyna się od daty meczu i godziny w strefie Europe/Warsaw.
-- Stawka informacyjna: 10 zł.
-- Rozliczanie FT korzysta z sumy home_corners + away_corners w Open Matchday; 10 lub więcej oznacza wygraną.
-- Nowe typy FT są zapisywane w osobnej tabeli ft_picks, aby historia wcześniejszych typów HT nie blokowała nowego rynku. Oczekujące stare typy HT nadal mogą zostać rozliczone według dotychczasowych zasad.
+## Co monitoruje
+- Skanuje spotkania przedmeczowe z najbliższych 48 godzin.
+- Sprawdza wyłącznie jawnie opisany rynek HT/FT (do przerwy / wynik końcowy).
+- Śledzi selekcje **1/2** i **2/1**; remis do przerwy nie jest sygnałem.
+- Zapisuje kolejne migawki kursów w SQLite, dzięki czemu porównuje kursy w czasie, a nie tylko pojedynczy odczyt.
+- Oblicza zmianę kursu względem pierwszej zarejestrowanej wartości oraz zmianę prawdopodobieństwa implikowanego po normalizacji marży na podstawie dostępnych wyników rynku.
+- Wysyła alert, gdy kurs spadnie co najmniej **15%** względem pierwszej obserwacji albo prawdopodobieństwo bez marży wzrośnie o co najmniej **5 punktów procentowych**.
+- Ogranicza powtarzające się alerty: kolejny alert dla tego samego meczu i selekcji może pojawić się najwcześniej po 2 godzinach i wymaga dalszego wyraźnego ruchu.
+- Skanowanie uruchamia się automatycznie co 5 minut. Historia migawek jest zapisywana w pliku `okotypera_ht.db` i commitowana przez GitHub Actions.
 
-## Dane
-Open Matchday udostępnia w wynikach kolumny pełnego meczu home_corners i away_corners, a także osobne statystyki HT. Bot używa wyłącznie kolumn FT do selekcji i rozliczeń nowego rynku.
+## Format alertu
+Alert zawiera ligę, spotkanie, godzinę, rynek, selekcję 1/2 lub 2/1, kurs początkowy i aktualny, wielkość ruchu oraz link do spotkania w Superbet.
 
-## Sekrety
+## Ważne ograniczenia
+- Bot wykrywa **ruch kursów**, a nie ustawianie meczów. Zmiana może wynikać m.in. ze składów, kontuzji, informacji publicznych, płynności rynku albo zarządzania ryzykiem bukmachera.
+- Monitor działa tylko wtedy, gdy Superbet udostępnia rynek HT/FT i jego kursy w danych API.
+- Parser akceptuje wyłącznie rynek jawnie nazwany jako HT/FT i selekcje 1/2 lub 2/1. Jeśli nazwa rynku lub etykiety wyników różnią się od obsługiwanych, bot pominie rynek zamiast zgadywać.
+- Wykrycie anomalii nie jest rekomendacją postawienia zakładu ani dowodem manipulacji.
+- Obecny etap monitoruje anomalie kursowe; nie publikuje typów jako pewnych zdarzeń.
+
+## Sekrety GitHub
 W Settings → Secrets and variables → Actions:
-- TELEGRAM_BOT_TOKEN
-- TELEGRAM_CHAT_ID
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-Bot musi mieć uprawnienie administratora do publikowania w kanale.
-
-## Uruchamianie
-Workflow skanuje co 5 minut mecze przedmeczowe z bieżącego dnia. Można go też uruchomić ręcznie w GitHub Actions.
-
-## Ograniczenia
-Dane Open Matchday są dostępne tylko dla obsługiwanych lig i spotkań, dla których istnieje historia. Brak próbki, brak aktywnego rynku lub kurs poza zakresem oznacza brak typu. Statystyki historyczne nie gwarantują wyniku. Bot nie zawiera funkcji obstawiania zakładów.
+Bot Telegram musi mieć uprawnienie administratora do publikowania na kanale.
