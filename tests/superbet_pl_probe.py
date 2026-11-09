@@ -96,8 +96,11 @@ try:
             print("EVENT_PAGE_STATUS", page.status_code, "URL", page.url, "HTML_LEN", len(page.text))
             script_tags = re.findall(r'<script[^>]+src=([^ >]+)', page.text, re.I)
             scripts = [value.strip("\\'\\\"") for value in script_tags]
-            print("EVENT_PAGE_SCRIPT_COUNT", len(scripts))
-            terms = ("marketId", "market_id", "market-id", "marketGroup", "market-group", "expandedMarket", "marketSlug")
+            print("EVENT_PAGE_SCRIPT_COUNT", len(scripts), "SCRIPT_URLS", scripts)
+            asset_links = re.findall(r'<link[^>]+href=([^ >]+)', page.text, re.I)
+            asset_links = [value.strip("\\'\\\"") for value in asset_links if ".js" in value.lower()]
+            print("EVENT_PAGE_JS_LINKS", asset_links[:30])
+            terms = ("marketId", "market_id", "market-id", "marketGroup", "market-group", "expandedMarket", "marketSlug", "market_id", "marketId=", "market-id=", "markets/", "market/")
             inspected = 0
             for script_url in scripts:
                 if script_url.startswith("//"):
