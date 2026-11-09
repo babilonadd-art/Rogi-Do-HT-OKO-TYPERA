@@ -53,7 +53,7 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 3.5, 2.2), "FT", 0), [])
 
     def test_phase_windows_and_line_caps(self):
-        self.assertEqual((bot.HT_MAX_MINUTE, bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (35, 46, 75))
+        self.assertEqual((bot.HT_MAX_MINUTE, bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (0, 46, 75))
         self.assertEqual((bot.HT_MAX_LINE, bot.FT_MAX_LINE), (1.5, 2.5))
 
 
