@@ -3,7 +3,7 @@ name: HT/FT — monitoring anomalii kursów
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0,30 * * * *" # co 30 minut; buduje historię kursów
+    - cron: "*/5 * * * *" # co 5 minut; monitoruje zmiany kursów HT/FT
 
 permissions:
   contents: write
