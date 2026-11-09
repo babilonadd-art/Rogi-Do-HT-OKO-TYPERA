@@ -187,7 +187,7 @@ def event_score(event):
 
 
 def market_phase(name):
-    n = re.sub(r"\\s+", " ", str(name or "").lower())
+    n = re.sub(r"\s+", " ", str(name or "").lower())
     ht_terms = ("1st half", "first half", "1. połowa", "1 połowa", "pierwsza połowa",
                 "1 poł.", "1 poł")
     ft_terms = ("full time", "full-time", "cały mecz", "caly mecz", "wynik meczu",
@@ -231,7 +231,7 @@ def exact_live_over_markets(event, phase, current_total):
             labels = " ".join(str(v or "") for v in (
                 odd.get("name"), odd.get("label"), meta.get("name"), meta.get("info")
             )).lower()
-            if not re.search(r"\\b(over|powyżej|powyzej|üst)\\b", labels):
+            if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
             if abs(line - target_line) > 0.001:
                 continue
