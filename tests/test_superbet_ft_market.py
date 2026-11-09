@@ -78,5 +78,41 @@ class SuperbetFTCornersTests(unittest.TestCase):
         self.assertIsNone(Main.superbet_ft_corners_over_odds(123))
 
 
+    @patch("Main.superbet_api")
+    def test_prefers_explicit_corners_market_deep_link(self, api):
+        data=payload("Liczba rzutów rożnych",[selection("Powyżej 8.5")])
+        data["events"][0]["markets"][0]["url"]="https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test#corners"
+        api.return_value=data
+        self.assertEqual(Main.superbet_match_url(123,"Home","Away",0),
+                         "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test#corners")
+
+    @patch("Main.superbet_api")
+    def test_uses_exact_event_link_not_generic_homepage(self, api):
+        data=payload("Liczba rzutów rożnych",[selection("Powyżej 8.5")])
+        data["events"][0]["fixture"]["event_url"]="https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test-event"
+        api.return_value=data
+        self.assertEqual(Main.superbet_match_url(123,"Home","Away",0),
+                         "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/test-event")
+
+    @patch("Main.superbet_api")
+    def test_returns_no_link_instead_of_generic_homepage(self, api):
+        api.return_value=payload("Liczba rzutów rożnych",[selection("Powyżej 8.5")])
+        self.assertIsNone(Main.superbet_match_url(123,"Home","Away",0))
+
+    @patch("Main.load_matchday_results")
+    @patch("Main.recent_team_ft_corner_history")
+    def test_rejects_weak_match_and_ranks_strong_match(self, history, rows):
+        rows.return_value=[{"date":"2026-11-08"}]
+        strong=[("2026-11-01",5,5,10)]*8
+        history.side_effect=[strong,strong]
+        score,detail=Main.ft_matchday_candidate_profile("Test League","Home","Away",1794000000)
+        self.assertIsNotNone(score)
+        self.assertIn("Over 8.5: 100%",detail)
+        weak=[("2026-11-01",2,4,6)]*8
+        history.side_effect=[weak,weak]
+        score,detail=Main.ft_matchday_candidate_profile("Test League","Home","Away",1794000000)
+        self.assertIsNone(score)
+
+
 if __name__=="__main__":
     unittest.main()
