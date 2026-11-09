@@ -46,12 +46,14 @@ def get_odds(o):
     try: return float(o.get("price"))
     except (TypeError,ValueError): return None
 
-def fav_side(event):
+def fav_side(event,home,away):
     found=[]
+    hname,aname=words(home),words(away)
     for m in event.get("markets") or []:
         name=market_text(m)
-        if not any(k in name for k in ("1x2","wynik meczu","match result","full time result","full-time result")): continue
-        if any(k in name for k in ("half","połowa","roż","corner","double chance","handicap")): continue
+        if any(k in name for k in ("half","połowa","polowa","roż","corner","double chance","handicap")): continue
+        # Dopuszczamy pełny rynek 1X2 także wtedy, gdy Superbet opisuje
+        # selekcje nazwami drużyn zamiast cyframi 1/X/2.
         for o in m.get("odds") or []:
             if not active(o): continue
             meta=o.get("metadata") or {}
@@ -59,39 +61,40 @@ def fav_side(event):
             price=get_odds(o)
             if price is None or not 1.01<=price<=20: continue
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
-            if label in ("1","1gospodarze","gospodarze","gospodarz","home","hometeam"): side="home"
-            elif label in ("2","2goscie","goscie","gosc","away","awayteam"): side="away"
+            if label in ("1","1gospodarze","gospodarze","gospodarz","home","hometeam") or (hname and hname in label and "wygra" in label): side="home"
+            elif label in ("2","2goscie","goscie","gosc","away","awayteam") or (aname and aname in label and "wygra" in label): side="away"
             else: continue
             found.append((price,side))
-    found.sort()
-    if len(found)<2: return None
-    # Najniższy kurs musi być wyraźnie niższy od kursu na przeciwnika.
-    fav=found[0]
-    opp=next((x for x in found[1:] if x[1]!=fav[1]),None)
-    if not opp or not MIN_FAV_ODDS<=fav[0]<=MAX_FAV_ODDS or opp[0]/fav[0]<1.45: return None
-    return {"side":fav[1],"odds":fav[0],"opponent_odds":opp[0]}
+    # Muszą być dostępne kursy na obie drużyny, a nie tylko na jedną.
+    home_prices=[x[0] for x in found if x[1]=="home"]
+    away_prices=[x[0] for x in found if x[1]=="away"]
+    if not home_prices or not away_prices: return None
+    h=min(home_prices); a=min(away_prices)
+    fav=("home",h) if h<a else ("away",a)
+    opp=a if fav[0]=="home" else h
+    if not MIN_FAV_ODDS<=fav[1]<=MAX_FAV_ODDS or opp/fav[1]<1.45: return None
+    return {"side":fav[0],"odds":fav[1],"opponent_odds":opp}
 
 def both_halves_market(event,side,home,away):
-    yes_words=("tak","yes","to score in both halves","scores in both halves","strzeli w obu połowach","strzeli w obu polowach")
+    team=home if side=="home" else away
+    team_key=words(team)
     for m in event.get("markets") or []:
         name=market_text(m)
-        # Rynek musi wprost wskazywać gole konkretnej drużyny w obu połowach.
-        if not (("bothhalves" in words(name) or "obu polowach" in name or "obupolowach" in words(name)) and
-                any(k in name for k in ("team","druż","druz","home","away","gospod","goś","gos"))):
-            continue
+        compact_market=words(name)
+        # W Superbet rynek nazywa się np. "Sabadell zdobędzie gola w obu połowach".
+        # Nazwa drużyny jest w tytule rynku, a selekcja TAK ma metadane "tak".
+        if not any(k in compact_market for k in ("obupolowach","obu polowach")): continue
+        if not team_key or team_key not in compact_market: continue
         if not active(m): continue
         for o in m.get("odds") or []:
             if not active(o): continue
             meta=o.get("metadata") or {}
             if str(meta.get("offer_state_id",1))!="1": continue
-            label=" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))).lower()
-            compact=words(label)
-            if not any(words(y) in compact for y in yes_words): continue
-            team_match=(side=="home" and any(x in compact for x in ("home","gospodarz","gospodarze",words(home)))) or (side=="away" and any(x in compact for x in ("away","goscie","gosc",words(away))))
-            if not team_match: continue
+            label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
+            if label not in ("tak","yes"): continue
             price=get_odds(o)
             if price is not None and MIN_PICK_ODDS<=price<=MAX_PICK_ODDS:
-                return price,str(m.get("name") or "Drużyna strzeli w obu połowach")
+                return price,str(m.get("name") or f"{team} zdobędzie gola w obu połowach")
     return None
 
 def detail(eid):
@@ -159,7 +162,7 @@ def main():
     def inspect(item):
         eid,home,away,kickoff,listed_event=item
         e=detail(eid) or listed_event
-        fav=fav_side(e)
+        fav=fav_side(e,home,away)
         if not fav: return None
         price,market=both_halves_market(e,fav["side"],home,away)
         if price is None: return None
@@ -180,7 +183,7 @@ def main():
         # Ostatnia kontrola rynku i kursów na świeżych danych przed publikacją.
         e=detail(x["id"])
         if not e: continue
-        fav=fav_side(e)
+        fav=fav_side(e,home,away)
         if not fav or (x["team"]!=(x["home"] if fav["side"]=="home" else x["away"])): continue
         price,market=both_halves_market(e,fav["side"],x["home"],x["away"])
         if price is None: continue
