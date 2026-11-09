@@ -274,10 +274,6 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
                 odd_line=float(str(raw_line).replace(",","." ))
             except (TypeError,ValueError):
                 continue
-            try:
-                price=float(odd.get("price"))
-            except (TypeError,ValueError):
-                price=0.0
             selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
             if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
                 continue
@@ -287,8 +283,8 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
                 continue
             if str(meta.get("offer_state_id",1))!="1":
                 continue
-            logging.info("Superbet FT corners: event %s | active Over %.1f market (odds ignored)",event_id,line)
-            return price
+            logging.info("Superbet FT corners: event %s | active Over %.1f market (no odds read)",event_id,line)
+            return True
     logging.info("Superbet: brak aktywnego rynku FT rożne Over %.1f dla event %s",line,event_id)
     return None
 
@@ -1690,10 +1686,10 @@ def monitor_ft_corners(c):
     logging.info("FT Over 8.5: wydarzenia=%s, z historią=%s, już wysłane dziś=%s",
                  len(events),len(candidates),len(sent_ids))
     def inspect(item):
-        price=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
-        if price is None:
+        market_available=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
+        if not market_available:
             return None
-        item["odds"]=price
+        item["odds"]=0.0  # pole techniczne bazy; kurs nie jest pobierany ani używany
         return item
     qualified=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
