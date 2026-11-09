@@ -33,7 +33,7 @@ jobs:
       - name: Instalacja bibliotek
         run: pip install -r requirements.txt
       - name: Kontrola składni
-        run: python -m py_compile LiveOverBot.py
+        run: python -m py_compile LiveOverBot.py HTGoalBot.py
       - name: Testy logiki typowania
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Skan Algorytmu 2 — gol do przerwy
