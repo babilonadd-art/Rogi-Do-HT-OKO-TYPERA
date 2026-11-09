@@ -115,5 +115,24 @@ class SuperbetFTCornersTests(unittest.TestCase):
         self.assertIsNone(score)
 
 
+    def test_league_corner_profile_uses_recent_ft_totals_and_over85_rate(self):
+        rows=[{"date":f"2026-10-{day:02d}","home_corners":"6","away_corners":"4"}
+              for day in range(1,26)]
+        average,hit_rate,count=Main.league_ft_corner_profile(rows,"2026-11-01")
+        self.assertEqual(count,25)
+        self.assertEqual(average,10.0)
+        self.assertEqual(hit_rate,1.0)
+
+    def test_league_corner_profile_ignores_fixture_day_and_future(self):
+        rows=[{"date":f"2026-10-{day:02d}","home_corners":"5","away_corners":"5"}
+              for day in range(1,21)]
+        rows += [{"date":"2026-11-01","home_corners":"0","away_corners":"0"},
+                 {"date":"2026-11-02","home_corners":"0","away_corners":"0"}]
+        average,hit_rate,count=Main.league_ft_corner_profile(rows,"2026-11-01")
+        self.assertEqual(count,20)
+        self.assertEqual(average,10.0)
+        self.assertEqual(hit_rate,1.0)
+
+
 if __name__=="__main__":
     unittest.main()
