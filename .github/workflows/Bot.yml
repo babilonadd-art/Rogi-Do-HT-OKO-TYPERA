@@ -1,6 +1,11 @@
 name: LIVE OVER — Superbet
 
 on:
+  push:
+    paths:
+      - 'LiveOverBot.py'
+      - 'tests/test_live_over_bot.py'
+      - '.github/workflows/Bot.yml'
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
