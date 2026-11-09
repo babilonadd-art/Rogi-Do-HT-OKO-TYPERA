@@ -667,6 +667,28 @@ def send(msg):
     except Exception as e:
         logging.error("Telegram: %s",e); return False
 
+def delete_telegram_message(message_id):
+    """Delete a known bot-posted message from the configured Telegram channel."""
+    if not TOKEN or not CHAT:
+        return False
+    try:
+        r=requests.post(f"https://api.telegram.org/bot{TOKEN}/deleteMessage",
+                        data={"chat_id":CHAT,"message_id":int(message_id)},timeout=20)
+        payload=r.json()
+        if r.ok and payload.get("ok"):
+            logging.info("Telegram: usunięto wiadomość message_id=%s",message_id)
+            return True
+        description=str(payload.get("description") or payload)
+        if "message to delete not found" in description.lower():
+            logging.info("Telegram: wiadomość %s już nie istnieje",message_id)
+            return True
+        logging.warning("Telegram: nie udało się usunąć message_id=%s: %s",message_id,description[:200])
+        return False
+    except Exception as e:
+        logging.warning("Telegram: błąd usuwania message_id=%s: %s",message_id,e)
+        return False
+
+
 def db_open():
     c=sqlite3.connect(DB)
     c.execute("""CREATE TABLE IF NOT EXISTS picks(event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,sent_at TEXT,status TEXT DEFAULT 'PENDING',ht_corners INTEGER,settled_at TEXT)""")
@@ -1778,14 +1800,41 @@ def main():
         return
     c=db_open()
     try:
-        # Jednorazowy reset po ręcznym usunięciu poprzednich postów z kanału.
-        reset_marker="RESET_FT_PICKS"
-        if os.path.exists(reset_marker):
-            deleted=c.execute("SELECT COUNT(*) FROM ft_corner_picks").fetchone()[0]
+        # Usuń pierwszą, zdublowaną serię postów; identyfikatory pochodzą z logów Telegrama.
+        cleanup_file="DELETE_TELEGRAM_MESSAGES"
+        if os.path.exists(cleanup_file):
+            ids=[]
+            with open(cleanup_file,encoding="utf-8") as f:
+                ids=[int(line.strip()) for line in f if line.strip().isdigit()]
+            if all(delete_telegram_message(mid) for mid in ids):
+                os.remove(cleanup_file)
+                logging.warning("Telegram: zakończono czyszczenie %s wcześniejszych postów",len(ids))
+        # Odtwórz dzisiejsze wysłane typy wraz z message_id, aby skan co 5 minut
+        # nie opublikował ich ponownie. Event IDs poprzedniej wysyłki nie były utrwalone.
+        seed_file="FT_ALREADY_SENT"
+        if os.path.exists(seed_file):
             c.execute("DELETE FROM ft_corner_picks")
+            seeded=0
+            with open(seed_file,encoding="utf-8") as f:
+                for line in f:
+                    parts=line.strip().split("|")
+                    if len(parts)!=4:
+                        continue
+                    message_id,home,away,raw_odds=parts
+                    try:
+                        message_id=int(message_id); odds=float(raw_odds)
+                    except ValueError:
+                        continue
+                    synthetic_event_id=-10000-seeded
+                    c.execute("""INSERT OR REPLACE INTO ft_corner_picks
+                        (event_id,league,home,away,start_ts,odds,profile,sent_at,telegram_message_id)
+                        VALUES(?,?,?,?,?,?,?,?,?)""",
+                        (synthetic_event_id,"Odtworzone z Telegrama",home,away,int(datetime.now(TZ).timestamp()),
+                         odds,"Wysłany typ odtworzony z logów Telegrama",datetime.now(TZ).isoformat(),message_id))
+                    seeded+=1
             c.commit()
-            os.remove(reset_marker)
-            logging.warning("RESET FT: wyczyszczono %s zapisanych typów; numeracja zaczyna się od TYP NR.1",deleted)
+            os.remove(seed_file)
+            logging.warning("FT: odtworzono %s wysłanych typów i identyfikatorów Telegrama; limit dzienny 10/10",seeded)
         monitor_ft_corners(c)
     finally:
         c.close()
