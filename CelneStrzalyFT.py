@@ -31,9 +31,14 @@ def api(path, params=None):
     return payload if isinstance(payload, dict) else {}
 
 def event_list(start, end):
+    # Superbet wymaga zakresów zaokrąglonych do pełnych godzin UTC.
+    start_utc = start.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    end_utc = end.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    if end.astimezone(timezone.utc) > end_utc:
+        end_utc += timedelta(hours=1)
     payload = api("/v3/pl-PL/events", {
-        "startDate": start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "endDate": end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "startDate": start_utc.isoformat().replace("+00:00", "Z"),
+        "endDate": end_utc.isoformat().replace("+00:00", "Z"),
     })
     events = payload.get("events") or payload.get("data") or []
     if isinstance(events, dict):
