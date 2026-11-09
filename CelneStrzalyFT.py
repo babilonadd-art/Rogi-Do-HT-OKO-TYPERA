@@ -62,12 +62,19 @@ def normalize(value):
     return re.sub(r"[^a-z0-9]+", "", value)
 
 def text_fields(obj):
+    """Zbiera etykiety zarówno z rynku, jak i z selekcji Superbet."""
     meta = obj.get("metadata") or {}
-    return " ".join(str(v or "") for v in (
+    values = [
         obj.get("name"), obj.get("label"), obj.get("market_name"), obj.get("marketName"),
+        obj.get("info"), obj.get("tags"),
         meta.get("name"), meta.get("info"), meta.get("label"), meta.get("team"),
-        meta.get("participant"), meta.get("competitor")
-    ))
+        meta.get("participant"), meta.get("competitor"), meta.get("tags"),
+    ]
+    for key in ("extra", "specifiers"):
+        nested = meta.get(key)
+        if isinstance(nested, dict):
+            values.extend(nested.values())
+    return " ".join(str(v or "") for v in values if not isinstance(v, (dict, list)))
 
 def is_active(obj):
     status = str(obj.get("status") or "").upper()
@@ -91,16 +98,28 @@ def team_shots_market(event, home, away):
     diagnostics = []
     for market in event.get("markets") or []:
         market_name = text_fields(market)
-        compact = normalize(market_name)
-        has_shot_term = ("strzal" in compact and "celn" in compact) or any(
-            term in compact for term in ("shotsontarget", "shotsongoal", "teamshotsontarget", "teamshotsongoal")
+        outcomes = market.get("odds") or []
+        # Superbet nie zawsze umieszcza określenie "celne" w nazwie rynku.
+        # Czasem jest ono dopiero w opisie selekcji (metadata.info).
+        outcome_labels = " ".join(text_fields(x) for x in outcomes if isinstance(x, dict))
+        market_blob = market_name + " " + outcome_labels
+        compact = normalize(market_blob)
+        has_shot_term = (
+            ("strzal" in compact and "celn" in compact)
+            or ("strzal" in compact and "bramk" in compact)
+            or any(term in compact for term in (
+                "shotsontarget", "shotsongoal", "teamshotsontarget",
+                "teamshotsongoal", "ontarget"
+            ))
         )
         if not has_shot_term:
             continue
         # Odrzucamy rynki HT/1. połowy oraz rynki zawodników.
-        if any(term in compact for term in ("1polowa", "pierwsz pol", "firsthalf", "1sthalf", "zawodnik", "player")):
+        if any(term in compact for term in (
+            "1polowa", "pierwszopol", "firsthalf", "1sthalf", "zawodnik", "player"
+        )):
             continue
-        for outcome in market.get("odds") or []:
+        for outcome in outcomes:
             if not is_active(outcome):
                 continue
             outcome_text = text_fields(outcome)
