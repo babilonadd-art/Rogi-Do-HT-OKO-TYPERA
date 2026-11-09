@@ -655,9 +655,17 @@ def send(msg):
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID"); return False
     try:
         r=requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",data={"chat_id":CHAT,"text":msg,"disable_web_page_preview":True},timeout=20)
-        if not r.ok: logging.error("Telegram %s %s",r.status_code,r.text[:250])
-        return r.ok
-    except Exception as e: logging.error("Telegram: %s",e); return False
+        if not r.ok:
+            logging.error("Telegram %s %s",r.status_code,r.text[:250])
+            return False
+        payload=r.json()
+        if not payload.get("ok"):
+            logging.error("Telegram API: %s",str(payload)[:250])
+            return False
+        # Zwracamy message_id, aby kolejne typy można było usuwać automatycznie.
+        return int(payload["result"]["message_id"])
+    except Exception as e:
+        logging.error("Telegram: %s",e); return False
 
 def db_open():
     c=sqlite3.connect(DB)
@@ -1667,7 +1675,10 @@ def monitor_ft_corners(c):
     events=superbet_football_events(start,end)
     c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_picks(
         event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,
-        odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL)""")
+        odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL,telegram_message_id INTEGER)""")
+    ft_columns={row[1] for row in c.execute("PRAGMA table_info(ft_corner_picks)").fetchall()}
+    if "telegram_message_id" not in ft_columns:
+        c.execute("ALTER TABLE ft_corner_picks ADD COLUMN telegram_message_id INTEGER")
     sent_ids={int(x[0]) for x in c.execute(
         "SELECT event_id FROM ft_corner_picks WHERE substr(sent_at,1,10)=?",
         (now.date().isoformat(),)).fetchall()}
@@ -1743,15 +1754,16 @@ def monitor_ft_corners(c):
              f"📊 Historia: {item['profile']}\n"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Superbet — otwórz mecz, następnie Rzuty rożne → Liczba rzutów rożnych: {link}")
-        if send(msg):
+        message_id=send(msg)
+        if message_id:
             c.execute("""INSERT OR IGNORE INTO ft_corner_picks
-                (event_id,league,home,away,start_ts,odds,profile,sent_at)
-                VALUES(?,?,?,?,?,?,?,?)""",
+                (event_id,league,home,away,start_ts,odds,profile,sent_at,telegram_message_id)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
                 (item["event_id"],item["league"],item["home"],item["away"],
-                 item["start_ts"],item["odds"],item["profile"],now.isoformat()))
+                 item["start_ts"],item["odds"],item["profile"],now.isoformat(),int(message_id)))
             c.commit()
             sent_ids.add(item["event_id"])
-            logging.info("FT Over 8.5: wysłano %s - %s | kurs %.2f (kurs nie wpływa na wybór)",item["home"],item["away"],item["odds"])
+            logging.info("FT Over 8.5: wysłano %s - %s | kurs %.2f | Telegram message_id=%s (kurs nie wpływa na wybór)",item["home"],item["away"],item["odds"],message_id)
         else:
             logging.error("FT Over 8.5: nie wysłano eventu %s",item["event_id"])
         time.sleep(0.3)
@@ -1766,6 +1778,14 @@ def main():
         return
     c=db_open()
     try:
+        # Jednorazowy reset po ręcznym usunięciu poprzednich postów z kanału.
+        reset_marker="RESET_FT_PICKS"
+        if os.path.exists(reset_marker):
+            deleted=c.execute("SELECT COUNT(*) FROM ft_corner_picks").fetchone()[0]
+            c.execute("DELETE FROM ft_corner_picks")
+            c.commit()
+            os.remove(reset_marker)
+            logging.warning("RESET FT: wyczyszczono %s zapisanych typów; numeracja zaczyna się od TYP NR.1",deleted)
         monitor_ft_corners(c)
     finally:
         c.close()
