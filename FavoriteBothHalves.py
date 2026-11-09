@@ -162,13 +162,19 @@ def main():
     def inspect(item):
         eid,home,away,kickoff,listed_event=item
         e=detail(eid) or listed_event
-        fav=fav_side(e,home,away)
-        if not fav: return None
-        price,market=both_halves_market(e,fav["side"],home,away)
-        if price is None: return None
-        team=home if fav["side"]=="home" else away
+        # Porównujemy kursy TAK obu drużyn na rynku gola w obu połowach.
+        home_pick=both_halves_market(e,"home",home,away)
+        away_pick=both_halves_market(e,"away",home,away)
+        if not home_pick or not away_pick: return None
+        if home_pick[0] <= away_pick[0]:
+            team,price,opponent_price,side,market=home,home_pick[0],away_pick[0],"home",home_pick[1]
+        else:
+            team,price,opponent_price,side,market=away,away_pick[0],home_pick[0],"away",away_pick[1]
+        if price < MIN_PICK_ODDS or price > MAX_PICK_ODDS or opponent_price/price < 1.15:
+            return None
         return {"id":eid,"home":home,"away":away,"kickoff":kickoff,"team":team,
-                "fav_odds":fav["odds"],"odds":price,"market":market}
+                "side":side,"fav_odds":price,"opponent_odds":opponent_price,
+                "odds":price,"market":market}
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures=[pool.submit(inspect,x) for x in candidates]
         for f in as_completed(futures):
@@ -183,10 +189,16 @@ def main():
         # Ostatnia kontrola rynku i kursów na świeżych danych przed publikacją.
         e=detail(x["id"])
         if not e: continue
-        fav=fav_side(e,x["home"],x["away"])
-        if not fav or (x["team"]!=(x["home"] if fav["side"]=="home" else x["away"])): continue
-        price,market=both_halves_market(e,fav["side"],x["home"],x["away"])
-        if price is None: continue
+        home_pick=both_halves_market(e,"home",x["home"],x["away"])
+        away_pick=both_halves_market(e,"away",x["home"],x["away"])
+        if not home_pick or not away_pick: continue
+        current_side="home" if home_pick[0] <= away_pick[0] else "away"
+        current_team=x["home"] if current_side=="home" else x["away"]
+        price=home_pick[0] if current_side=="home" else away_pick[0]
+        opponent_price=away_pick[0] if current_side=="home" else home_pick[0]
+        if current_team!=x["team"] or price<MIN_PICK_ODDS or price>MAX_PICK_ODDS or opponent_price/price<1.15:
+            continue
+        market=home_pick[1] if current_side=="home" else away_pick[1]
         number=len(sent)+1
         kickoff=x["kickoff"].astimezone(TZ)
         url=f"https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/{x['id']}"
