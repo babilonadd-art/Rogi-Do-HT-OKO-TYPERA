@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import logging
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
@@ -34,7 +35,10 @@ def load_board():
     return matches, payload
 
 def norm(value):
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+    raw = str(value or "").lower().replace("ł", "l")
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", raw)
 
 def parse_line(quote):
     raw = quote.get("line")
@@ -140,11 +144,15 @@ def main():
         event_id = str(match.get("id") or "")
         if not event_id or event_id in sent:
             continue
+        try:
+            match_kickoff = datetime.fromisoformat(str(match.get("kickoff_utc")).replace("Z", "+00:00"))
+            if match_kickoff.tzinfo is None:
+                match_kickoff = match_kickoff.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if match_kickoff <= datetime.now(timezone.utc) or match_kickoff > datetime.now(timezone.utc) + timedelta(hours=48):
+            continue
         matched_quotes += sum(1 for q in (match.get("quotes") or []) if str(q.get("group_id")) == GROUP_ID and q.get("suspended") is not True)
-        if matched_quotes and not getattr(main, "_sampled", False):
-            sample = [q for q in (match.get("quotes") or []) if str(q.get("group_id")) == GROUP_ID]
-            logging.info("PRZYKLADOWE QUOTES 50530: %s", sample[:12])
-            main._sampled = True
         pick = get_pick(match)
         if pick:
             kickoff = datetime.fromisoformat(str(match["kickoff_utc"]).replace("Z", "+00:00"))
