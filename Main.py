@@ -1685,9 +1685,18 @@ def monitor_ft_corners(c):
         if excluded_corner_league(league):
             logging.info("FT Over 8.5: pominięto wykluczoną ligę %s",league)
             continue
-        score,detail=ft_matchday_candidate_profile(league,home,away,kickoff)
-        if score is None:
-            continue
+        # Bez historii drużyn: każdy mecz piłkarski przedmeczowy może przejść
+        # do sprawdzenia rynku rożnych. Profil ligi jest wyłącznie dodatkiem rankingowym.
+        rows=load_matchday_results(league)
+        fixture_date=datetime.fromtimestamp(kickoff,timezone.utc).date().isoformat()
+        league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date) if rows else (None,None,0)
+        if league_avg is not None:
+            score=(league_avg*5)+(league_hit*100)
+            detail=(f"profil ligi: {league_n} meczów, średnia {league_avg:.2f} rożnych, "
+                    f"Over 8.5 w {league_hit*100:.0f}%")
+        else:
+            score=0.0
+            detail="bez historii drużyn; brak profilu ligi — zakwalifikowany do sprawdzenia rynku"
         candidates.append({"event_id":int(eid),"home":home,"away":away,"league":league,
                            "start_ts":kickoff,"profile_score":score,"profile":detail})
     logging.info("FT Over 8.5: wydarzenia=%s, z historią=%s, już wysłane dziś=%s",
