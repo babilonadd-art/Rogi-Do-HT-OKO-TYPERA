@@ -447,6 +447,18 @@ MATCHDAY_LEAGUES={
     "brasilseriea":"BRA_1_serie-a","brazilseriea":"BRA_1_serie-a","brasileirao":"BRA_1_serie-a",
     "brazilserieb":"BRA_2_serie-b","mexicoligamx":"MEX_1_liga-mx","mexicoligaexpansion":"MEX_2_liga-expansion",
     "japanjleague":"JPN_1_j1-league","japanj1":"JPN_1_j1-league",
+    # Polish display names used by Superbet (country + competition).
+    "rumuniasuperliga":"ROU_1_liga-1","rumunialiga1":"ROU_1_liga-1",
+    "hiszpianalaliga2":"ESP_2_segunda-division",
+    "meksykligamx":"MEX_1_liga-mx","meksykligaexpansion":"MEX_2_liga-expansion",
+    "brazylia1seria":"BRA_1_serie-a","brazyliaseriea":"BRA_1_serie-a",
+    "brazyliaserieb":"BRA_2_serie-b",
+    "szkocjapremiership":"SCO_1_premiership","szkocjachampionship":"SCO_2_championship",
+    "szkocjaleagueone":"SCO_3_league-one","szkocjaleaguetwo":"SCO_4_league-two",
+    "szwajcariasuperleague":"SUI_1_super-league",
+    "belgiaproleague":"BEL_1_pro-league",
+    "anglialeagueone":"ENG_3_league-one","angliachampionship":"ENG_2_championship",
+    "angliapremierleague":"ENG_1_premier-league",
 }
 _matchday_cache={}
 _matchday_history_cache={}
