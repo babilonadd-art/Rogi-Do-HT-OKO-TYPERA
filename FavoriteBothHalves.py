@@ -92,7 +92,7 @@ def both_halves_market(event,side,home,away):
             label=words(" ".join(str(v or "") for v in (o.get("name"),o.get("label"),meta.get("name"),meta.get("info"))))
             if label not in ("tak","yes"): continue
             price=get_odds(o)
-            if price is not None and MIN_PICK_ODDS<=price<=MAX_PICK_ODDS:
+            if price is not None and 1.01<=price<=100:
                 return price,str(m.get("name") or f"{team} zdobędzie gola w obu połowach")
     return None
 
