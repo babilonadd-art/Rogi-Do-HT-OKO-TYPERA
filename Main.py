@@ -854,7 +854,9 @@ def superbet_match_url(event_id,home,away,start_ts):
             return None
         parts=urlsplit(url)
         query=dict(parse_qsl(parts.query,keep_blank_values=True))
-        # Restored from the previously working Superbet PL link implementation.
+        # Match the user's confirmed Superbet corners link format.
+        query.setdefault("t","offer-prematch-18232")
+        query.setdefault("mdt","o")
         query["marketGroup"]="111"
         return urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
 
