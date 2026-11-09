@@ -77,68 +77,6 @@ for listed in future[:40]:
 print("FOOTBALL_EVENTS", len(football), "FUTURE", len(future))
 print("ALL_CORNER_MARKETS_FOUND", len(corner_market_hits))
 print("ALL_CORNER_MARKET_SAMPLES", short(corner_market_hits[:60], 30000))
-
-# Inspect the public event page frontend for supported market-focus URL parameters.
-try:
-    sample = next((x for x in corner_market_hits if x.get("market_name") == "Liczba rzutów rożnych"), None)
-    if sample:
-        event_id = sample["event_id"]
-        fx = next((e.get("fixture", {}) for e in future if e.get("event_id") == event_id), {})
-        names = str(fx.get("event_name", "")).split("·", 1)
-        def slug_part(value):
-            import unicodedata
-            value = str(value or "").replace("ł", "l").replace("Ł", "L")
-            value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
-            return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", value)).strip("-")
-        if len(names) == 2:
-            event_url = f"https://superbet.pl/kursy/pilka-nozna/{slug_part(names[0])}-vs-{slug_part(names[1])}-{event_id}"
-            page = s.get(event_url, timeout=35)
-            print("EVENT_PAGE_STATUS", page.status_code, "URL", page.url, "HTML_LEN", len(page.text))
-            script_tags = re.findall(r'<script[^>]+src=([^ >]+)', page.text, re.I)
-            scripts = [value.strip("\\'\\\"") for value in script_tags]
-            print("EVENT_PAGE_SCRIPT_COUNT", len(scripts), "SCRIPT_URLS", scripts)
-            try:
-                app_resp = s.get("https://superbet.pl/static/js/fetchConfig/app", timeout=20)
-                print("APP_CONFIG_STATUS", app_resp.status_code, "BODY", short(app_resp.text, 6000))
-            except Exception as cfg_exc:
-                print("APP_CONFIG_ERROR", type(cfg_exc).__name__, str(cfg_exc)[:150])
-            asset_links = re.findall(r'<link[^>]+href=([^ >]+)', page.text, re.I)
-            asset_links = [value.strip("\\'\\\"") for value in asset_links if ".js" in value.lower()]
-            print("EVENT_PAGE_JS_LINKS", asset_links[:30])
-            terms = ("marketId", "market_id", "market-id", "marketGroup", "market-group", "expandedMarket", "marketSlug", "market_id", "marketId=", "market-id=", "markets/", "market/")
-            inspected = 0
-            for script_url in scripts:
-                if script_url.startswith("//"):
-                    script_url = "https:" + script_url
-                elif script_url.startswith("/"):
-                    script_url = "https://superbet.pl" + script_url
-                elif not script_url.startswith("http"):
-                    continue
-                try:
-                    js = s.get(script_url, timeout=20).text
-                    if "index." in script_url:
-                        chunks = re.findall(r"([A-Za-z0-9_./-]+\\.js)", js)
-                        print("MAIN_BUNDLE_INFO", script_url, "LEN", len(js), "CHUNKS", chunks[:35])
-                        for pattern in (r".{0,90}market.{0,90}", r".{0,90}event.{0,90}", r".{0,90}corner.{0,90}"):
-                            matches = re.findall(pattern, js, re.I)
-                            print("MAIN_BUNDLE_MATCHES", pattern, [re.sub(r"\\s+", " ", x)[:220] for x in matches[:12]])
-                    found = []
-                    low = js.lower()
-                    for term in terms:
-                        pos = low.find(term.lower())
-                        if pos >= 0:
-                            found.append((term, re.sub(r"\\s+", " ", js[max(0,pos-180):pos+260])[:440]))
-                    if found:
-                        print("FRONTEND_MARKET_TERMS", script_url, found[:8])
-                    inspected += 1
-                    if inspected >= 18:
-                        break
-                except Exception as exc:
-                    print("SCRIPT_FETCH_ERROR", type(exc).__name__)
-            print("EVENT_PAGE_SCRIPTS_INSPECTED", inspected)
-except Exception as exc:
-    print("EVENT_PAGE_PROBE_ERROR", type(exc).__name__, str(exc)[:200])
-
 print("PROBE_FINISHED")
 
 
