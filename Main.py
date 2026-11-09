@@ -1254,7 +1254,7 @@ def fetch_superbet_event_detail(event_id):
     return next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
 
 def htft_market_outcomes(event):
-    """Read only an explicitly labelled pre-match half-time/full-time market."""
+    """Read an explicitly labelled HT/FT market and normalize using all its active outcomes."""
     found=[]
     for market in event.get("markets") or []:
         raw_name=str(market.get("name") or "")
@@ -1268,7 +1268,7 @@ def htft_market_outcomes(event):
         )
         if not explicit_htft or market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
-        outcomes=[]
+        all_outcomes=[]
         for odd in market.get("odds") or []:
             meta=odd.get("metadata") or {}
             if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
@@ -1281,27 +1281,24 @@ def htft_market_outcomes(event):
                 continue
             labels=[odd.get("name"),odd.get("label"),meta.get("name"),meta.get("info")]
             label=" ".join(str(x).strip() for x in labels if x is not None)
-            compact=re.sub(r"[^0-9xX12]","",label).lower()
-            # Exact HT/FT outcome tokens only; do not infer from team names.
-            match=re.search(r"(?<![0-9])([12xX])\s*[/\-]\s*([12xX])(?![0-9])",label)
-            if not match:
-                match=re.search(r"(?<![0-9])([12xX])([12xX])(?![0-9])",compact)
+            match=re.search(r"(?<![0-9])([1xX])\s*[/\-]\s*([1xX])(?![0-9])",label)
             if not match:
                 continue
             selection=f"{match.group(1).upper()}/{match.group(2).upper()}"
-            if selection not in ("1/2","2/1"):
-                continue
             if price<=1.0 or price>1000:
                 continue
-            outcomes.append({"selection":selection,"odds":price,"label":label})
-        if outcomes:
-            # Fair probability uses all active outcomes in this same HT/FT market.
-            implied=[1.0/x["odds"] for x in outcomes]
-            total=sum(implied)
-            for item,p in zip(outcomes,implied):
-                item["fair_probability"]=p/total if total else None
-                item["market_name"]=raw_name
-            found.extend(outcomes)
+            all_outcomes.append({"selection":selection,"odds":price,"label":label})
+        if not all_outcomes:
+            continue
+        # Remove bookmaker margin across every available HT/FT outcome, not just 1/2 and 2/1.
+        total=sum(1.0*x["odds"]**-1 for x in all_outcomes)
+        if total<=0:
+            continue
+        for item in all_outcomes:
+            item["fair_probability"]=(1.0/item["odds"])/total
+            item["market_name"]=raw_name
+            if item["selection"] in ("1/2","2/1"):
+                found.append(item)
     return found
 
 def monitor_htft_odds(c):
