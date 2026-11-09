@@ -54,6 +54,30 @@ def utc_hour(dt,round_up=False):
         value+=timedelta(hours=1)
     return value
 
+def superbet_events_from_payload(payload):
+    """Normalize Superbet event-list envelopes without silently dropping valid fixtures."""
+    events=(payload or {}).get("events") or (payload or {}).get("data") or []
+    if isinstance(events,dict):
+        events=list(events.values())
+    return [event for event in events if isinstance(event,dict)] if isinstance(events,list) else []
+
+def superbet_event_is_prematch(event):
+    fixture=event.get("fixture") or {}
+    sport_id=fixture.get("sport_id",event.get("sport_id"))
+    if sport_id is not None and str(sport_id)!="5":
+        return False
+    # Some Superbet event-list responses omit these optional status fields entirely.
+    # Missing status is not evidence that an event is closed or already live.
+    offer_states=fixture.get("offer_state_status") or event.get("offer_state_status")
+    if isinstance(offer_states,dict) and "1" in offer_states:
+        if offer_states.get("1") not in (1,"1",True,"ACTIVE","active"):
+            return False
+    phase=(event.get("inplay_stats_metadata") or {}).get("status")
+    phase=str(phase or "").strip().upper()
+    if phase in {"LIVE","INPLAY","IN_PLAY","IN-PLAY","STARTED","IN_PROGRESS","FINISHED","ENDED"}:
+        return False
+    return True
+
 def superbet_football_events(start,end):
     start_utc=utc_hour(start)
     end_utc=utc_hour(end,round_up=True)
@@ -61,18 +85,26 @@ def superbet_football_events(start,end):
         "startDate":start_utc.isoformat().replace("+00:00","Z"),
         "endDate":end_utc.isoformat().replace("+00:00","Z"),
     })
-    events=payload.get("events",[])
+    events=superbet_events_from_payload(payload)
     result=[]
     for event in events:
-        fixture=event.get("fixture",{})
-        if str(fixture.get("sport_id"))!="5":
+        if not superbet_event_is_prematch(event):
             continue
-        if fixture.get("offer_state_status",{}).get("1") not in (1,"1"):
+        fixture=event.get("fixture") or {}
+        try:
+            kickoff=datetime.fromisoformat(str(fixture.get("utc_date") or "").replace("Z","+00:00"))
+        except ValueError:
             continue
-        if event.get("inplay_stats_metadata",{}).get("status") not in ("NOT_STARTED",""):
+        if kickoff.tzinfo is None:
+            kickoff=kickoff.replace(tzinfo=timezone.utc)
+        if not start.astimezone(timezone.utc)<=kickoff.astimezone(timezone.utc)<=end.astimezone(timezone.utc):
             continue
         result.append(event)
     logging.info("Superbet: wydarzenia %s, piłka nożna przedmeczowo %s",len(events),len(result))
+    if not result:
+        logging.warning("Superbet: brak wydarzeń po filtrach; klucze odpowiedzi=%s; przykładowe pola fixture=%s",
+                        list((payload or {}).keys()),
+                        list((events[0].get("fixture") or {}).keys()) if events else "brak wydarzeń")
     return result
 
 def normalized_team(name):
@@ -1244,7 +1276,7 @@ HTFT_MIN_SNAPSHOTS = 2
 
 def fetch_superbet_event_detail(event_id):
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
-    events=payload.get("events") or []
+    events=superbet_events_from_payload(payload)
     if len(events)==1:
         event=events[0]
         returned_id=event.get("event_id") or event.get("id")
@@ -1300,30 +1332,53 @@ def htft_market_outcomes(event):
             item["market_name"]=raw_name
             if item["selection"] in ("1/2","2/1"):
                 found.append(item)
-    # Some Superbet combination selections are exposed under event["superbets"],
-    # not event["markets"]. Accept only a two-leg 1st-half-result + full-time-result combo.
-    for combo_market in event.get("superbets") or []:
-        for odd in combo_market.get("odds") or []:
-            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+    # Superbet may expose HT/FT as a SuperBets combo rather than a named market.
+    # Normalize alternate field names, but accept only a genuine 1st-half result
+    # followed by a full-time result (1/2 or 2/1); never treat double-chance legs as 1X2.
+    superbets=event.get("superbets") or []
+    if isinstance(superbets,dict):
+        superbets=list(superbets.values())
+    for combo_market in superbets:
+        if not isinstance(combo_market,dict):
+            continue
+        odds_rows=combo_market.get("odds") or combo_market.get("selections") or []
+        if isinstance(odds_rows,dict):
+            odds_rows=list(odds_rows.values())
+        for odd in odds_rows:
+            if not isinstance(odd,dict):
+                continue
+            if odd.get("status") not in (None,1,"1","ACTIVE","active",True) or odd.get("display") is False:
                 continue
             meta=odd.get("metadata") or {}
-            if str(meta.get("offer_state_id",1))!="1":
+            if str(meta.get("offer_state_id",1)) not in ("1","None"):
                 continue
-            components=odd.get("odd_components") or []
+            components=odd.get("odd_components") or odd.get("components") or meta.get("odd_components") or []
+            if isinstance(components,dict):
+                components=list(components.values())
             if len(components)!=2:
                 continue
-            first_half=next((x for x in components
-                if str(x.get("market_line_name") or "").strip().lower().startswith("1st half")),None)
-            full_time=next((x for x in components
-                if str(x.get("market_line_name") or "").strip().lower()=="full time"),None)
+            def component_market(component):
+                return " ".join(str(component.get(k) or "") for k in
+                    ("market_line_name","market_name","marketName","market","name")).strip().lower()
+            def component_pick(component):
+                value=(component.get("odd_name") or component.get("selection") or
+                       component.get("outcome") or component.get("label") or
+                       (component.get("metadata") or {}).get("name"))
+                return str(value or "").strip().upper()
+            first_half=next((x for x in components if isinstance(x,dict) and
+                ("1st half" in component_market(x) or "first half" in component_market(x) or
+                 "1. połowa" in component_market(x) or "pierwsza połowa" in component_market(x))),None)
+            full_time=next((x for x in components if isinstance(x,dict) and
+                ("full time" in component_market(x) or "full-time" in component_market(x) or
+                 "wynik końcowy" in component_market(x))),None)
             if not first_half or not full_time:
                 continue
-            ht=str(first_half.get("odd_name") or "").strip().upper()
-            ft=str(full_time.get("odd_name") or "").strip().upper()
+            ht=component_pick(first_half)
+            ft=component_pick(full_time)
             if ht not in ("1","2") or ft not in ("1","2") or ht==ft:
                 continue
             try:
-                price=float(odd.get("price"))
+                price=float(odd.get("price") or meta.get("price"))
             except (TypeError,ValueError):
                 continue
             if price<=1.0 or price>1000:
@@ -1331,8 +1386,8 @@ def htft_market_outcomes(event):
             found.append({
                 "selection":f"{ht}/{ft}","odds":price,
                 "fair_probability":None,
-                "label":str(meta.get("name") or ""),
-                "market_name":"Superbets — kombinacja HT/FT"
+                "label":str(meta.get("name") or odd.get("name") or ""),
+                "market_name":"SuperBets — kombinacja HT/FT"
             })
     return found
 
