@@ -14,10 +14,10 @@ STAKE=10
 MAX_DAILY_PICKS=2
 FT_CORNERS_LINE=8.5
 FT_HISTORY=8
-FT_MIN_SAMPLE=5
-FT_MIN_TEAM_AVG=3.5
-FT_MIN_COMBINED_AVG=9.5
-FT_MIN_HIT_RATE=0.60
+FT_MIN_SAMPLE=3
+FT_MIN_TEAM_AVG=2.5
+FT_MIN_COMBINED_AVG=8.5
+FT_MIN_HIT_RATE=0.45
 SHORTLIST_SIZE=100  # maksymalnie 100 meczów wybieranych do szczegółowej analizy
 HISTORY=8
 MIN_SAMPLE=3
@@ -570,7 +570,7 @@ def league_ft_corner_profile(rows,fixture_date,limit=80):
         matches.append((match_date,total))
     matches.sort(key=lambda item:item[0],reverse=True)
     sample=matches[:limit]
-    if len(sample)<20:
+    if len(sample)<10:
         return None,None,len(sample)
     average=sum(total for _,total in sample)/len(sample)
     hit_rate=sum(total>=9 for _,total in sample)/len(sample)
@@ -585,8 +585,16 @@ def ft_matchday_candidate_profile(league,home,away,start_ts):
     fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
     hh=recent_team_ft_corner_history(home,rows,fixture_date)
     ah=recent_team_ft_corner_history(away,rows,fixture_date)
+    league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date)
+    # Łagodny fallback: gdy Open Matchday nie dopasuje nazw drużyn,
+    # wykorzystaj rzeczywistą próbkę ligi, ale tylko przy min. 10 meczach.
     if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
-        return None,f"za mała próba FT ({len(hh)}+{len(ah)})"
+        if league_avg is not None and league_n>=10 and league_avg>=8.5 and league_hit>=0.45:
+            score=(league_avg*5)+(league_hit*100)
+            detail=(f"profil ligi: {league_n} meczów, średnia {league_avg:.2f} rożnych, "
+                    f"Over 8.5 w {league_hit*100:.0f}%; historia drużyn niedostępna")
+            return score,detail
+        return None,f"za mała próba FT ({len(hh)}+{len(ah)}), profil ligi {league_n}"
     home_avg=sum(x[1] for x in hh)/len(hh)
     away_avg=sum(x[1] for x in ah)/len(ah)
     totals=[x[3] for x in hh]+[x[3] for x in ah]
@@ -594,14 +602,13 @@ def ft_matchday_candidate_profile(league,home,away,start_ts):
     hit_rate=sum(1 for total in totals if total>=9)/len(totals)
     recent_totals=[x[3] for x in hh[:5]]+[x[3] for x in ah[:5]]
     recent_hit=sum(1 for total in recent_totals if total>=9)/len(recent_totals)
-    league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date)
     if min(home_avg,away_avg)<FT_MIN_TEAM_AVG:
         return None,f"za mało rożnych własnych: {home_avg:.2f}/{away_avg:.2f}"
     if combined_avg<FT_MIN_COMBINED_AVG:
         return None,f"średnia łączna tylko {combined_avg:.2f}"
     if hit_rate<FT_MIN_HIT_RATE:
         return None,f"Over 8.5 historycznie tylko {hit_rate*100:.0f}%"
-    if recent_hit<0.50:
+    if recent_hit<0.30:
         return None,f"ostatnie 5: Over 8.5 tylko {recent_hit*100:.0f}%"
     # Dynamiczna premia za ligi, w których ostatnie wyniki pokazują dużo rożnych.
     # Bez sztywnej białej listy — liczą się aktualne dane ligowe i forma obu drużyn.
