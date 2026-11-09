@@ -334,7 +334,7 @@ def main():
                                 [{"market": m.get("name"), "odds": [
                                     {"name": o.get("name"), "metadata": o.get("metadata")}
                                     for o in (m.get("odds") or [])[:6]
-                                ]} for m in (detail.get("markets") or [])[:2])
+                                ]} for m in (detail.get("markets") or [])[:2]])
                 detail_diagnostics += 1
             if minute is None or score is None:
                 continue
