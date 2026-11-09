@@ -49,5 +49,22 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual((bot.HT_MAX_LINE, bot.FT_MAX_LINE), (1.5, 2.5))
 
 
+    def test_superbet_live_stats_clock_and_score_fields(self):
+        sample = {"inplay_stats": {"minutes": "27", "home_team_score": "1", "away_team_score": "0"}}
+        self.assertEqual(bot.event_minute(sample), 27)
+        self.assertEqual(bot.event_score(sample), (1, 0))
+
+    def test_accepts_live_market_status_two(self):
+        data = event("Liczba goli", 1.5)
+        data["markets"][0]["status"] = 2
+        data["markets"][0]["odds"][0]["status"] = 2
+        data["markets"][0]["odds"][0]["metadata"]["offer_state_id"] = 2
+        self.assertEqual(bot.exact_live_over_markets(data, "FT", 1)[0]["line"], 1.5)
+
+    def test_polish_live_total_goals_market_name_is_detected(self):
+        self.assertEqual(bot.market_phase("Liczba goli"), "FT")
+        self.assertEqual(bot.market_phase("1. połowa - liczba goli"), "HT")
+
+
 if __name__ == "__main__":
     unittest.main()
