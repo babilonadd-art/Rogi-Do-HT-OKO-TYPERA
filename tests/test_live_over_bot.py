@@ -42,7 +42,8 @@ class LiveOverBotTests(unittest.TestCase):
 
     def test_relaxed_odds_and_multiple_goal_lines(self):
         self.assertEqual((bot.MIN_ODDS, bot.MAX_ODDS), (1.60, 2.80))
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.25), "FT", 0)[0]["line"], 0.5)
+        # Kurs 1.25 jest poniżej ustalonego minimum 1.60 i musi zostać odrzucony.
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.25), "FT", 0), [])
         # Przy 0:0 bot nie może przeskoczyć na Over 1.5.
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 0), [])
         # Po jednym golu właściwą następną linią jest Over 1.5.
