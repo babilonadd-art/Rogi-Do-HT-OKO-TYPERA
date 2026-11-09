@@ -317,11 +317,17 @@ def main():
             event_id = listed.get("event_id") or listed.get("id")
             if not event_id:
                 continue
-            minute = event_minute(listed)
-            score = event_score(listed)
+            # Lista LIVE często nie zawiera wyniku ani zegara — pobierz pełne dane meczu.
+            detail = superbet_event_details(event_id)
+            if not detail or not event_is_still_live(detail):
+                continue
+            minute = event_minute(detail)
+            score = event_score(detail)
             if minute is None or score is None:
                 continue
-            home, away = event_teams(listed)
+            home, away = event_teams(detail)
+            if not home or not away:
+                home, away = event_teams(listed)
             if not home or not away:
                 continue
             # HT: wyłącznie 1–35'. FT: wyłącznie 46–75'.
@@ -332,15 +338,6 @@ def main():
                 phases.append("FT")
             if not phases:
                 continue
-            detail = superbet_event_details(event_id)
-            if not detail or not event_is_still_live(detail):
-                continue
-            detail_minute = event_minute(detail)
-            if detail_minute is not None:
-                minute = detail_minute
-            detail_score = event_score(detail)
-            if detail_score is not None:
-                score = detail_score
             # Po ponownym pobraniu zawsze sprawdzamy granice minuty.
             phases = []
             if 1 <= minute <= HT_MAX_MINUTE:
