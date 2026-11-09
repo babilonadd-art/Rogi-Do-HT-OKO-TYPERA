@@ -40,9 +40,12 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5), "FT", 0), [])
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5), "HT", 0), [])
 
-    def test_only_exact_next_goal_line_and_odds_range_are_accepted(self):
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.7), "FT", 0), [])
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 0), [])
+    def test_relaxed_odds_and_multiple_goal_lines(self):
+        self.assertEqual((bot.MIN_ODDS, bot.MAX_ODDS), (1.20, 6.00))
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.25), "FT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 0)[0]["line"], 1.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.19), "FT", 0), [])
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 3.5, 2.2), "FT", 0), [])
 
     def test_phase_windows_and_line_caps(self):
         self.assertEqual((bot.HT_MAX_MINUTE, bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (35, 46, 75))
