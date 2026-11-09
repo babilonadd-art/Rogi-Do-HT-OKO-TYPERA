@@ -313,6 +313,7 @@ def main():
     try:
         events = live_superbet_events()
         candidates = []
+        detail_diagnostics = 0
         for listed in events:
             event_id = listed.get("event_id") or listed.get("id")
             if not event_id:
@@ -323,6 +324,13 @@ def main():
                 continue
             minute = event_minute(detail)
             score = event_score(detail)
+            if (minute is None or score is None) and detail_diagnostics < 3:
+                metadata = detail.get("inplay_stats_metadata") or {}
+                logging.warning("LIVE DETAIL SAMPLE id=%s keys=%s fixture_keys=%s metadata=%s minute=%s score=%s market_names=%s",
+                                event_id, sorted(detail.keys()), sorted((detail.get("fixture") or {}).keys()),
+                                metadata, minute, score,
+                                [m.get("name") for m in (detail.get("markets") or [])[:12]])
+                detail_diagnostics += 1
             if minute is None or score is None:
                 continue
             home, away = event_teams(detail)
