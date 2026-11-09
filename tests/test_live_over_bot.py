@@ -76,5 +76,14 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.market_phase("Total Goals"), "FT")
 
 
+    def test_rejects_ambiguous_goal_market_names(self):
+        for name in ("Home Team Total Goals", "Goals in 2nd half", "Goals 15 min", "Team Goals"):
+            self.assertIsNone(bot.market_phase(name), name)
+
+    def test_accepts_explicit_full_time_market_names(self):
+        for name in ("Full Time Total Goals", "Cały mecz - liczba goli", "Total Goals"):
+            self.assertEqual(bot.market_phase(name), "FT", name)
+
+
 if __name__ == "__main__":
     unittest.main()
