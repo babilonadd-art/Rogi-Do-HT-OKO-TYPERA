@@ -43,7 +43,7 @@ class HTFTMarketTests(unittest.TestCase):
     def test_only_two_distinct_matches_can_be_alerted_per_day(self):
         sent = {101, 202}
         self.assertFalse(daily_htft_alert_allowed(sent, 303))
-        self.assertTrue(daily_htft_alert_allowed(sent, 101))
+        self.assertFalse(daily_htft_alert_allowed(sent, 101))
 
     def test_one_match_is_not_counted_twice(self):
         sent = {101}
