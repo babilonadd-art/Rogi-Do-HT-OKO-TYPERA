@@ -1294,6 +1294,10 @@ def htft_market_outcomes(event):
         explicit_htft=(
             ("ht/ft" in name or "half time/full time" in name or
              "half-time/full-time" in name or "half time / full time" in name or
+             "1. połowa/mecz" in name or "1.połowa/mecz" in name or
+             "1. połowa / mecz" in name or "1.połowa / mecz" in name or
+             ("1. połowa" in name and "mecz" in name) or
+             ("1st half" in name and "full time" in name) or
              "do przerwy/koniec" in name or "do przerwy / wynik końcowy" in name or
              "wynik do przerwy/wynik końcowy" in name or
              "wynik do przerwy / wynik końcowy" in name)
