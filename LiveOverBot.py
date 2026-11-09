@@ -20,8 +20,8 @@ FT_MAX_MINUTE = 75
 HT_MAX_LINE = 1.5
 FT_MAX_LINE = 2.5
 # Luźniejsze widełki, ale nadal wymagamy prawdziwego, aktywnego kursu Superbet.
-MIN_ODDS = 1.05
-MAX_ODDS = 10.00
+MIN_ODDS = 1.60
+MAX_ODDS = 2.80
 MAX_PICKS_PER_RUN = 10
 STAKE = 10
 
