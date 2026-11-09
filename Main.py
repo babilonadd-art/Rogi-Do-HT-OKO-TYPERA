@@ -1815,6 +1815,21 @@ def main():
         return
     c=db_open()
     try:
+        # Jednorazowy reset dzisiejszej bazy typów FT i limitu; tabela zostanie
+        # utworzona ponownie przez monitor_ft_corners().
+        reset_file="RESET_FT_PICKS"
+        if os.path.exists(reset_file):
+            exists=c.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ft_corner_picks'"
+            ).fetchone()
+            if exists:
+                c.execute("DROP TABLE ft_corner_picks")
+                c.commit()
+            seed_file="FT_ALREADY_SENT"
+            if os.path.exists(seed_file):
+                os.remove(seed_file)
+            os.remove(reset_file)
+            logging.warning("FT: usunięto bazę wysłanych typów i wyzerowano dzisiejszy limit")
         # Usuń pierwszą, zdublowaną serię postów; identyfikatory pochodzą z logów Telegrama.
         cleanup_file="DELETE_TELEGRAM_MESSAGES"
         if os.path.exists(cleanup_file):
