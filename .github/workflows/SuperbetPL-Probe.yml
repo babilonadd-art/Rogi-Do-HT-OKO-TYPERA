@@ -25,9 +25,9 @@ jobs:
         run: pip install "requests>=2.31,<3"
       - name: Check bot syntax
         run: python -m py_compile Main.py
-      - name: Verify HT/FT market detection and daily cap
+      - name: Verify FT Over 8.5 selection logic
         run: python tests/test_htft_market.py
       - name: Discover Superbet PL offer endpoints
         run: python tests/superbet_pl_probe.py
-      - name: Verify FT Over 9.5 corner market schema and price extraction
+      - name: Verify FT Over 8.5 corner market schema and price extraction
         run: python tests/test_superbet_ft_market.py
