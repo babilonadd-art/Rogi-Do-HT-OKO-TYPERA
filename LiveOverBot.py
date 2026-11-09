@@ -19,8 +19,8 @@ FT_MIN_MINUTE = 46
 FT_MAX_MINUTE = 75
 HT_MAX_LINE = 1.5
 FT_MAX_LINE = 2.5
-MIN_ODDS = 1.90
-MAX_ODDS = 3.50
+MIN_ODDS = 1.20
+MAX_ODDS = 6.00
 MAX_PICKS_PER_RUN = 5
 STAKE = 10
 
@@ -227,8 +227,8 @@ def exact_live_over_markets(event, phase, current_total):
     if not event_is_still_live(event):
         return []
     max_line = HT_MAX_LINE if phase == "HT" else FT_MAX_LINE
-    target_line = current_total + 0.5
-    if target_line > max_line:
+    min_line = current_total + 0.5
+    if min_line > max_line:
         return []
     results = []
     for market in event.get("markets") or []:
@@ -253,7 +253,9 @@ def exact_live_over_markets(event, phase, current_total):
             )).lower()
             if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
-            if abs(line - target_line) > 0.001:
+            # Dopuszczamy kazda dostepna linie wymagajaca co najmniej
+            # jednego kolejnego gola, do limitu HT/FT.
+            if line < min_line - 0.001 or line > max_line + 0.001:
                 continue
             if odd.get("status") not in (1, 2, "1", "2", "ACTIVE", "active") or odd.get("display") is False:
                 continue
@@ -262,6 +264,7 @@ def exact_live_over_markets(event, phase, current_total):
             if not MIN_ODDS <= price <= MAX_ODDS:
                 continue
             results.append({"line": line, "odds": price, "market": name})
+    results.sort(key=lambda item: abs(item["odds"] - 1.80))
     return results
 
 
