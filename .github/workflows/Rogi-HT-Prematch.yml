@@ -1,4 +1,4 @@
-name: Rogi FT Prematch
+name: HTFT Odds Anomaly Monitor
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Kontrola składni
         run: python -m py_compile Main.py
-      - name: Skan przedmeczowych rogów FT Over 9.5
+      - name: Monitoring anomalii kursów HT/FT przed meczem
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -45,7 +45,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add okotypera_ht.db
-            git diff --cached --quiet || git commit -m "Update FT corners picks database"
+            git diff --cached --quiet || git commit -m "Update HTFT odds monitoring snapshots"
             git pull --rebase origin main
             git push
           fi
