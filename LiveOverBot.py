@@ -209,8 +209,15 @@ def market_phase(name):
         return "HT"
     if any(term in n for term in ft_terms):
         return "FT"
-    # Nienazwany jako połowa rynek "Total Goals" jest standardowo rynkiem FT.
-    if any(word in n for word in ("total", "gole", "goli", "goals", "bramki", "suma goli")):
+    # Dopuszczamy tylko jednoznaczne nazwy rynku całego meczu.
+    # Nie używamy szerokiego "zawiera gole/goals", bo łapie też rynki
+    # drużynowe, fragmenty meczu i inne linie z innym kursem.
+    generic_ft_names = {
+        "total goals", "total number of goals", "goals total",
+        "liczba goli", "gole", "gole w meczu", "suma goli",
+        "liczba bramek", "suma bramek", "wynik - liczba goli",
+    }
+    if n.strip(" -:") in generic_ft_names:
         return "FT"
     return None
 
@@ -396,7 +403,8 @@ def main():
                 f"🔴 LIVE LATE OVER | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
                 f"⚽ {home} – {away}\n"
                 f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
-                f"💹 Kurs Superbet LIVE: {matching['odds']:.2f}\n"
+                f"🏷 Rynek: {matching['market']}\n"
+                f"💹 Kurs Superbet LIVE (odświeżony przed wysyłką): {matching['odds']:.2f}\n"
                 f"💰 Stawka: {STAKE} zł\n"
                 f"🔗 Mecz: {superbet_url(fresh)}"
             )
