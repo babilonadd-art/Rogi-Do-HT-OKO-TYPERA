@@ -127,10 +127,11 @@ def event_minute(event):
         if isinstance(node, dict):
             for key, value in node.items():
                 k = str(key).lower()
-                if isinstance(value, dict):
-                    value = value.get("value", value.get("current", value.get("minute")))
                 if k in keys and value is not None:
-                    match = re.search(r"\b(\d{1,3})\b", str(value))
+                    raw_value = value
+                    if isinstance(raw_value, dict):
+                        raw_value = raw_value.get("value", raw_value.get("current", raw_value.get("minute")))
+                    match = re.search(r"\b(\d{1,3})\b", str(raw_value))
                     if match:
                         found.append(int(match.group(1)))
                 elif k in clock_keys and value is not None:
