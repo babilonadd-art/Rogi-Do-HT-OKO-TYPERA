@@ -202,6 +202,21 @@ def main():
         detail = event_detail(event_id) or listed
         if not (detail.get("markets") or []):
             detail = listed
+        market_rows = detail.get("markets") or []
+        if not getattr(inspect, "_diagnosed", False):
+            inspect._diagnosed = True
+            logging.info("DIAG celne strzały: %s - %s | markets=%d | przykładowe nazwy=%s",
+                         home, away, len(market_rows),
+                         [str(m.get("name") or m.get("label") or m.get("market_name") or "")[:140]
+                          for m in market_rows[:35]])
+            for market in market_rows[:8]:
+                outcomes = market.get("odds") or []
+                if outcomes:
+                    logging.info("DIAG outcome %s: %s",
+                                 str(market.get("name") or market.get("label") or "")[:100],
+                                 [{"name": o.get("name"), "label": o.get("label"),
+                                   "price": o.get("price"), "metadata": o.get("metadata")}
+                                  for o in outcomes[:5]])
         pick, diagnostics = team_shots_market(detail, home, away)
         return (item, pick, diagnostics)
 
