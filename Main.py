@@ -542,6 +542,27 @@ def evaluate_ft_matchday_quality(league,home,away,start_ts):
     return passed,detail
 
 
+def league_ft_corner_profile(rows,fixture_date,limit=80):
+    """Recent league-wide FT corner baseline, excluding the fixture date and future."""
+    matches=[]
+    for row in rows or []:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            total=int(float(row["home_corners"]))+int(float(row["away_corners"]))
+        except (KeyError,TypeError,ValueError):
+            continue
+        matches.append((match_date,total))
+    matches.sort(key=lambda item:item[0],reverse=True)
+    sample=matches[:limit]
+    if len(sample)<20:
+        return None,None,len(sample)
+    average=sum(total for _,total in sample)/len(sample)
+    hit_rate=sum(total>=9 for _,total in sample)/len(sample)
+    return average,hit_rate,len(sample)
+
+
 def ft_matchday_candidate_profile(league,home,away,start_ts):
     """Strictly qualify fixtures using each team's recent FT corner history."""
     rows=load_matchday_results(league)
@@ -559,6 +580,7 @@ def ft_matchday_candidate_profile(league,home,away,start_ts):
     hit_rate=sum(1 for total in totals if total>=9)/len(totals)
     recent_totals=[x[3] for x in hh[:5]]+[x[3] for x in ah[:5]]
     recent_hit=sum(1 for total in recent_totals if total>=9)/len(recent_totals)
+    league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date)
     if min(home_avg,away_avg)<FT_MIN_TEAM_AVG:
         return None,f"za mało rożnych własnych: {home_avg:.2f}/{away_avg:.2f}"
     if combined_avg<FT_MIN_COMBINED_AVG:
@@ -567,10 +589,15 @@ def ft_matchday_candidate_profile(league,home,away,start_ts):
         return None,f"Over 8.5 historycznie tylko {hit_rate*100:.0f}%"
     if recent_hit<0.50:
         return None,f"ostatnie 5: Over 8.5 tylko {recent_hit*100:.0f}%"
-    score=(hit_rate*100)+(recent_hit*35)+(combined_avg*4)+(min(home_avg,away_avg)*5)
+    # Dynamiczna premia za ligi, w których ostatnie wyniki pokazują dużo rożnych.
+    # Bez sztywnej białej listy — liczą się aktualne dane ligowe i forma obu drużyn.
+    league_bonus=0.0 if league_avg is None else (league_avg*5)+(league_hit*40)
+    score=(hit_rate*100)+(recent_hit*35)+(combined_avg*4)+(min(home_avg,away_avg)*5)+league_bonus
+    league_detail=(f", liga ostatnie {league_n}: śr. {league_avg:.2f}, O8.5 {league_hit*100:.0f}%"
+                   if league_avg is not None else ", brak pełnej próbki ligowej")
     detail=(f"próba {len(hh)}+{len(ah)}, rożne własne {home_avg:.2f}/{away_avg:.2f}, "
             f"średnia łączna {combined_avg:.2f}, Over 8.5: {hit_rate*100:.0f}% "
-            f"(ostatnie 5: {recent_hit*100:.0f}%)")
+            f"(ostatnie 5: {recent_hit*100:.0f}%){league_detail}")
     return score,detail
 
 
