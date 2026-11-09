@@ -45,6 +45,8 @@ jobs:
           if [ -f okotypera_ht.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            # py_compile modyfikuje śledzone cache Pythona; przywróć je przed rebase.
+            git restore --worktree -- __pycache__ tests/__pycache__ 2>/dev/null || true
             git add okotypera_ht.db
             if [ -e RESET_FT_PICKS ] || git ls-files --error-unmatch RESET_FT_PICKS >/dev/null 2>&1; then
               git add -A -- RESET_FT_PICKS
