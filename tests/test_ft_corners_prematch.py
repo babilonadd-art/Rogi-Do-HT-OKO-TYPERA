@@ -36,7 +36,7 @@ class FTCornersPrematchTests(unittest.TestCase):
         )
         self.assertIsNone(bot.select_ft_corner_scenario(11.2, {9.5: 1.55}))
 
-    def test_prematch_rules_and_kickoff_window(self):
+    def test_prematch_rules_and_full_day_scan(self):
         self.assertEqual(
             (bot.FT_STANDARD_LINE, bot.FT_STANDARD_MIN_ODDS, bot.FT_STANDARD_MIN_AVG),
             (9.5, 1.70, 10.8),
@@ -45,7 +45,7 @@ class FTCornersPrematchTests(unittest.TestCase):
             (bot.FT_ALT_LINE, bot.FT_ALT_MIN_ODDS, bot.FT_ALT_MIN_AVG),
             (10.5, 1.85, 12.5),
         )
-        self.assertEqual(bot.FT_KICKOFF_WINDOW_MINUTES, 7)
+        self.assertFalse(hasattr(bot, "FT_KICKOFF_WINDOW_MINUTES"))
 
 
 if __name__ == "__main__":
