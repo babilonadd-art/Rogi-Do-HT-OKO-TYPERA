@@ -13,7 +13,7 @@ TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT=os.getenv("TELEGRAM_CHAT_ID")
 STAKE=10
 MAX_DAILY_PICKS=2
-FT_CORNERS_LINE=8.5
+FT_CORNERS_LINE=9.5
 FT_HISTORY=8
 FT_MIN_SAMPLE=3
 FT_MIN_TEAM_AVG=2.5
@@ -235,7 +235,7 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
+def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE,min_odds=1.68):
     """Return the current price only when the exact active FT match-corners Over line exists."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
@@ -288,7 +288,8 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE):
                 price=float(odd.get("price"))
             except (TypeError,ValueError):
                 continue
-            if price<=1.0:
+            if price<float(min_odds):
+                logging.info("Superbet FT corners: event %s | Over %.1f odrzucony — kurs %.2f < %.2f",event_id,line,price,min_odds)
                 continue
             logging.info("Superbet FT corners: event %s | active Over %.1f | kurs %.2f",event_id,line,price)
             return price
@@ -1698,14 +1699,59 @@ def monitor_ft_corners(c):
 
 FT_DAILY_TARGET=10
 FT_DAILY_MAX=10
+FT_STANDARD_LINE=9.5
+FT_STANDARD_MIN_ODDS=1.70
+FT_STANDARD_MIN_AVG=10.8
+FT_ALT_LINE=10.5
+FT_ALT_MIN_ODDS=1.85
+FT_ALT_MIN_AVG=12.5
+FT_MIN_SEASON_SAMPLE=3
+FT_KICKOFF_WINDOW_MINUTES=7
 
 def excluded_corner_league(league):
     name=normalized_team(league)
     return any(token in name for token in ("ukraine","ukrain","ukraina","ukrainska","ukr"))
 
 
+def season_team_ft_corner_history(team,rows,fixture_date):
+    """All current-season matches before kickoff; returns team's own corners and match total."""
+    matched=[]
+    for row in rows or []:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            home_c=int(float(row["home_corners"]))
+            away_c=int(float(row["away_corners"]))
+        except (KeyError,TypeError,ValueError):
+            continue
+        hsim=team_similarity(team,row.get("home",""))
+        assim=team_similarity(team,row.get("away",""))
+        if hsim>=0.74 and hsim>assim+0.05:
+            matched.append((match_date,home_c,home_c+away_c))
+        elif assim>=0.74 and assim>hsim+0.05:
+            matched.append((match_date,away_c,home_c+away_c))
+    matched.sort(key=lambda item:item[0],reverse=True)
+    return matched
+
+
+def select_ft_corner_scenario(combined_average,odds_by_line):
+    """Choose standard O9.5 first; use O10.5 only for exceptional combined averages."""
+    try:
+        average=float(combined_average)
+    except (TypeError,ValueError):
+        return None
+    standard=odds_by_line.get(FT_STANDARD_LINE)
+    if average>=FT_STANDARD_MIN_AVG and standard is not None and standard>=FT_STANDARD_MIN_ODDS:
+        return {"line":FT_STANDARD_LINE,"odds":float(standard),"scenario":"A"}
+    alternative=odds_by_line.get(FT_ALT_LINE)
+    if average>FT_ALT_MIN_AVG and alternative is not None and alternative>=FT_ALT_MIN_ODDS:
+        return {"line":FT_ALT_LINE,"odds":float(alternative),"scenario":"B"}
+    return None
+
+
 def monitor_ft_corners(c):
-    """Wybiera do 10 najmocniejszych przedmeczowych spotkań FT Over 8.5 bez filtra kursowego."""
+    """Prematch FT corners: season team averages + dynamic Superbet O9.5/O10.5 price rules."""
     now=datetime.now(TZ)
     start=now.replace(hour=0,minute=0,second=0,microsecond=0)
     end=now.replace(hour=23,minute=59,second=59,microsecond=0)
@@ -1732,35 +1778,57 @@ def monitor_ft_corners(c):
             kickoff=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
         except Exception:
             continue
-        if kickoff<=int(now.timestamp()):
+        minutes_to_kickoff=(kickoff-now.timestamp())/60
+        # GitHub Actions runs every five minutes; a short window catches the
+        # bookmaker's final line near kickoff without sending picks hours early.
+        if not 0<minutes_to_kickoff<=FT_KICKOFF_WINDOW_MINUTES:
             continue
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed) or "Liga niepodana"
         if excluded_corner_league(league):
-            logging.info("FT Over 8.5: pominięto wykluczoną ligę %s",league)
+            logging.info("FT corners: pominięto wykluczoną ligę %s",league)
             continue
-        # Bez historii drużyn: każdy mecz piłkarski przedmeczowy może przejść
-        # do sprawdzenia rynku rożnych. Profil ligi jest wyłącznie dodatkiem rankingowym.
         rows=load_matchday_results(league)
+        if not rows:
+            logging.info("FT corners: brak bieżącego sezonu Open Matchday dla %s — bez typu",league)
+            continue
         fixture_date=datetime.fromtimestamp(kickoff,timezone.utc).date().isoformat()
-        league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date) if rows else (None,None,0)
-        if league_avg is not None:
-            score=(league_avg*5)+(league_hit*100)
-            detail=(f"profil ligi: {league_n} meczów, średnia {league_avg:.2f} rożnych, "
-                    f"Over 8.5 w {league_hit*100:.0f}%")
-        else:
-            score=0.0
-            detail="bez historii drużyn; brak profilu ligi — zakwalifikowany do sprawdzenia rynku"
+        home_history=season_team_ft_corner_history(home,rows,fixture_date)
+        away_history=season_team_ft_corner_history(away,rows,fixture_date)
+        if len(home_history)<FT_MIN_SEASON_SAMPLE or len(away_history)<FT_MIN_SEASON_SAMPLE:
+            logging.info("FT corners: za mała próba sezonowa %s %s/%s, %s %s/%s",
+                         home,len(home_history),FT_MIN_SEASON_SAMPLE,
+                         away,len(away_history),FT_MIN_SEASON_SAMPLE)
+            continue
+        home_avg=sum(x[1] for x in home_history)/len(home_history)
+        away_avg=sum(x[1] for x in away_history)/len(away_history)
+        combined_average=home_avg+away_avg
+        profile=(f"bieżący sezon, mecze {len(home_history)}+{len(away_history)}; "
+                 f"średnie rożnych własnych {home_avg:.2f}+{away_avg:.2f}="
+                 f"{combined_average:.2f}")
         candidates.append({"event_id":int(eid),"home":home,"away":away,"league":league,
-                           "start_ts":kickoff,"profile_score":score,"profile":detail})
-    logging.info("FT Over 8.5: wydarzenia=%s, z historią=%s, już wysłane dziś=%s",
+                           "start_ts":kickoff,"home_avg":home_avg,"away_avg":away_avg,
+                           "combined_average":combined_average,"profile":profile})
+    logging.info("FT corners: wydarzenia=%s, kandydaci z próbą sezonową=%s, już wysłane dziś=%s",
                  len(events),len(candidates),len(sent_ids))
+
     def inspect(item):
-        market_odds=superbet_ft_corners_over_odds(item["event_id"],FT_CORNERS_LINE)
-        if market_odds is None:
+        odds_by_line={}
+        price=superbet_ft_corners_over_odds(item["event_id"],FT_STANDARD_LINE,FT_STANDARD_MIN_ODDS)
+        if price is not None:
+            odds_by_line[FT_STANDARD_LINE]=price
+        if item["combined_average"]>FT_ALT_MIN_AVG:
+            price=superbet_ft_corners_over_odds(item["event_id"],FT_ALT_LINE,FT_ALT_MIN_ODDS)
+            if price is not None:
+                odds_by_line[FT_ALT_LINE]=price
+        scenario=select_ft_corner_scenario(item["combined_average"],odds_by_line)
+        if not scenario:
+            logging.info("FT corners: odrzucono %s - %s | suma średnich %.2f | dostępne kursy %s",
+                         item["home"],item["away"],item["combined_average"],odds_by_line)
             return None
-        item["odds"]=market_odds  # aktualny kurs Superbet; nie wpływa na selekcję spotkań
+        item.update(scenario)
         return item
+
     qualified=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures=[pool.submit(inspect,item) for item in candidates]
@@ -1770,43 +1838,64 @@ def monitor_ft_corners(c):
                 if item:
                     qualified.append(item)
             except Exception:
-                logging.exception("FT Over 8.5: błąd odczytu rynku")
-    qualified.sort(key=lambda x:(-x["profile_score"],x["start_ts"]))
+                logging.exception("FT corners: błąd odczytu rynku/statystyk")
+    qualified.sort(key=lambda x:(-x["combined_average"],x["start_ts"]))
     remaining=max(0,FT_DAILY_MAX-len(sent_ids))
     selected=qualified[:remaining]
-    logging.info("FT Over 8.5: dokładny rynek 8.5 dostępny w %s meczach; wybrano %s; cel dzienny=%s",
-                 len(qualified),len(selected),FT_DAILY_TARGET)
+    logging.info("FT corners: spełniających warunki=%s, wybrano=%s",len(qualified),len(selected))
     for item in selected:
-        # Numeracja dzienna: kolejny numer wyliczany z typów skutecznie zapisanych dziś.
-        # Numer zwiększa się dopiero po udanej wysyłce, więc skany co 5 minut nie robią luk.
+        # Last-second odds validation: never publish a stale or below-threshold price.
+        fresh_price=superbet_ft_corners_over_odds(
+            item["event_id"],item["line"],
+            FT_STANDARD_MIN_ODDS if item["line"]==FT_STANDARD_LINE else FT_ALT_MIN_ODDS)
+        if fresh_price is None:
+            logging.info("FT corners: kurs zmienił się przed publikacją — pominięto %s - %s",
+                         item["home"],item["away"])
+            continue
         type_no=len(sent_ids)+1
         kickoff=datetime.fromtimestamp(item["start_ts"],timezone.utc).astimezone(TZ)
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
-        msg=("⚽ TYP FT — OVER 8.5 RZUTÓW ROŻNYCH\n"
-             f"🔢 TYP NR.{type_no}\n"
-             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
-             f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
-             "🎯 Rynek: powyżej 8.5 rzutów rożnych — cały mecz (FT)\n"
-             f"💹 Kurs Superbet: {item['odds']:.2f}\n"
-             f"📊 Historia: {item['profile']}\n"
-             f"💰 Stawka informacyjna: {STAKE} zł\n"
-             f"🔗 Superbet — otwórz mecz, następnie Rzuty rożne → Liczba rzutów rożnych: {link}")
+        line_label=f"OVER {item['line']:.1f}"
+        scenario_label=("A — standard" if item["scenario"]=="A" else "B — wysoka średnia")
+        msg=("⚽ TYP FT — RZUTY ROŻNE
+"
+             f"🔢 TYP NR.{type_no}
+"
+             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}
+
+"
+             f"🏆 {item['league']}
+⚔️ {item['home']} – {item['away']}
+"
+             f"🎯 Rynek: {line_label} rzutów rożnych — cały mecz (FT)
+"
+             f"💹 Kurs Superbet: {fresh_price:.2f}
+"
+             f"📐 Scenariusz: {scenario_label}
+"
+             f"📊 Statystyki bieżącego sezonu: {item['profile']}
+"
+             f"💰 Stawka informacyjna: {STAKE} zł
+"
+             f"🔗 Superbet: {link}")
         message_id=send(msg)
         if message_id:
             c.execute("""INSERT OR IGNORE INTO ft_corner_picks
                 (event_id,league,home,away,start_ts,odds,profile,sent_at,telegram_message_id)
                 VALUES(?,?,?,?,?,?,?,?,?)""",
                 (item["event_id"],item["league"],item["home"],item["away"],
-                 item["start_ts"],item["odds"],item["profile"],now.isoformat(),int(message_id)))
+                 item["start_ts"],fresh_price,item["profile"]+f"; scenariusz {item['scenario']}",
+                 now.isoformat(),int(message_id)))
             c.commit()
             sent_ids.add(item["event_id"])
-            logging.info("FT Over 8.5: wysłano %s - %s | kurs %.2f | Telegram message_id=%s (kurs nie wpływa na wybór)",item["home"],item["away"],item["odds"],message_id)
+            logging.info("FT corners: wysłano %s - %s | %s @ %.2f | suma średnich %.2f",
+                         item["home"],item["away"],line_label,fresh_price,item["combined_average"])
         else:
-            logging.error("FT Over 8.5: nie wysłano eventu %s",item["event_id"])
+            logging.error("FT corners: nie wysłano eventu %s",item["event_id"])
         time.sleep(0.3)
     if len(sent_ids)<FT_DAILY_TARGET:
-        logging.warning("FT Over 8.5: cel 10 typów nieosiągnięty — potwierdzonych i wysłanych %s; nie dobieram spotkań bez rynku lub danych",
-                        len(sent_ids))
+        logging.info("FT corners: wysłano dziś %s/%s typów; nie dobieram spotkań bez spełnionych warunków",
+                     len(sent_ids),FT_DAILY_TARGET)
 
 
 def main():
