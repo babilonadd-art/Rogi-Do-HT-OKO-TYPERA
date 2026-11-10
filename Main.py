@@ -473,9 +473,74 @@ MATCHDAY_LEAGUES={
 _matchday_cache={}
 _matchday_history_cache={}
 
+MATCHDAY_LEAGUE_INDEX_URL="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/LEAGUE_INDEX.md"
+_matchday_league_index_cache=None
+
+def load_matchday_league_index():
+    """Load the provider's live 75-competition registry; never assume a fixed league list."""
+    global _matchday_league_index_cache
+    if _matchday_league_index_cache is not None:
+        return _matchday_league_index_cache
+    entries=[]
+    try:
+        response=requests.get(MATCHDAY_LEAGUE_INDEX_URL,
+                              headers={"User-Agent":"OkoTypera/1.0","Accept":"text/plain"},timeout=20)
+        response.raise_for_status()
+        for line in response.text.splitlines():
+            match=re.match(r"^\\|\\s*`([^\\`]+)`\\s*\\|\\s*([^|]+)\\|\\s*([^|]+)\\|",line)
+            if not match:
+                continue
+            folder,display,country=(part.strip() for part in match.groups())
+            if folder and display and country and folder.lower()!="folder":
+                entries.append((folder,display,country))
+        if not entries:
+            raise ValueError("pusty lub nierozpoznany LEAGUE_INDEX.md")
+        _matchday_league_index_cache=entries
+        logging.info("Open Matchday: rejestr lig załadowany — %s rozgrywek",len(entries))
+    except Exception as exc:
+        logging.warning("Open Matchday: nie udało się pobrać indeksu lig: %s",exc)
+        _matchday_league_index_cache=[]
+    return _matchday_league_index_cache
+
 def matchday_folder(league):
-    # Tylko jawne aliasy pełnych nazw — bez ryzykownego dopasowania fragmentów.
-    return MATCHDAY_LEAGUES.get(normalized_team(league))
+    """Resolve Superbet's competition name against aliases and the provider's full registry."""
+    key=normalized_team(league)
+    if not key:
+        return None
+    known=MATCHDAY_LEAGUES.get(key)
+    if known:
+        return known
+    entries=load_matchday_league_index()
+    candidates=[]
+    for folder,display,country in entries:
+        names={normalized_team(display),normalized_team(folder.replace("_"," ").replace("-"," ")),
+               normalized_team(country+display),normalized_team(display+country)}
+        names.discard("")
+        if key in names:
+            return folder
+        # Permit a country prefix/suffix from Superbet, but only for distinctive names.
+        if len(key)>=7:
+            for name in names:
+                if len(name)>=7 and (name in key or key in name):
+                    candidates.append((1.0,folder,display))
+                    break
+                score=SequenceMatcher(None,key,name).ratio()
+                if score>=0.88:
+                    candidates.append((score,folder,display))
+    if not candidates:
+        logging.info("Open Matchday: liga '%s' nie występuje w rejestrze %s rozgrywek",
+                     league,len(entries))
+        return None
+    # Ambiguous fuzzy matches are rejected rather than assigning another league's stats.
+    candidates.sort(reverse=True)
+    best=candidates[0]
+    if len(candidates)>1 and best[0]-candidates[1][0]<0.04 and best[1]!=candidates[1][1]:
+        logging.warning("Open Matchday: niejednoznaczne mapowanie ligi '%s': %s / %s",
+                        league,best[2],candidates[1][2])
+        return None
+    logging.info("Open Matchday: automatyczne mapowanie ligi '%s' -> %s (%s)",
+                 league,best[1],best[2])
+    return best[1]
 
 def load_matchday_results(league):
     folder=matchday_folder(league)
