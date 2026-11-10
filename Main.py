@@ -1706,13 +1706,6 @@ FT_ALT_LINE=10.5
 FT_ALT_MIN_ODDS=1.85
 FT_ALT_MIN_AVG=12.5
 FT_MIN_SEASON_SAMPLE=3
-FT_KICKOFF_WINDOW_MINUTES=7
-
-def excluded_corner_league(league):
-    name=normalized_team(league)
-    return any(token in name for token in ("ukraine","ukrain","ukraina","ukrainska","ukr"))
-
-
 def season_team_ft_corner_history(team,rows,fixture_date):
     """All current-season matches before kickoff; returns team's own corners and match total."""
     matched=[]
@@ -1778,16 +1771,12 @@ def monitor_ft_corners(c):
             kickoff=int(datetime.fromisoformat(str(fx["utc_date"]).replace("Z","+00:00")).timestamp())
         except Exception:
             continue
-        minutes_to_kickoff=(kickoff-now.timestamp())/60
-        # GitHub Actions runs every five minutes; a short window catches the
-        # bookmaker's final line near kickoff without sending picks hours early.
-        if not 0<minutes_to_kickoff<=FT_KICKOFF_WINDOW_MINUTES:
+        # Poranny skan obejmuje wszystkie dzisiejsze mecze przed rozpoczęciem,
+        # bez ograniczenia do kilku minut przed pierwszym gwizdkiem.
+        if kickoff<=now.timestamp():
             continue
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed) or "Liga niepodana"
-        if excluded_corner_league(league):
-            logging.info("FT corners: pominięto wykluczoną ligę %s",league)
-            continue
         rows=load_matchday_results(league)
         if not rows:
             logging.info("FT corners: brak bieżącego sezonu Open Matchday dla %s — bez typu",league)
@@ -1917,8 +1906,8 @@ def main():
             if all(delete_telegram_message(mid) for mid in ids):
                 os.remove(cleanup_file)
                 logging.warning("Telegram: zakończono czyszczenie %s wcześniejszych postów",len(ids))
-        # Odtwórz dzisiejsze wysłane typy wraz z message_id, aby skan co 5 minut
-        # nie opublikował ich ponownie. Event IDs poprzedniej wysyłki nie były utrwalone.
+        # Odtwórz dzisiejsze wysłane typy wraz z message_id, aby ponowny
+        # start workflow nie opublikował ich ponownie.
         seed_file="FT_ALREADY_SENT"
         if os.path.exists(seed_file):
             c.execute("DELETE FROM ft_corner_picks")
