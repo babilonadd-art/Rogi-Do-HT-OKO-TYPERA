@@ -1,0 +1,51 @@
+name: PREMATCH FT CORNERS — Superbet
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Main.py"
+      - "tests/test_ft_corners_prematch.py"
+      - ".github/workflows/FT-Corners-Prematch.yml"
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prematch-ft-corners
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja bibliotek
+        run: pip install -r requirements.txt
+      - name: Kontrola składni
+        run: python -m py_compile Main.py
+      - name: Testy strategii rożnych FT
+        run: python -m unittest tests/test_ft_corners_prematch.py
+      - name: Skan przedmeczowych rożnych FT
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python Main.py
+      - name: Zapis historii wysłanych typów
+        run: |
+          if [ -f okotypera_ht.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_ht.db
+            git diff --cached --quiet || git commit -m "Persist prematch FT corner picks"
+            git pull --rebase --autostash origin main
+            git push
+          fi
