@@ -487,7 +487,7 @@ def load_matchday_league_index():
                               headers={"User-Agent":"OkoTypera/1.0","Accept":"text/plain"},timeout=20)
         response.raise_for_status()
         for line in response.text.splitlines():
-            match=re.match(r"^\\|\\s*`([^\\`]+)`\\s*\\|\\s*([^|]+)\\|\\s*([^|]+)\\|",line)
+            match=re.match(r"^\|\s*`([^`]+)`\s*\|\s*([^|]+)\|\s*([^|]+)\|",line)
             if not match:
                 continue
             folder,display,country=(part.strip() for part in match.groups())
