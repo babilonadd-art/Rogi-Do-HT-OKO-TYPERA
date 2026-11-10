@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   scan:
+    if: ${{ false }} # Wyłączono: ten workflow uruchamiał CelneStrzalyFT.py i publikował niechciane typy.
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
