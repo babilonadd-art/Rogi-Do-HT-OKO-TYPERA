@@ -1857,26 +1857,15 @@ def monitor_ft_corners(c):
         link=superbet_match_url(item["event_id"],item["home"],item["away"],item["start_ts"])
         line_label=f"OVER {item['line']:.1f}"
         scenario_label=("A — standard" if item["scenario"]=="A" else "B — wysoka średnia")
-        msg=("⚽ TYP FT — RZUTY ROŻNE
-"
-             f"🔢 TYP NR.{type_no}
-"
-             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}
-
-"
-             f"🏆 {item['league']}
-⚔️ {item['home']} – {item['away']}
-"
-             f"🎯 Rynek: {line_label} rzutów rożnych — cały mecz (FT)
-"
-             f"💹 Kurs Superbet: {fresh_price:.2f}
-"
-             f"📐 Scenariusz: {scenario_label}
-"
-             f"📊 Statystyki bieżącego sezonu: {item['profile']}
-"
-             f"💰 Stawka informacyjna: {STAKE} zł
-"
+        msg=("⚽ TYP FT — RZUTY ROŻNE\n"
+             f"🔢 TYP NR.{type_no}\n"
+             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
+             f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
+             f"🎯 Rynek: {line_label} rzutów rożnych — cały mecz (FT)\n"
+             f"💹 Kurs Superbet: {fresh_price:.2f}\n"
+             f"📐 Scenariusz: {scenario_label}\n"
+             f"📊 Statystyki bieżącego sezonu: {item['profile']}\n"
+             f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Superbet: {link}")
         message_id=send(msg)
         if message_id:
