@@ -596,10 +596,26 @@ def load_all_matchday_results():
     Cup fixtures are evaluated against each club's domestic-league history too;
     corner stats are used only where the source actually supplies non-empty values.
     """
-    entries=load_matchday_league_index()
-    folders=list(dict.fromkeys(folder for folder,_,_ in entries))
+    # build_summary.json identifies exactly which competitions currently have
+    # non-empty corner statistics. Download those files only (13 at present),
+    # not all 75 result files that mostly contain scores without corners.
+    folders=[]
+    try:
+        summary_url="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/build_summary.json"
+        response=requests.get(summary_url,headers={"User-Agent":"OkoTypera/1.0"},timeout=15)
+        response.raise_for_status()
+        summary=response.json()
+        folders=[str(item.get("folder","")).replace("data/","",1)
+                 for item in summary.get("leagues",[])
+                 if int(item.get("corners") or 0)>0 and item.get("folder")]
+    except Exception as exc:
+        logging.warning("Open Matchday: build_summary.json niedostępny, używam pełnego indeksu lig: %s",exc)
+        entries=load_matchday_league_index()
+        folders=[folder for folder,_,_ in entries]
+    folders=list(dict.fromkeys(folders))
     if not folders:
         return []
+    logging.info("Open Matchday: pobieram historię rożnych z %s rozgrywek mających dane corner",len(folders))
     with ThreadPoolExecutor(max_workers=12) as pool:
         results=list(pool.map(load_matchday_folder_results,folders))
     combined=[]
