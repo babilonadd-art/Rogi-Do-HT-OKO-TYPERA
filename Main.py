@@ -511,6 +511,28 @@ def matchday_folder(league):
     known=MATCHDAY_LEAGUES.get(key)
     if known:
         return known
+    # Superbet commonly prefixes Polish country names (e.g. "Hiszpania - Copa del Rey").
+    # Strip only a leading country label and retry explicit aliases; never use the
+    # stripped generic competition name for fuzzy matching across countries.
+    country_prefixes=(
+        "angliaam","hiszpania","francja","niemcy","wlochy","holandia","portugalia",
+        "belgia","turcja","grecja","polska","szkocja","dania","austria","szwajcaria",
+        "slowacja","slowenia","szwecja","norwegia","finlandia","irlandia","walia",
+        "argentyna","brazylia","meksyk","japonia","australia","chiny","chorwacja",
+        "cypr","rumunia","rosja","ukraina","kazachstan","kolumbia","urugwaj",
+        "egipt","salwador","algieria","anglia","usa","uefa"
+    )
+    for prefix in country_prefixes:
+        if key.startswith(prefix) and len(key)>len(prefix):
+            stripped=key[len(prefix):]
+            known=MATCHDAY_LEAGUES.get(stripped)
+            if known:
+                return known
+    # Polish regional names that have no one-to-one English spelling in the index.
+    if key.endswith("nationalleaguepolnoc"):
+        return "ENG_6_national-league-north"
+    if key.endswith("nationalleaguepoludnie"):
+        return "ENG_6_national-league-south"
     entries=load_matchday_league_index()
     candidates={}
     for folder,display,country in entries:
