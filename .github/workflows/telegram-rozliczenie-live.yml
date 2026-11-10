@@ -1,0 +1,65 @@
+name: TELEGRAM — ROZLICZENIE LIVE
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wyślij rozliczenie LIVE na Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN")
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+          if not token or not chat_id:
+              raise SystemExit("Brak TELEGRAM_BOT_TOKEN lub TELEGRAM_CHAT_ID w GitHub Secrets.")
+
+          message = """📊 ROZLICZENIE TYPÓW LIVE – 10.11
+
+          1. Chapelton Maroons – Racing United
+          Typ: Over 0.5 FT @1.72
+          Wynik: 0:0 ❌ PRZEGRANY
+
+          2. Vila Real CE – Ceara II
+          Typ: Over 1.5 FT @1.80
+          Wynik: 1:1 ✅ WYGRANY
+
+          3. CD Marathon (R) – CD Platense (R)
+          Typ: Over 0.5 FT @1.65
+          Wynik: 0:1 ✅ WYGRANY
+
+          PODSUMOWANIE
+          ✅ 2 wygrane
+          ❌ 1 przegrana
+          Stawki: 30 zł
+          Zwrot: 34,50 zł
+          ZYSK: +4,50 zł"""
+
+          data = json.dumps({"chat_id": chat_id, "text": message}).encode()
+          request = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=data,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  result = json.loads(response.read().decode())
+          except urllib.error.HTTPError as error:
+              detail = error.read().decode(errors="replace")
+              raise SystemExit(f"Telegram API HTTP {error.code}: {detail}")
+          if not result.get("ok"):
+              raise SystemExit(f"Telegram API odrzuciło wiadomość: {result}")
+          print("Wiadomość wysłana. Telegram message_id:", result["result"]["message_id"])
+          PY
