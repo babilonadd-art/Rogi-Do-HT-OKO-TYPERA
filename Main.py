@@ -395,6 +395,7 @@ MATCHDAY_LEAGUES={
     "anglianationalleague":"ENG_5_national-league","nationalleagueengland":"ENG_5_national-league",
     "anglianationalleaguenorth":"ENG_6_national-league-north","nationalleaguenorth":"ENG_6_national-league-north",
     "anglianationalleaguesouth":"ENG_6_national-league-south","nationalleaguesouth":"ENG_6_national-league-south",
+    "angliaamnationalleaguepolnoc":"ENG_6_national-league-north","angliaamnationalleaguesouth":"ENG_6_national-league-south",
     "northernpremierleague":"ENG_7_northern-premier-league","eflcup":"ENG_CUP_efl-cup","facup":"ENG_CUP_fa-cup",
     "hiszpaniaprimeradivision":"ESP_1_la-liga","hiszpianalaliga":"ESP_1_la-liga","spainlaliga":"ESP_1_la-liga","laliga":"ESP_1_la-liga","primera":"ESP_1_la-liga",
     "hiszpaniasegundadivision":"ESP_2_segunda-division","segunda":"ESP_2_segunda-division","copadelrey":"ESP_CUP_copa-del-rey",
@@ -511,32 +512,31 @@ def matchday_folder(league):
     if known:
         return known
     entries=load_matchday_league_index()
-    candidates=[]
+    candidates={}
     for folder,display,country in entries:
         names={normalized_team(display),normalized_team(folder.replace("_"," ").replace("-"," ")),
                normalized_team(country+display),normalized_team(display+country)}
         names.discard("")
         if key in names:
             return folder
-        # Permit a country prefix/suffix from Superbet, but only for distinctive names.
-        if len(key)>=7:
-            for name in names:
-                if len(name)>=7 and (name in key or key in name):
-                    candidates.append((1.0,folder,display))
-                    break
-                score=SequenceMatcher(None,key,name).ratio()
-                if score>=0.88:
-                    candidates.append((score,folder,display))
+        # Fuzzy matching is deliberately strict: avoid mapping e.g. Uruguay Segunda
+        # Division to Spain's Segunda División or National League North to National League.
+        for name in names:
+            if len(name)<10:
+                continue
+            score=SequenceMatcher(None,key,name).ratio()
+            if score>=0.93:
+                candidates[folder]=max(candidates.get(folder,(0.0,display)),
+                                       (score,display),key=lambda item:item[0])
     if not candidates:
         logging.info("Open Matchday: liga '%s' nie występuje w rejestrze %s rozgrywek",
                      league,len(entries))
         return None
-    # Ambiguous fuzzy matches are rejected rather than assigning another league's stats.
-    candidates.sort(reverse=True)
-    best=candidates[0]
-    if len(candidates)>1 and best[0]-candidates[1][0]<0.04 and best[1]!=candidates[1][1]:
+    ranked=sorted(((score,folder,display) for folder,(score,display) in candidates.items()),reverse=True)
+    best=ranked[0]
+    if len(ranked)>1 and best[0]-ranked[1][0]<0.04:
         logging.warning("Open Matchday: niejednoznaczne mapowanie ligi '%s': %s / %s",
-                        league,best[2],candidates[1][2])
+                        league,best[2],ranked[1][2])
         return None
     logging.info("Open Matchday: automatyczne mapowanie ligi '%s' -> %s (%s)",
                  league,best[1],best[2])
