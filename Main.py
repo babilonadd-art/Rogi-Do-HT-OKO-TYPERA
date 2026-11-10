@@ -564,24 +564,57 @@ def matchday_folder(league):
                  league,best[1],best[2])
     return best[1]
 
-def load_matchday_results(league):
-    folder=matchday_folder(league)
+def load_matchday_folder_results(folder):
     if not folder:
-        logging.info("Open Matchday: brak mapowania ligi z wynikami dla %s",league)
         return None
     if folder in _matchday_cache:
         return _matchday_cache[folder]
     url=f"{MATCHDAY_BASE}/{folder}/results_{MATCHDAY_SEASON}.csv"
     try:
-        response=requests.get(url,headers={"User-Agent":"OkoTypera/1.0","Accept":"text/csv"},timeout=25)
+        response=requests.get(url,headers={"User-Agent":"OkoTypera/1.0","Accept":"text/csv"},timeout=18)
         response.raise_for_status()
         rows=list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
         _matchday_cache[folder]=rows
-        logging.info("Open Matchday: pobrano %s historycznych meczów dla %s",len(rows),league)
         return rows
     except Exception as exc:
-        logging.warning("Open Matchday: nie udało się pobrać historii %s: %s",league,exc)
+        logging.debug("Open Matchday: brak pliku/statystyk %s: %s",folder,exc)
+        _matchday_cache[folder]=[]
+        return []
+
+def load_matchday_results(league):
+    folder=matchday_folder(league)
+    if not folder:
+        logging.info("Open Matchday: brak mapowania ligi z wynikami dla %s",league)
         return None
+    rows=load_matchday_folder_results(folder)
+    logging.info("Open Matchday: pobrano %s historycznych meczów dla %s",len(rows or []),league)
+    return rows
+
+def load_all_matchday_results():
+    """Fetch current-season history from every indexed competition, in parallel.
+
+    Cup fixtures are evaluated against each club's domestic-league history too;
+    corner stats are used only where the source actually supplies non-empty values.
+    """
+    entries=load_matchday_league_index()
+    folders=list(dict.fromkeys(folder for folder,_,_ in entries))
+    if not folders:
+        return []
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results=list(pool.map(load_matchday_folder_results,folders))
+    combined=[]
+    seen=set()
+    for rows in results:
+        for row in rows or []:
+            key=(str(row.get("date") or ""),normalized_team(row.get("home")),
+                 normalized_team(row.get("away")))
+            if key in seen:
+                continue
+            seen.add(key)
+            combined.append(row)
+    logging.info("Open Matchday: globalna historia %s/%s rozgrywek, %s unikalnych meczów",
+                 sum(1 for rows in results if rows),len(folders),len(combined))
+    return combined
 
 def recent_team_ht_corner_history(team,rows,fixture_date):
     cache_key=(id(rows),normalized_team(team),fixture_date)
@@ -1836,6 +1869,10 @@ def monitor_ft_corners(c):
     start=now.replace(hour=0,minute=0,second=0,microsecond=0)
     end=now.replace(hour=23,minute=59,second=59,microsecond=0)
     events=superbet_football_events(start,end)
+    history_rows=load_all_matchday_results()
+    if not history_rows:
+        logging.error("FT corners: nie udało się pobrać globalnej historii Open Matchday")
+        return
     c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_picks(
         event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,
         odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL,telegram_message_id INTEGER)""")
@@ -1864,13 +1901,11 @@ def monitor_ft_corners(c):
             continue
         home,away=(x.strip() for x in parts)
         league=extract_league_name(listed) or "Liga niepodana"
-        rows=load_matchday_results(league)
-        if not rows:
-            logging.info("FT corners: brak bieżącego sezonu Open Matchday dla %s — bez typu",league)
-            continue
+        # Korzystaj z historii klubu ze wszystkich rozgrywek Open Matchday,
+        # a nie tylko z pucharu/l ligi, w której rozgrywany jest dzisiejszy mecz.
         fixture_date=datetime.fromtimestamp(kickoff,timezone.utc).date().isoformat()
-        home_history=season_team_ft_corner_history(home,rows,fixture_date)
-        away_history=season_team_ft_corner_history(away,rows,fixture_date)
+        home_history=season_team_ft_corner_history(home,history_rows,fixture_date)
+        away_history=season_team_ft_corner_history(away,history_rows,fixture_date)
         if len(home_history)<FT_MIN_SEASON_SAMPLE or len(away_history)<FT_MIN_SEASON_SAMPLE:
             logging.info("FT corners: za mała próba sezonowa %s %s/%s, %s %s/%s",
                          home,len(home_history),FT_MIN_SEASON_SAMPLE,
