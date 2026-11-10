@@ -1986,7 +1986,8 @@ def monitor_ft_corners(c):
         scenario_label=("A — standard" if item["scenario"]=="A" else "B — wysoka średnia")
         msg=("⚽ TYP FT — RZUTY ROŻNE\n"
              f"🔢 TYP NR.{type_no}\n"
-             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n\n"
+             f"📅 {kickoff:%d.%m.%Y} | 🕒 {kickoff:%H:%M}\n"
+             "━━━━━━━━━━━━━━━━━━\n"
              f"🏆 {item['league']}\n⚔️ {item['home']} – {item['away']}\n"
              f"🎯 Rynek: {line_label} rzutów rożnych — cały mecz (FT)\n"
              f"💹 Kurs Superbet: {fresh_price:.2f}\n"
