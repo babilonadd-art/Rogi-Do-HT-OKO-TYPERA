@@ -8,7 +8,7 @@ on:
       - "tests/test_ft_corners_prematch.py"
       - ".github/workflows/FT-Corners-Prematch.yml"
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 6 * * *"
 
 permissions:
   contents: write
