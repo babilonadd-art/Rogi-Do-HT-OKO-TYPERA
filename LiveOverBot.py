@@ -667,13 +667,15 @@ def main():
         stats_cache = {}
         # Kontrola źródła: raz na skan pobierz próbkę statystyk z jednego meczu LIVE.
         if stats_fixtures:
-            sample_fixture = stats_fixtures[0]
-            sample_slug = sportscore_fixture_slug(sample_fixture)
-            if sample_slug:
-                stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
-                logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
-            else:
-                logging.warning("SportScore mecz LIVE bez adresu szczegółów; pola=%s próbka=%s", sorted(sample_fixture.keys()), sample_fixture)
+            sample_indexes = sorted(set((0, len(stats_fixtures) // 2, len(stats_fixtures) - 1)))
+            for sample_index in sample_indexes:
+                sample_fixture = stats_fixtures[sample_index]
+                sample_slug = sportscore_fixture_slug(sample_fixture)
+                if sample_slug:
+                    stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
+                    logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
+                else:
+                    logging.warning("SportScore mecz LIVE bez adresu szczegółów; pola=%s", sorted(sample_fixture.keys()))
         candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
