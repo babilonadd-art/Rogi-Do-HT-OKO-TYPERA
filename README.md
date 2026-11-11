@@ -1,24 +1,28 @@
-# Celne strzały FT — OKO TYPERA
+# Rogi do HT — OKO TYPERA
 
-Bot Telegram wyszukujący przedmeczowe typy na **celne strzały konkretnej drużyny w całym meczu (FT)** w ofercie Superbet.
+Repozytorium obsługuje osobno:
+- dotychczasowe strategie rożnych — ich kryteria i harmonogram pozostają bez zmian;
+- dodatkowe typy LIVE na gole, publikowane przez `LiveOverBot.py`.
 
-## Ustawienia
-- Rynek: celne strzały drużyny, pełny mecz (FT).
-- Linie: Over 2.5, 3.5 lub 4.5 — wyłącznie jeśli taka linia jest rzeczywiście wystawiona.
-- Kurs: od 1.70 do 2.50.
-- Maksymalnie 10 typów na dzień (czas lokalny Europe/Warsaw).
-- Skanowanie co 5 minut.
-- Skan obejmuje pozostałą część bieżącego dnia i następny dzień.
-- Ten sam mecz może zostać wysłany tylko raz; historia jest zapisywana w `celne_strzaly_ft.db`.
-- Każdy typ zawiera numer, godzinę, drużynę, linię, aktualny kurs i link do meczu w Superbet.
-- Przed publikacją bot ponownie sprawdza rynek i kurs. Jeśli rynek zniknie lub kurs wyjdzie poza zakres, typ nie jest wysyłany.
+## LIVE Over 0.5 gola
 
-## Sekrety GitHub
-W Settings → Secrets and variables → Actions:
+- **Over 0.5 HT:** tylko wynik 0:0, minuty 1–35, kurs co najmniej 1.60.
+- **Over 0.5 FT:** tylko wynik 0:0, minuty 1–75, kurs co najmniej 1.70.
+- Tylko dokładna linia Over 0.5; bot nie zamienia jej na Over 1.5 ani inne rynki.
+- Kurs i rynek są sprawdzane ponownie bezpośrednio przed wysłaniem.
+- Maksymalnie **10 typów łącznie dziennie** dla HT i FT (strefa Europe/Warsaw).
+- Skan LIVE uruchamia się co 5 minut.
+- Źródło kursów i listy spotkań: oferta LIVE Superbet. Nie używamy Flashscore ani SofaScore.
+- Historia wysłanych typów LIVE jest zapisywana w `okotypera_rogi.db`, co blokuje duplikaty.
+
+## Telegram
+
+W GitHub → Settings → Secrets and variables → Actions wymagane są:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
 Bot Telegram musi mieć uprawnienie administratora do publikowania na kanale.
 
 ## Ważne
-Bot nie dopisuje kursów ani rynków, których Superbet nie udostępnia. Brak typu w danym skanie oznacza, że nie znaleziono potwierdzonej oferty spełniającej kryteria — nie jest to powód do losowego dobierania spotkań. Typy nie są gwarancją wyniku.
+
+Bot publikuje tylko rzeczywisty, aktywny rynek i kurs od wskazanego minimum. Jeśli Superbet nie udostępnia odpowiedniego rynku albo wynik nie wynosi 0:0, typ nie zostanie wysłany. Brak typu nie jest powodem do dobierania meczu na siłę. Typy nie gwarantują wygranej.
