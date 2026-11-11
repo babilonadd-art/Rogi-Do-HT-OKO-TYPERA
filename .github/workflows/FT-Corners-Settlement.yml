@@ -1,0 +1,48 @@
+name: SETTLEMENT FT CORNERS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ft-corners-db
+  cancel-in-progress: false
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja bibliotek
+        run: pip install -r requirements.txt
+      - name: Kontrola składni i testy
+        run: |
+          python -m py_compile Main.py
+          python -m unittest discover -s tests -p "test_ft_corners_prematch.py"
+      - name: Rozliczenie nierozliczonych typów FT
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
+          BOT_MODE: settle
+        run: python Main.py
+      - name: Zapis historii rozliczeń
+        run: |
+          if [ -f okotypera_ht.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add okotypera_ht.db
+            git diff --cached --quiet || git commit -m "Persist FT corner settlements"
+            git pull --rebase --autostash origin main
+            git push
+          fi
