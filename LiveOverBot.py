@@ -19,8 +19,8 @@ DB = "okotypera_rogi.db"
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
-# LIVE: stałe rynki Over 0.5 i Over 1.5 gola, dopóki dana linia nie jest rozliczona.
-# HT: 1–35 minuta, minimalny kurs 1.60. FT: 1–75 minuta, minimalny kurs 1.70.
+# LIVE: dowolna dostępna linia Over goli, o ile nie jest jeszcze rozliczona.
+# HT: 1–35 minuta, minimalny kurs 1.50. FT: 1–75 minuta, minimalny kurs 1.60.
 HT_MIN_MINUTE = 1
 HT_MAX_MINUTE = 35
 FT_MIN_MINUTE = 1
@@ -234,7 +234,8 @@ def exact_live_over_markets(event, phase, current_total):
     if phase not in ("HT", "FT") or not event_is_still_live(event):
         return []
     min_odds = HT_MIN_ODDS if phase == "HT" else FT_MIN_ODDS
-    available_lines = (0.5, 1.5) if current_total < 2 else ()
+    # Akceptuj każdą wystawioną linię połówkową, która nadal może wejść.
+    # Np. przy 2 golach Over 2.5/3.5 pozostają nierozliczone.
     results = []
     for market in event.get("markets") or []:
         name = str(market.get("name") or "")
@@ -259,7 +260,7 @@ def exact_live_over_markets(event, phase, current_total):
             if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
             # Dopuszczamy wyłącznie wskazane linie; rynek musi być jeszcze nierozliczony.
-            if not any(abs(line - required) <= 0.001 for required in available_lines):
+            if abs(line * 2 - round(line * 2)) > 0.001 or line <= current_total:
                 continue
             if current_total >= line + 0.5:
                 continue
@@ -511,9 +512,9 @@ def stats_confirm_over(stats, minute, line):
         stats.get("dangerous_attacks", 0) >= min_pressure
         or stats.get("corners", 0) >= max(1, math.ceil(minute / 25))
     )
-    if line >= 1.5:
-        min_shots += 1
-        min_on_target += 1
+    extra_goals = max(0, math.ceil(line - 0.5))
+    min_shots += extra_goals
+    min_on_target += extra_goals
     return shots >= min_shots and shots_on_target >= min_on_target and enough_pressure
 
 
