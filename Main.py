@@ -2064,7 +2064,7 @@ def monitor_ft_corners(c):
                  f"{combined_average:.2f}")
         candidates.append({"event_id":int(eid),"home":home,"away":away,"league":league,
                            "start_ts":kickoff,"home_avg":home_avg,"away_avg":away_avg,
-                           "combined_average":combined_average,"profile":profile})
+                           "combined_average":combined_average,"profile":profile,"history_source":history_source})
     logging.info("FT corners: wydarzenia=%s, kandydaci z próbą sezonową=%s, już wysłane dziś=%s",
                  len(events),len(candidates),len(sent_ids))
 
@@ -2124,6 +2124,7 @@ def monitor_ft_corners(c):
              f"💹 Kurs Superbet: {fresh_price:.2f}\n"
              f"📐 Scenariusz: {scenario_label}\n"
              f"📊 Statystyki bieżącego sezonu: {item['profile']}\n"
+             f"{'📚 Dane: Cornerflick — cornerflick.com\n' if 'Cornerflick' in item.get('history_source','') else ''}"
              f"💰 Stawka informacyjna: {STAKE} zł\n"
              f"🔗 Superbet: {link}")
         message_id=send(msg)
