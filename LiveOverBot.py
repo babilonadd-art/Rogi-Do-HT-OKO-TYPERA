@@ -419,7 +419,7 @@ def main():
                 home, away = pick["home"], pick["away"]
             phase_label = "DO PRZERWY (HT)" if pick["phase"] == "HT" else "DO KOŃCA MECZU (FT)"
             message = (
-                f"🔴 LIVE LATE OVER | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
+                f"🔴 LIVE OVER 0.5 | Typ {sent_today + 1}/{MAX_PICKS_PER_DAY} | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
                 f"⚽ {home} – {away}\n"
                 f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
                 f"🏷 Rynek: {matching['market']}\n"
