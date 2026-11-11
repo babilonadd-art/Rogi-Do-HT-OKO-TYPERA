@@ -527,6 +527,19 @@ def db_connect():
     return conn
 
 
+def reset_live_over_history_if_requested(conn):
+    """Jednorazowo czyści wyłącznie historię wysłanych typów LIVE Over HT/FT."""
+    marker = "reset_live_over_history.flag"
+    if not os.path.exists(marker):
+        return False
+    conn.execute("DELETE FROM live_over_sent")
+    conn.commit()
+    os.remove(marker)
+    logging.warning("ZRESETOWANO historię LIVE Over HT/FT; licznik dzienny ustawiony na 0/%d.",
+                    MAX_PICKS_PER_DAY)
+    return True
+
+
 def daily_sent_count(conn, day=None):
     """Liczba typów LIVE Over wysłanych w bieżącym dniu w strefie Europe/Warsaw."""
     day = day or datetime.now(TZ).date().isoformat()
@@ -566,6 +579,7 @@ def main():
         return
     conn = db_connect()
     try:
+        reset_live_over_history_if_requested(conn)
         sent_today = daily_sent_count(conn)
         remaining_today = max(0, MAX_PICKS_PER_DAY - sent_today)
         if remaining_today == 0:
