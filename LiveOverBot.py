@@ -25,8 +25,8 @@ HT_MIN_MINUTE = 1
 HT_MAX_MINUTE = 35
 FT_MIN_MINUTE = 1
 FT_MAX_MINUTE = 75
-HT_MIN_ODDS = 1.60
-FT_MIN_ODDS = 1.70
+HT_MIN_ODDS = 1.50
+FT_MIN_ODDS = 1.60
 MAX_PICKS_PER_DAY = 10
 MAX_PICKS_PER_RUN = 10
 STAKE = 10
@@ -504,15 +504,15 @@ def stats_confirm_over(stats, minute, line):
         return False
     shots = stats["shots"]
     shots_on_target = stats["shots_on_target"]
-    min_shots = max(3, math.ceil(minute * 0.20))
-    min_on_target = max(1, math.ceil(minute * 0.06))
-    min_pressure = max(10, math.ceil(minute * 0.65))
+    min_shots = max(2, math.ceil(minute * 0.15))
+    min_on_target = max(1, math.ceil(minute * 0.04))
+    min_pressure = max(7, math.ceil(minute * 0.45))
     enough_pressure = (
         stats.get("dangerous_attacks", 0) >= min_pressure
         or stats.get("corners", 0) >= max(1, math.ceil(minute / 25))
     )
     if line >= 1.5:
-        min_shots += 2
+        min_shots += 1
         min_on_target += 1
     return shots >= min_shots and shots_on_target >= min_on_target and enough_pressure
 
@@ -621,8 +621,13 @@ def main():
             total = sum(score)
             for phase in phases:
                 for market in exact_live_over_markets(detail, phase, total):
-                    key = f"{event_id}|{phase}|OVER|{market['line']:.2f}"
-                    if conn.execute("SELECT 1 FROM live_over_sent WHERE pick_key=?", (key,)).fetchone():
+                    key = f"{event_id}|{phase}"
+                    # Blokuj ponowny typ na ten sam mecz i fazę przez cały dzień,
+                    # również dla starszych wpisów zapisanych z linią w kluczu.
+                    if conn.execute(
+                        "SELECT 1 FROM live_over_sent WHERE event_id=? AND (pick_key=? OR pick_key LIKE ?) LIMIT 1",
+                        (str(event_id), key, f"{event_id}|{phase}|%"),
+                    ).fetchone():
                         continue
                     candidates.append({
                         "event_id": str(event_id), "phase": phase, "home": home, "away": away,
