@@ -44,7 +44,8 @@ jobs:
           if [ -f okotypera_rogi.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A -- okotypera_rogi.db reset_live_over_history.flag
+            git add -A -- okotypera_rogi.db
+            if [ -f reset_live_over_history.flag ]; then git add -- reset_live_over_history.flag; fi
             git diff --cached --quiet || git commit -m "Update LIVE Over history and database"
             git pull --rebase --autostash origin main
             git push
