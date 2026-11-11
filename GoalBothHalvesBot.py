@@ -153,10 +153,12 @@ def kickoff_timestamp(event):
 
 def is_prematch(event):
     values = status_values(event)
-    rejected = ("LIVE", "INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF",
-                "HALFTIME", "STARTED", "IN PROGRESS", "FINISHED", "ENDED",
-                "CANCELLED", "POSTPONED", "ABANDONED")
-    if any(any(token in value for token in rejected) for value in values):
+    rejected = {"LIVE", "INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF",
+                "HALFTIME", "STARTED", "IN PROGRESS", "IN_PROGRESS", "FINISHED",
+                "ENDED", "CANCELLED", "POSTPONED", "ABANDONED"}
+    if any(value.strip() in rejected or
+           any(token in value for token in ("INPLAY", "IN_PLAY", "FIRST_HALF", "SECOND_HALF"))
+           for value in values):
         return False
     prematch_tokens = ("NOT_STARTED", "NOT STARTED", "PREMATCH", "PRE_MATCH", "SCHEDULED", "NOT_LIVE")
     if any(any(token in value for token in prematch_tokens) for value in values):
