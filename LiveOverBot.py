@@ -6,6 +6,7 @@ import json
 import unicodedata
 import math
 import difflib
+from urllib.parse import urlparse
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -457,8 +458,21 @@ def extract_sportscore_stats(payload):
     return totals
 
 
-def sportscore_match_stats(fixture):
+def sportscore_fixture_slug(fixture):
     slug = fixture.get("slug") or fixture.get("match_slug") or fixture.get("url_slug")
+    if slug:
+        return str(slug).strip("/")
+    url = fixture.get("url") or fixture.get("match_url") or ""
+    parts = [part for part in urlparse(str(url)).path.split("/") if part]
+    if "match" in parts:
+        index = parts.index("match")
+        if index + 1 < len(parts):
+            return parts[index + 1]
+    return None
+
+
+def sportscore_match_stats(fixture):
+    slug = sportscore_fixture_slug(fixture)
     if not slug:
         return None
     try:
@@ -598,12 +612,12 @@ def main():
         # Kontrola źródła: raz na skan pobierz próbkę statystyk z jednego meczu LIVE.
         if stats_fixtures:
             sample_fixture = stats_fixtures[0]
-            sample_slug = sample_fixture.get("slug") or sample_fixture.get("match_slug") or sample_fixture.get("url_slug")
+            sample_slug = sportscore_fixture_slug(sample_fixture)
             if sample_slug:
                 stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
                 logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
             else:
-                logging.warning("SportScore mecz LIVE bez slug; pola=%s próbka=%s", sorted(sample_fixture.keys()), sample_fixture)
+                logging.warning("SportScore mecz LIVE bez adresu szczegółów; pola=%s próbka=%s", sorted(sample_fixture.keys()), sample_fixture)
         candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
@@ -611,7 +625,7 @@ def main():
             if not fixture:
                 logging.info("POMINIĘTO %s - %s: brak dopasowania w SportScore", item["home"], item["away"])
                 continue
-            slug = fixture.get("slug") or fixture.get("match_slug") or fixture.get("url_slug")
+            slug = sportscore_fixture_slug(fixture)
             if slug not in stats_cache:
                 stats_cache[slug] = sportscore_match_stats(fixture)
             stats = stats_cache[slug]
