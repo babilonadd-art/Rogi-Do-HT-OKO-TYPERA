@@ -40,6 +40,11 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5), "FT", 0), [])
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5), "HT", 0), [])
 
+    def test_any_unsettled_over_line_is_accepted_for_current_score(self):
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 2.5, 2.10), "FT", 2)[0]["line"], 2.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 3.5, 2.40), "FT", 2)[0]["line"], 3.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.10), "FT", 2), [])
+
     def test_over_lines_only_available_until_settlement(self):
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.20), "FT", 1), [])
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.20), "FT", 1)[0]["line"], 1.5)
