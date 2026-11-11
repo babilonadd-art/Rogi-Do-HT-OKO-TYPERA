@@ -1859,6 +1859,108 @@ FT_ALT_LINE=10.5
 FT_ALT_MIN_ODDS=1.85
 FT_ALT_MIN_AVG=12.5
 FT_MIN_SEASON_SAMPLE=3
+
+# Cornerflick — darmowe pliki sezonowe JSON + statystyki meczowe (CC BY 4.0).
+# Działa jako główne źródło historii FT; Open Matchday pozostaje awaryjnym fallbackiem.
+CORNERFLICK_BASE="https://cornerflick.com/football"
+CORNERFLICK_COMPETITIONS={
+    "angliapremierleague":"premier-league","premierleague":"premier-league",
+    "hiszpianaprimeradivision":"la-liga","laliga":"la-liga","spainlaliga":"la-liga",
+    "wlochyseriea":"serie-a","seriea":"serie-a",
+    "niemcybundesliga":"bundesliga","bundesliga":"bundesliga",
+    "francjaligue1":"ligue-1","ligue1":"ligue-1",
+    "uefachampionsleague":"champions-league","championsleague":"champions-league",
+    "uefaeuropaleague":"europa-league","europaleague":"europa-league",
+    "uefaconferenceleague":"conference-league","conferenceleague":"conference-league",
+    "holandiaeredivisie":"eredivisie","eredivisie":"eredivisie",
+    "turcjasuperlig":"super-lig","superlig":"super-lig",
+    "portugaliaprimeiraliga":"primeira-liga","primeiraliga":"primeira-liga",
+    "usamls":"mls","mls":"mls","brasilseriea":"brasileirao","brasileirao":"brasileirao",
+    "argentinaprimeradivision":"liga-profesional","ligaprofesional":"liga-profesional",
+    "scotlandpremiership":"scottish-premiership","scottishpremiership":"scottish-premiership",
+    "daniasuperliga":"danish-superliga","denmarksuperliga":"danish-superliga",
+    "swisssuperleague":"swiss-super-league","belgiaproleague":"belgian-pro-league",
+    "saudiproleague":"saudi-pro-league","japanj1league":"j1-league","j1league":"j1-league",
+}
+_cornerflick_season_cache={}
+_cornerflick_match_cache={}
+
+def cornerflick_competition_slug(league):
+    key=normalized_team(league)
+    if key in CORNERFLICK_COMPETITIONS:
+        return CORNERFLICK_COMPETITIONS[key]
+    # Exact normalized match against the competition labels exposed by Cornerflick.
+    return None
+
+def cornerflick_get_json(url):
+    try:
+        response=requests.get(url,headers={"User-Agent":"OkoTypera/1.0 (football statistics; Cornerflick attribution)",
+                                           "Accept":"application/json"},timeout=25)
+        response.raise_for_status()
+        payload=response.json()
+        return payload if isinstance(payload,dict) else None
+    except Exception as exc:
+        logging.info("Cornerflick: niedostępne %s: %s",url,exc)
+        return None
+
+def cornerflick_season_matches(slug):
+    if slug not in _cornerflick_season_cache:
+        url=f"{CORNERFLICK_BASE}/leagues/{slug}/results/season.json"
+        payload=cornerflick_get_json(url)
+        matches=payload.get("matches") if isinstance(payload,dict) else None
+        _cornerflick_season_cache[slug]=matches if isinstance(matches,list) else []
+        logging.info("Cornerflick: %s — pobrano %s wyników sezonu",slug,len(_cornerflick_season_cache[slug]))
+    return _cornerflick_season_cache[slug]
+
+def cornerflick_match_data(dataset_url):
+    if not dataset_url:
+        return None
+    if dataset_url not in _cornerflick_match_cache:
+        _cornerflick_match_cache[dataset_url]=cornerflick_get_json(dataset_url)
+    return _cornerflick_match_cache[dataset_url]
+
+def cornerflick_match_corners(payload):
+    if not isinstance(payload,dict):
+        return None
+    stats=payload.get("statistics") or []
+    for stat in stats:
+        if normalized_team(stat.get("label",""))=="corners":
+            try:
+                home=int(float(stat.get("home")))
+                away=int(float(stat.get("away")))
+                return home,away
+            except (TypeError,ValueError):
+                return None
+    return None
+
+def cornerflick_team_ft_corner_history(team,league,fixture_date):
+    """Ostatnie mecze drużyny z Cornerflick; zwraca (data, rożne własne, rożne łącznie)."""
+    slug=cornerflick_competition_slug(league)
+    if not slug:
+        return []
+    selected=[]
+    for match in cornerflick_season_matches(slug):
+        kickoff=str(match.get("kickoff_at") or "")
+        match_date=kickoff[:10]
+        if not match_date or match_date>=fixture_date or str(match.get("status") or "").lower()!="finished":
+            continue
+        home=str(match.get("home_team") or "")
+        away=str(match.get("away_team") or "")
+        hs=team_similarity(team,home)
+        aws=team_similarity(team,away)
+        if max(hs,aws)<0.74 or abs(hs-aws)<0.05:
+            continue
+        selected.append((match_date,match,hs>aws))
+    selected.sort(key=lambda item:item[0],reverse=True)
+    history=[]
+    for match_date,match,is_home in selected[:12]:
+        payload=cornerflick_match_data(match.get("dataset_url"))
+        corners=cornerflick_match_corners(payload)
+        if corners is None:
+            continue
+        own=corners[0] if is_home else corners[1]
+        history.append((match_date,own,corners[0]+corners[1]))
+    return history
 def season_team_ft_corner_history(team,rows,fixture_date):
     """All current-season matches before kickoff; returns team's own corners and match total."""
     matched=[]
@@ -1902,10 +2004,9 @@ def monitor_ft_corners(c):
     start=now.replace(hour=0,minute=0,second=0,microsecond=0)
     end=now.replace(hour=23,minute=59,second=59,microsecond=0)
     events=superbet_football_events(start,end)
-    history_rows=load_all_matchday_results()
-    if not history_rows:
-        logging.error("FT corners: nie udało się pobrać globalnej historii Open Matchday")
-        return
+    # Cornerflick jest źródłem głównym. Open Matchday pobieramy tylko jako zapas
+    # dla lig lub drużyn, dla których Cornerflick nie ma wystarczającej próbki.
+    history_rows=None
     c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_picks(
         event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,
         odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL,telegram_message_id INTEGER)""")
@@ -1937,17 +2038,28 @@ def monitor_ft_corners(c):
         # Korzystaj z historii klubu ze wszystkich rozgrywek Open Matchday,
         # a nie tylko z pucharu/l ligi, w której rozgrywany jest dzisiejszy mecz.
         fixture_date=datetime.fromtimestamp(kickoff,timezone.utc).date().isoformat()
-        home_history=season_team_ft_corner_history(home,history_rows,fixture_date)
-        away_history=season_team_ft_corner_history(away,history_rows,fixture_date)
+        home_history=cornerflick_team_ft_corner_history(home,league,fixture_date)
+        away_history=cornerflick_team_ft_corner_history(away,league,fixture_date)
+        history_source="Cornerflick"
         if len(home_history)<FT_MIN_SEASON_SAMPLE or len(away_history)<FT_MIN_SEASON_SAMPLE:
-            logging.info("FT corners: za mała próba sezonowa %s %s/%s, %s %s/%s",
+            if history_rows is None:
+                history_rows=load_all_matchday_results() or []
+            fallback_home=season_team_ft_corner_history(home,history_rows,fixture_date)
+            fallback_away=season_team_ft_corner_history(away,history_rows,fixture_date)
+            if len(home_history)<FT_MIN_SEASON_SAMPLE:
+                home_history=fallback_home
+            if len(away_history)<FT_MIN_SEASON_SAMPLE:
+                away_history=fallback_away
+            history_source="Cornerflick + Open Matchday" if home_history and away_history else "Open Matchday"
+        if len(home_history)<FT_MIN_SEASON_SAMPLE or len(away_history)<FT_MIN_SEASON_SAMPLE:
+            logging.info("FT corners: za mała próba danych %s %s/%s, %s %s/%s",
                          home,len(home_history),FT_MIN_SEASON_SAMPLE,
                          away,len(away_history),FT_MIN_SEASON_SAMPLE)
             continue
         home_avg=sum(x[1] for x in home_history)/len(home_history)
         away_avg=sum(x[1] for x in away_history)/len(away_history)
         combined_average=home_avg+away_avg
-        profile=(f"bieżący sezon, mecze {len(home_history)}+{len(away_history)}; "
+        profile=(f"źródło: {history_source}; mecze {len(home_history)}+{len(away_history)}; "
                  f"średnie rożnych własnych {home_avg:.2f}+{away_avg:.2f}="
                  f"{combined_average:.2f}")
         candidates.append({"event_id":int(eid),"home":home,"away":away,"league":league,
@@ -2110,6 +2222,28 @@ def footballapi_ft_corner_total(c,home,away,start_ts):
             return None
     return sum(values) if len(values)==2 else None
 
+def cornerflick_ft_corner_total(league,home,away,start_ts):
+    """Potwierdzony wynik rożnych FT z rekordu meczu Cornerflick."""
+    slug=cornerflick_competition_slug(league)
+    if not slug:
+        return None
+    utc_day=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    local_day=datetime.fromtimestamp(start_ts,TZ).date().isoformat()
+    for match in cornerflick_season_matches(slug):
+        if str(match.get("kickoff_at") or "")[:10] not in {utc_day,local_day}:
+            continue
+        rh=str(match.get("home_team") or "")
+        ra=str(match.get("away_team") or "")
+        if max(team_similarity(home,rh)+team_similarity(away,ra),
+               team_similarity(home,ra)+team_similarity(away,rh))<1.68:
+            continue
+        if str(match.get("status") or "").lower() not in {"finished","ft","complete","completed"}:
+            return None
+        payload=cornerflick_match_data(match.get("dataset_url"))
+        corners=cornerflick_match_corners(payload)
+        return sum(corners) if corners is not None else None
+    return None
+
 def matchday_ft_corner_total(league,home,away,start_ts):
     """Return a confirmed FT corner total from Open Matchday, or None when absent."""
     rows=load_matchday_results(league)
@@ -2151,12 +2285,12 @@ def settle_ft_corner_picks(c):
     for event_id,league,home,away,start_ts,odds,line,profile in pending:
         if now_ts<int(start_ts)+3*60*60:
             continue
-        total=matchday_ft_corner_total(league,home,away,start_ts)
-        source="Open Matchday"
-        if total is None and "premier" in normalized_team(league):
-            total=footballapi_ft_corner_total(c,home,away,start_ts)
+        total=cornerflick_ft_corner_total(league,home,away,start_ts)
+        source="Cornerflick"
+        if total is None:
+            total=matchday_ft_corner_total(league,home,away,start_ts)
             if total is not None:
-                source="Football API"
+                source="Open Matchday (awaryjnie)"
         if total is None:
             logging.info("FT settlement: brak potwierdzonych rożnych dla %s - %s (%s); czekam na dane",
                          home,away,league)
