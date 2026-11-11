@@ -3,12 +3,16 @@ import re
 import sqlite3
 import logging
 import json
+import unicodedata
+import math
+import difflib
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
 
 SUPERBET_API = "https://production-superbet-offer-pl.freetls.fastly.net"
+SPORTSCORE_API = "https://sportscore.com/api/v1"
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "okotypera_rogi.db"
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -305,6 +309,193 @@ def superbet_url(event):
     return found[0] if found else None
 
 
+def _normal_team_name(value):
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("team_name") or value.get("short_name") or ""
+    value = unicodedata.normalize("NFKD", str(value or "").lower())
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    value = re.sub(r"\b(football club|fc|cf|sc|afc|club|team)\b", " ", value)
+    return re.sub(r"[^a-z0-9]+", "", value)
+
+
+def _fixture_team(fixture, side):
+    keys = ("home", "home_team", "team_home", "homeTeam") if side == "home" else (
+        "away", "away_team", "team_away", "awayTeam"
+    )
+    for key in keys:
+        if fixture.get(key):
+            return fixture[key]
+    teams = fixture.get("teams")
+    if isinstance(teams, dict) and teams.get(side):
+        return teams[side]
+    return ""
+
+
+def _fixture_list(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for key in ("fixtures", "matches", "data", "results", "response"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            nested = _fixture_list(value)
+            if nested:
+                return nested
+    return []
+
+
+def sportscore_live_fixtures():
+    """Darmowy feed LIVE SportScore; brak danych oznacza brak typów, nie fallback na kurs."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        response = http.get(
+            SPORTSCORE_API + "/fixtures/",
+            params={"sport": "football", "date": today, "status": "live",
+                    "limit": 200, "src": "rogidotypera-live"},
+            timeout=18,
+        )
+        response.raise_for_status()
+        fixtures = _fixture_list(response.json())
+        live = []
+        for fixture in fixtures:
+            if not isinstance(fixture, dict):
+                continue
+            status = str(fixture.get("status") or fixture.get("state") or "").lower()
+            if status and not any(token in status for token in ("live", "inplay", "in_play", "in progress")):
+                continue
+            if _fixture_team(fixture, "home") and _fixture_team(fixture, "away"):
+                live.append(fixture)
+        logging.info("SportScore: %d spotkań LIVE w feedzie statystyk", len(live))
+        return live
+    except Exception as exc:
+        logging.warning("SportScore LIVE niedostępny (%s); bot nie wyśle typów bez statystyk", exc)
+        return []
+
+
+def match_sportscore_fixture(home, away, fixtures):
+    target_home, target_away = _normal_team_name(home), _normal_team_name(away)
+    if not target_home or not target_away:
+        return None
+    best, best_score = None, 0.0
+    for fixture in fixtures:
+        source_home = _normal_team_name(_fixture_team(fixture, "home"))
+        source_away = _normal_team_name(_fixture_team(fixture, "away"))
+        if not source_home or not source_away:
+            continue
+        direct = (difflib.SequenceMatcher(None, target_home, source_home).ratio()
+                  + difflib.SequenceMatcher(None, target_away, source_away).ratio()) / 2
+        reverse = (difflib.SequenceMatcher(None, target_home, source_away).ratio()
+                   + difflib.SequenceMatcher(None, target_away, source_home).ratio()) / 2
+        score = max(direct, reverse)
+        if score > best_score:
+            best, best_score = fixture, score
+    return best if best_score >= 0.90 else None
+
+
+def _stat_number(value):
+    if isinstance(value, dict):
+        value = value.get("value", value.get("total", value.get("current")))
+    match = re.search(r"-?\d+(?:[.,]\d+)?", str(value or ""))
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def extract_sportscore_stats(payload):
+    """Zbiera sumy obu drużyn; zwraca None, gdy źródło nie podało kluczowych statystyk."""
+    aliases = {
+        "shots": {"shots", "total shots", "total_shots", "shots total", "strzaly", "strzały"},
+        "shots_on_target": {"shots on target", "shots_on_target", "shots on goal",
+                            "shots_on_goal", "celne strzaly", "strzały celne"},
+        "dangerous_attacks": {"dangerous attacks", "dangerous_attacks", "dangerous attack",
+                              "grozne ataki", "groźne ataki"},
+        "corners": {"corners", "corner kicks", "corner_kicks", "rogi", "rzuty rozne", "rzuty rożne"},
+    }
+    totals = {}
+    def walk(node):
+        if isinstance(node, dict):
+            name = node.get("name") or node.get("label") or node.get("type") or node.get("stat")
+            if name is not None:
+                normalized = str(name).strip().lower()
+                normalized = re.sub(r"[_\-]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized)
+                category = next((key for key, names in aliases.items()
+                                if normalized in {re.sub(r"[_\-]+", " ", n).lower() for n in names}), None)
+                if category:
+                    home = _stat_number(node.get("home", node.get("home_value")))
+                    away = _stat_number(node.get("away", node.get("away_value")))
+                    if home is not None and away is not None:
+                        totals[category] = int(home + away)
+            for key, value in node.items():
+                if isinstance(value, dict):
+                    # Format mapowy: {"shots": {"home": 7, "away": 4}}
+                    normalized_key = re.sub(r"[_\-]+", " ", str(key)).strip().lower()
+                    category = next((cat for cat, names in aliases.items()
+                                     if normalized_key in {re.sub(r"[_\-]+", " ", n).lower() for n in names}), None)
+                    if category and isinstance(value, dict):
+                        home = _stat_number(value.get("home", value.get("home_value")))
+                        away = _stat_number(value.get("away", value.get("away_value")))
+                        if home is not None and away is not None:
+                            totals[category] = int(home + away)
+                    walk(value)
+                elif isinstance(value, list):
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+    walk(payload)
+    if "shots" not in totals or "shots_on_target" not in totals:
+        return None
+    if "dangerous_attacks" not in totals and "corners" not in totals:
+        return None
+    return totals
+
+
+def sportscore_match_stats(fixture):
+    slug = fixture.get("slug") or fixture.get("match_slug") or fixture.get("url_slug")
+    if not slug:
+        return None
+    try:
+        response = http.get(
+            SPORTSCORE_API + "/match/",
+            params={"sport": "football", "slug": str(slug), "src": "rogidotypera-live"},
+            timeout=18,
+        )
+        response.raise_for_status()
+        stats = extract_sportscore_stats(response.json())
+        if not stats:
+            logging.info("SportScore: brak kompletnych statystyk dla %s", slug)
+        return stats
+    except Exception as exc:
+        logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
+        return None
+
+
+def stats_confirm_over(stats, minute, line):
+    """Konserwatywny filtr tempa. Brak pełnych statystyk zawsze odrzuca typ."""
+    if not stats or minute is None:
+        return False
+    shots = stats["shots"]
+    shots_on_target = stats["shots_on_target"]
+    min_shots = max(3, math.ceil(minute * 0.20))
+    min_on_target = max(1, math.ceil(minute * 0.06))
+    min_pressure = max(10, math.ceil(minute * 0.65))
+    enough_pressure = (
+        stats.get("dangerous_attacks", 0) >= min_pressure
+        or stats.get("corners", 0) >= max(1, math.ceil(minute / 25))
+    )
+    if line >= 1.5:
+        min_shots += 2
+        min_on_target += 1
+    return shots >= min_shots and shots_on_target >= min_on_target and enough_pressure
+
+
 def db_connect():
     conn = sqlite3.connect(DB)
     conn.execute("""CREATE TABLE IF NOT EXISTS live_over_sent(
@@ -401,6 +592,28 @@ def main():
                         "minute": minute, "score": score, "line": market["line"],
                         "odds": market["odds"], "url": superbet_url(detail), "key": key,
                     })
+        # Twarda bramka statystyczna: bez potwierdzonych statystyk LIVE SportScore nie publikujemy typu.
+        stats_fixtures = sportscore_live_fixtures()
+        stats_cache = {}
+        verified_candidates = []
+        for item in candidates:
+            fixture = match_sportscore_fixture(item["home"], item["away"], stats_fixtures)
+            if not fixture:
+                logging.info("POMINIĘTO %s - %s: brak dopasowania w SportScore", item["home"], item["away"])
+                continue
+            slug = fixture.get("slug") or fixture.get("match_slug") or fixture.get("url_slug")
+            if slug not in stats_cache:
+                stats_cache[slug] = sportscore_match_stats(fixture)
+            stats = stats_cache[slug]
+            if not stats or not stats_confirm_over(stats, item["minute"], item["line"]):
+                logging.info("POMINIĘTO %s - %s: statystyki nie potwierdzają tempa (stats=%s minute=%s line=%.1f)",
+                             item["home"], item["away"], stats, item["minute"], item["line"])
+                continue
+            item["stats"] = stats
+            verified_candidates.append(item)
+        candidates = verified_candidates
+        logging.info("Statystycznie potwierdzone LIVE Over: %d/%d", len(candidates), len(best) if False else len(verified_candidates))
+
         # Jedna selekcja na mecz i fazę; preferuj kurs bliższy środkowi zakresu, nie najwyższy za wszelką cenę.
         best = {}
         for item in candidates:
@@ -440,6 +653,9 @@ def main():
                 f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
                 f"🏷 Rynek: {matching['market']}\n"
                 f"💹 Kurs Superbet LIVE (odświeżony przed wysyłką): {matching['odds']:.2f}\n"
+                f"📊 Statystyki LIVE: strzały {pick['stats']['shots']}, celne {pick['stats']['shots_on_target']}, "
+                f"groźne ataki {pick['stats'].get('dangerous_attacks', 'brak')}, rożne {pick['stats'].get('corners', 'brak')}\n"
+                f"📡 Źródło statystyk: https://sportscore.com/\n"
                 f"💰 Stawka: {STAKE} zł"
             )
             event_url = superbet_url(fresh)
