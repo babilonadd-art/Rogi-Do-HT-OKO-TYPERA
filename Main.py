@@ -1,4 +1,4 @@
-import os, time, sqlite3, logging, re, unicodedata, csv, io
+import os, time, sqlite3, logging, re, unicodedata, csv, io, json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
@@ -2193,7 +2193,7 @@ def settle_ft_corner_picks(c):
         if pending_count:
             continue
         rows=c.execute("""SELECT status,COALESCE(profit,0) FROM ft_corner_picks
-                          WHERE substr(sent_at,1,10)=?""",(day,)).fetchall()
+                          WHERE substr(sent_at,1,10)=? AND status IN ('WON','LOST')""",(day,)).fetchall()
         if not rows:
             continue
         wins=sum(1 for status,_ in rows if status=="WON")
