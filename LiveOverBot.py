@@ -595,6 +595,16 @@ def main():
         # Twarda bramka statystyczna: bez potwierdzonych statystyk LIVE SportScore nie publikujemy typu.
         stats_fixtures = sportscore_live_fixtures()
         stats_cache = {}
+        # Kontrola źródła: raz na skan pobierz próbkę statystyk z jednego meczu LIVE.
+        if stats_fixtures:
+            sample_fixture = stats_fixtures[0]
+            sample_slug = sample_fixture.get("slug") or sample_fixture.get("match_slug") or sample_fixture.get("url_slug")
+            if sample_slug:
+                stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
+                logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
+            else:
+                logging.warning("SportScore zwrócił mecz LIVE bez slug — nie można pobrać statystyk.")
+        candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
             fixture = match_sportscore_fixture(item["home"], item["away"], stats_fixtures)
@@ -612,7 +622,7 @@ def main():
             item["stats"] = stats
             verified_candidates.append(item)
         candidates = verified_candidates
-        logging.info("Statystycznie potwierdzone LIVE Over: %d/%d", len(candidates), len(best) if False else len(verified_candidates))
+        logging.info("Statystycznie potwierdzone LIVE Over: %d/%d", len(candidates), candidate_count_before_stats)
 
         # Jedna selekcja na mecz i fazę; preferuj kurs bliższy środkowi zakresu, nie najwyższy za wszelką cenę.
         best = {}
