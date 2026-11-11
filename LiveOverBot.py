@@ -485,8 +485,11 @@ def sportscore_match_stats(fixture):
         payload = response.json()
         stats = extract_sportscore_stats(payload)
         if not stats:
-            logging.info("SportScore: brak kompletnych statystyk dla %s; odpowiedź=%s",
-                         slug, json.dumps(payload, ensure_ascii=False)[:1800])
+            match_obj = payload.get("match") if isinstance(payload, dict) else {}
+            logging.info("SportScore: brak kompletnych statystyk dla %s; top_keys=%s match_keys=%s; odpowiedź=%s",
+                         slug, sorted(payload.keys()) if isinstance(payload, dict) else type(payload).__name__,
+                         sorted(match_obj.keys()) if isinstance(match_obj, dict) else type(match_obj).__name__,
+                         json.dumps(payload, ensure_ascii=False)[:5000])
         return stats
     except Exception as exc:
         logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
