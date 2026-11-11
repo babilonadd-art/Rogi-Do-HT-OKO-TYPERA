@@ -68,7 +68,8 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertTrue(bot.stats_confirm_over(strong, 30, 0.5))
         self.assertFalse(bot.stats_confirm_over(weak, 30, 0.5))
         self.assertFalse(bot.stats_confirm_over(None, 30, 0.5))
-        self.assertFalse(bot.stats_confirm_over(strong, 30, 1.5))
+        not_strong_enough_for_15 = {"shots": 7, "shots_on_target": 2, "dangerous_attacks": 25, "corners": 2}
+        self.assertFalse(bot.stats_confirm_over(not_strong_enough_for_15, 30, 1.5))
 
     def test_sportscore_team_match_is_normalized(self):
         fixtures = [{"home": {"name": "Manchester United FC"},
