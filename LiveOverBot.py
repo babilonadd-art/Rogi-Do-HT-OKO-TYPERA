@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import logging
+import json
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -283,14 +284,25 @@ def superbet_event_details(event_id):
 
 
 def superbet_url(event):
-    for obj in (event, event.get("fixture") or {}):
-        if not isinstance(obj, dict):
-            continue
-        for key in ("url", "event_url", "eventUrl", "permalink", "web_url", "webUrl"):
-            value = obj.get(key)
-            if isinstance(value, str) and value.startswith("https://") and "superbet" in value.lower():
-                return value
-    return "https://superbet.pl/zaklady-bukmacherskie/live"
+    """Zwraca wyłącznie zweryfikowany adres konkretnego wydarzenia z payloadu Superbet."""
+    url_keys = {"url", "event_url", "eventurl", "permalink", "web_url", "weburl", "event_link"}
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if str(key).lower() in url_keys and isinstance(value, str):
+                    candidate = value.strip()
+                    if candidate.startswith("https://") and "superbet.pl/" in candidate.lower():
+                        found.append(candidate)
+                if isinstance(value, (dict, list)):
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(event)
+    return found[0] if found else None
 
 
 def db_connect():
@@ -313,13 +325,18 @@ def daily_sent_count(conn, day=None):
     return int(row[0] or 0)
 
 
-def send_telegram(message):
+def send_telegram(message, event_url=None):
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
         return False
+    data = {"chat_id": CHAT, "text": message, "disable_web_page_preview": True}
+    if event_url:
+        data["reply_markup"] = json.dumps({
+            "inline_keyboard": [[{"text": "⚽ OTWÓRZ TEN MECZ", "url": event_url}]]
+        }, ensure_ascii=False)
     response = requests.post(
         f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        data={"chat_id": CHAT, "text": message, "disable_web_page_preview": True},
+        data=data,
         timeout=20,
     )
     if not response.ok:
@@ -423,10 +440,13 @@ def main():
                 f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
                 f"🏷 Rynek: {matching['market']}\n"
                 f"💹 Kurs Superbet LIVE (odświeżony przed wysyłką): {matching['odds']:.2f}\n"
-                f"💰 Stawka: {STAKE} zł\n"
-                f"🔗 Mecz: {superbet_url(fresh)}"
+                f"💰 Stawka: {STAKE} zł"
             )
-            if send_telegram(message):
+            event_url = superbet_url(fresh)
+            if not event_url:
+                logging.warning("Brak bezpośredniego URL meczu Superbet dla %s - %s (event_id=%s); wysyłam typ bez fałszywego linku",
+                                home, away, pick["event_id"])
+            if send_telegram(message, event_url=event_url):
                 conn.execute(
                     "INSERT OR IGNORE INTO live_over_sent VALUES(?,?,?,?,?,?,?,?)",
                     (pick["key"], pick["event_id"], datetime.now(TZ).isoformat(),
