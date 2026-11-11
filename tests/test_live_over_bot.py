@@ -51,12 +51,17 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.superbet_url({"fixture": {"links": {"event_url": direct}}}), direct)
         self.assertIsNone(bot.superbet_url({"event_id": "123", "fixture": {"event_name": "A · B"}}))
 
-    def test_sportscore_stats_can_be_read_from_match_page_text(self):
-        text = "Total Shots 7 6 Shots on Target 3 2 Corner Kicks 1 4 Dangerous Attacks 30 30"
-        self.assertEqual(bot.extract_sportscore_text_stats(text), {
-            "shots": 13, "shots_on_target": 5, "corners": 5, "dangerous_attacks": 60
+    def test_sportscore_stats_derive_total_shots_from_on_and_off_target(self):
+        payload = {"match": {"stats": [
+            {"label": "Shots on Target", "home": 2, "away": 1},
+            {"label": "Shots off Target", "home": 3, "away": 2},
+            {"label": "Dangerous Attacks", "home": 20, "away": 15},
+            {"label": "Corner Kicks", "home": 2, "away": 1},
+        ]}}
+        self.assertEqual(bot.extract_sportscore_stats(payload), {
+            "shots_on_target": 3, "shots_off_target": 5, "dangerous_attacks": 35,
+            "corners": 3, "shots": 8
         })
-        self.assertIsNone(bot.extract_sportscore_text_stats("Match started 45 minute 1-0"))
 
     def test_sportscore_stats_are_parsed_and_summed(self):
         payload = {"stats": [
