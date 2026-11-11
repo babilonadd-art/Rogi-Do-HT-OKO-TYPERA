@@ -84,7 +84,8 @@ def api_event_details(event_ids):
 
 
 def normalize(value):
-    value = unicodedata.normalize("NFKD", str(value or "").lower())
+    value = str(value or "").lower().replace("ł", "l")
+    value = unicodedata.normalize("NFKD", value)
     value = "".join(c for c in value if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
