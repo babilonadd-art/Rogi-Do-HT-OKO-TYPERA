@@ -71,6 +71,10 @@ class LiveOverBotTests(unittest.TestCase):
         not_strong_enough_for_15 = {"shots": 7, "shots_on_target": 2, "dangerous_attacks": 25, "corners": 2}
         self.assertFalse(bot.stats_confirm_over(not_strong_enough_for_15, 30, 1.5))
 
+    def test_sportscore_slug_is_extracted_from_live_match_url(self):
+        fixture = {"url": "/football/match/finland-u17-vs-scotland-u17/3glrw7hne0o1qdy/"}
+        self.assertEqual(bot.sportscore_fixture_slug(fixture), "finland-u17-vs-scotland-u17")
+
     def test_sportscore_team_match_is_normalized(self):
         fixtures = [{"home": {"name": "Manchester United FC"},
                      "away": {"name": "Chelsea"}}]
