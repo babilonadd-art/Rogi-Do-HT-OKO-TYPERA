@@ -26,15 +26,15 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertFalse(bot.event_is_still_live({"inplay_stats_metadata": {"status": "NOT_STARTED"}}))
         self.assertFalse(bot.event_is_still_live({"fixture": {"status": "FINISHED"}}))
 
-    def test_ht_accepts_over_05_and_15_with_minimum_odds_160(self):
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5, 1.60), "HT", 0)[0]["line"], 0.5)
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5, 1.60), "HT", 0)[0]["line"], 1.5)
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5, 1.59), "HT", 0), [])
+    def test_ht_accepts_over_05_and_15_with_minimum_odds_150(self):
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5, 1.50), "HT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5, 1.50), "HT", 0)[0]["line"], 1.5)
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5, 1.49), "HT", 0), [])
 
-    def test_ft_accepts_over_05_and_15_with_minimum_odds_170(self):
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.70), "FT", 0)[0]["line"], 0.5)
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 1.70), "FT", 0)[0]["line"], 1.5)
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 1.69), "FT", 0), [])
+    def test_ft_accepts_over_05_and_15_with_minimum_odds_160(self):
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.60), "FT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 1.60), "FT", 0)[0]["line"], 1.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 1.59), "FT", 0), [])
 
     def test_ft_rejects_half_market_and_ht_rejects_full_match_market(self):
         self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5), "FT", 0), [])
@@ -44,7 +44,7 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.20), "FT", 1), [])
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.20), "FT", 1)[0]["line"], 1.5)
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.20), "FT", 2), [])
-        self.assertEqual((bot.HT_MIN_ODDS, bot.FT_MIN_ODDS), (1.60, 1.70))
+        self.assertEqual((bot.HT_MIN_ODDS, bot.FT_MIN_ODDS), (1.50, 1.60))
 
     def test_superbet_url_finds_nested_direct_event_url_only(self):
         direct = "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/testowy-mecz"
