@@ -836,6 +836,23 @@ def db_open():
     if "league_corrected_at" not in columns:
         c.execute("ALTER TABLE picks ADD COLUMN league_corrected_at TEXT")
     c.execute("""CREATE TABLE IF NOT EXISTS monthly_reports(month TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_picks(
+        event_id INTEGER PRIMARY KEY,league TEXT,home TEXT,away TEXT,start_ts INTEGER,
+        odds REAL NOT NULL,profile TEXT,sent_at TEXT NOT NULL,telegram_message_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'PENDING',line REAL NOT NULL DEFAULT 9.5,
+        ft_corners INTEGER,settled_at TEXT,profit REAL)""")
+    ft_columns={row[1] for row in c.execute("PRAGMA table_info(ft_corner_picks)").fetchall()}
+    for name,definition in (("telegram_message_id","INTEGER"),("status","TEXT NOT NULL DEFAULT 'PENDING'"),
+                            ("line","REAL NOT NULL DEFAULT 9.5"),("ft_corners","INTEGER"),
+                            ("settled_at","TEXT"),("profit","REAL")):
+        if name not in ft_columns:
+            c.execute(f"ALTER TABLE ft_corner_picks ADD COLUMN {name} {definition}")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_daily_reports(
+        day TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_day_starts(
+        day TEXT PRIMARY KEY,sent_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_corner_source_cache(
+        cache_key TEXT PRIMARY KEY,fetched_at INTEGER NOT NULL,payload TEXT NOT NULL)""")
     c.execute("UPDATE picks SET odds=1.92 WHERE event_id=15562733 AND odds IS NULL")
     c.execute("UPDATE picks SET odds=1.97 WHERE event_id=14572637 AND odds IS NULL")
     if "market_type" not in columns:
@@ -1970,6 +1987,8 @@ def monitor_ft_corners(c):
     remaining=max(0,FT_DAILY_MAX-len(sent_ids))
     selected=qualified[:remaining]
     logging.info("FT corners: spełniających warunki=%s, wybrano=%s",len(qualified),len(selected))
+    if selected:
+        send_ft_day_start(c,now.date().isoformat())
     for item in selected:
         # Last-second odds validation: never publish a stale or below-threshold price.
         fresh_price=superbet_ft_corners_over_odds(
@@ -1998,11 +2017,11 @@ def monitor_ft_corners(c):
         message_id=send(msg)
         if message_id:
             c.execute("""INSERT OR IGNORE INTO ft_corner_picks
-                (event_id,league,home,away,start_ts,odds,profile,sent_at,telegram_message_id)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
+                (event_id,league,home,away,start_ts,odds,profile,sent_at,telegram_message_id,line,status)
+                VALUES(?,?,?,?,?,?,?,?,?,?, 'PENDING')""",
                 (item["event_id"],item["league"],item["home"],item["away"],
                  item["start_ts"],fresh_price,item["profile"]+f"; scenariusz {item['scenario']}",
-                 now.isoformat(),int(message_id)))
+                 now.isoformat(),int(message_id),float(item["line"])))
             c.commit()
             sent_ids.add(item["event_id"])
             logging.info("FT corners: wysłano %s - %s | %s @ %.2f | suma średnich %.2f",
@@ -2014,6 +2033,182 @@ def monitor_ft_corners(c):
         logging.info("FT corners: wysłano dziś %s/%s typów; nie dobieram spotkań bez spełnionych warunków",
                      len(sent_ids),FT_DAILY_TARGET)
 
+
+
+FOOTBALL_API_BASE="https://api.footballapi.org/v1"
+FOOTBALL_API_KEY=os.getenv("FOOTBALL_API_KEY","").strip()
+
+def footballapi_get(path,params=None):
+    if not FOOTBALL_API_KEY:
+        return {}
+    try:
+        response=requests.get(FOOTBALL_API_BASE+path,params=params,
+                             headers={"X-API-Key":FOOTBALL_API_KEY,"Accept":"application/json"},
+                             timeout=18)
+        if response.status_code in (401,403,404,429):
+            logging.warning("Football API HTTP %s dla %s",response.status_code,path)
+            return {}
+        response.raise_for_status()
+        payload=response.json()
+        return payload.get("data") if isinstance(payload,dict) else {}
+    except Exception as exc:
+        logging.warning("Football API %s: %s",path,exc)
+        return {}
+
+def footballapi_cached(c,cache_key,ttl_seconds,loader):
+    now_ts=int(time.time())
+    row=c.execute("SELECT fetched_at,payload FROM ft_corner_source_cache WHERE cache_key=?",
+                  (cache_key,)).fetchone()
+    if row and now_ts-int(row[0])<ttl_seconds:
+        try:
+            return json.loads(row[1])
+        except Exception:
+            pass
+    value=loader()
+    if value:
+        c.execute("INSERT OR REPLACE INTO ft_corner_source_cache(cache_key,fetched_at,payload) VALUES(?,?,?)",
+                  (cache_key,now_ts,json.dumps(value,ensure_ascii=False)))
+        c.commit()
+    return value or {}
+
+def footballapi_ft_corner_total(c,home,away,start_ts):
+    """Optional free Football API backup: this season's Premier League only (50 calls/day)."""
+    if not FOOTBALL_API_KEY:
+        return None
+    # Caller checks the league name before entering this function.
+    match_day=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    listing=footballapi_cached(
+        c,"footballapi:results:"+match_day,4*60*60,
+        lambda: footballapi_get("/results",{"competition":"premier-league","date":match_day,"per_page":100})
+    )
+    matches=listing if isinstance(listing,list) else []
+    chosen=None
+    for match in matches:
+        h=str(match.get("home_club_name") or "")
+        a=str(match.get("away_club_name") or "")
+        direct=team_similarity(home,h)+team_similarity(away,a)
+        reverse=team_similarity(home,a)+team_similarity(away,h)
+        if max(direct,reverse)>=1.68:
+            chosen=match
+            break
+    if not chosen or not chosen.get("match_id"):
+        return None
+    match_id=str(chosen["match_id"])
+    stats=footballapi_cached(
+        c,"footballapi:stats:"+match_id,24*60*60,
+        lambda: footballapi_get(f"/matches/{match_id}/stats")
+    )
+    if not isinstance(stats,dict):
+        return None
+    sides=stats.get("stats") or []
+    values=[]
+    for side in sides:
+        raw=((side or {}).get("stats") or {}).get("corners")
+        try:
+            values.append(int(raw))
+        except (TypeError,ValueError):
+            return None
+    return sum(values) if len(values)==2 else None
+
+def matchday_ft_corner_total(league,home,away,start_ts):
+    """Return a confirmed FT corner total from Open Matchday, or None when absent."""
+    rows=load_matchday_results(league)
+    if rows is None:
+        return None
+    utc_day=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    local_day=datetime.fromtimestamp(start_ts,TZ).date().isoformat()
+    for row in rows:
+        if str(row.get("date") or "")[:10] not in {utc_day,local_day}:
+            continue
+        rh=str(row.get("home") or "")
+        ra=str(row.get("away") or "")
+        if max(team_similarity(home,rh)+team_similarity(away,ra),
+               team_similarity(home,ra)+team_similarity(away,rh))<1.68:
+            continue
+        try:
+            hc=int(float(row.get("home_corners")))
+            ac=int(float(row.get("away_corners")))
+        except (TypeError,ValueError):
+            continue
+        return hc+ac
+    return None
+
+def send_ft_day_start(c,day):
+    if c.execute("SELECT 1 FROM ft_corner_day_starts WHERE day=?",(day,)).fetchone():
+        return
+    message=f"📅 ZACZYNAMY KOLEJNY DZIEŃ Z TYPAMI\n🗓️ {datetime.fromisoformat(day).strftime('%d.%m.%Y')}\n━━━━━━━━━━━━━━━━━━"
+    message_id=send(message)
+    if message_id:
+        c.execute("INSERT OR IGNORE INTO ft_corner_day_starts(day,sent_at) VALUES(?,?)",
+                  (day,datetime.now(TZ).isoformat()))
+        c.commit()
+
+def settle_ft_corner_picks(c):
+    """Settle every FT pick from confirmed corners; close a day only after all its picks settle."""
+    pending=c.execute("""SELECT event_id,league,home,away,start_ts,odds,line,profile
+                         FROM ft_corner_picks WHERE status='PENDING' ORDER BY start_ts""").fetchall()
+    now_ts=int(datetime.now(timezone.utc).timestamp())
+    for event_id,league,home,away,start_ts,odds,line,profile in pending:
+        if now_ts<int(start_ts)+3*60*60:
+            continue
+        total=matchday_ft_corner_total(league,home,away,start_ts)
+        source="Open Matchday"
+        if total is None and "premier" in normalized_team(league):
+            total=footballapi_ft_corner_total(c,home,away,start_ts)
+            if total is not None:
+                source="Football API"
+        if total is None:
+            logging.info("FT settlement: brak potwierdzonych rożnych dla %s - %s (%s); czekam na dane",
+                         home,away,league)
+            continue
+        try:
+            target_line=float(line or (10.5 if "scenariusz B" in str(profile) else 9.5))
+        except (TypeError,ValueError):
+            target_line=9.5
+        result="WON" if total>target_line else "LOST"
+        price=float(odds or 0)
+        profit=round(STAKE*(price-1.0),2) if result=="WON" and price>0 else -float(STAKE)
+        settled_at=datetime.now(TZ).isoformat()
+        c.execute("""UPDATE ft_corner_picks SET status=?,ft_corners=?,settled_at=?,profit=?,line=?
+                     WHERE event_id=? AND status='PENDING'""",
+                  (result,total,settled_at,profit,target_line,event_id))
+        c.commit()
+        msg=(f"📊 ROZLICZENIE — ROGI FT\n\n⚽ {home} – {away}\n"
+             f"🏆 {league}\n🎯 OVER {target_line:.1f} — cały mecz\n"
+             f"🚩 Rożne FT: {total}\n💹 Kurs: {price:.2f}\n"
+             f"{'🟢 WYGRANY' if result=='WON' else '🔴 PRZEGRANY'}\n"
+             f"💰 Stawka: {STAKE:.2f} zł\n🏦 Wynik: {profit:+.2f} zł\n"
+             f"📚 Źródło rozliczenia: {source}")
+        if not send(msg):
+            logging.error("Nie udało się wysłać rozliczenia FT event=%s",event_id)
+
+    # Daily report is sent once, only when every pick from that day has a result.
+    days=c.execute("""SELECT DISTINCT substr(sent_at,1,10) FROM ft_corner_picks
+                      WHERE sent_at IS NOT NULL ORDER BY 1""").fetchall()
+    for (day,) in days:
+        if c.execute("SELECT 1 FROM ft_corner_daily_reports WHERE day=?",(day,)).fetchone():
+            continue
+        pending_count=c.execute("""SELECT COUNT(*) FROM ft_corner_picks
+                                   WHERE substr(sent_at,1,10)=? AND status='PENDING'""",(day,)).fetchone()[0]
+        if pending_count:
+            continue
+        rows=c.execute("""SELECT status,COALESCE(profit,0) FROM ft_corner_picks
+                          WHERE substr(sent_at,1,10)=?""",(day,)).fetchall()
+        if not rows:
+            continue
+        wins=sum(1 for status,_ in rows if status=="WON")
+        losses=sum(1 for status,_ in rows if status=="LOST")
+        total_profit=round(sum(float(value or 0) for _,value in rows),2)
+        close=(f"🏁 ZAMKNIĘCIE DNIA — ROGI FT\n🗓️ {datetime.fromisoformat(day).strftime('%d.%m.%Y')}\n"
+               "━━━━━━━━━━━━━━━━━━\n"
+               f"📨 Rozliczone typy: {len(rows)}\n🟢 Wygrane: {wins}\n🔴 Przegrane: {losses}\n"
+               f"💰 Stawka na typ: {STAKE:.2f} zł\n"
+               f"🏦 ŁĄCZNY WYNIK DNIA: {total_profit:+.2f} zł\n"
+               "━━━━━━━━━━━━━━━━━━")
+        if send(close):
+            c.execute("INSERT OR IGNORE INTO ft_corner_daily_reports(day,sent_at) VALUES(?,?)",
+                      (day,datetime.now(TZ).isoformat()))
+            c.commit()
 
 def main():
     if not TOKEN or not CHAT:
@@ -2071,7 +2266,12 @@ def main():
             c.commit()
             os.remove(seed_file)
             logging.warning("FT: odtworzono %s wysłanych typów i identyfikatorów Telegrama; limit dzienny 10/10",seeded)
-        monitor_ft_corners(c)
+        settle_ft_corner_picks(c)
+        if os.getenv("BOT_MODE","scan").strip().lower()=="settle":
+            logging.info("Tryb settlement: pomijam skan nowych meczów")
+        else:
+            monitor_ft_corners(c)
+            settle_ft_corner_picks(c)
     finally:
         c.close()
 
