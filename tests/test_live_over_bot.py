@@ -51,6 +51,31 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.superbet_url({"fixture": {"links": {"event_url": direct}}}), direct)
         self.assertIsNone(bot.superbet_url({"event_id": "123", "fixture": {"event_name": "A · B"}}))
 
+    def test_sportscore_stats_are_parsed_and_summed(self):
+        payload = {"stats": [
+            {"name": "Total Shots", "home": "7", "away": "4"},
+            {"name": "Shots on Target", "home": "3", "away": "1"},
+            {"name": "Dangerous Attacks", "home": "14", "away": "12"},
+            {"name": "Corner Kicks", "home": "2", "away": "1"},
+        ]}
+        self.assertEqual(bot.extract_sportscore_stats(payload), {
+            "shots": 11, "shots_on_target": 4, "dangerous_attacks": 26, "corners": 3
+        })
+
+    def test_live_over_requires_real_stats_and_sufficient_tempo(self):
+        strong = {"shots": 10, "shots_on_target": 3, "dangerous_attacks": 25, "corners": 2}
+        weak = {"shots": 10, "shots_on_target": 1, "dangerous_attacks": 25, "corners": 2}
+        self.assertTrue(bot.stats_confirm_over(strong, 30, 0.5))
+        self.assertFalse(bot.stats_confirm_over(weak, 30, 0.5))
+        self.assertFalse(bot.stats_confirm_over(None, 30, 0.5))
+        self.assertFalse(bot.stats_confirm_over(strong, 30, 1.5))
+
+    def test_sportscore_team_match_is_normalized(self):
+        fixtures = [{"home": {"name": "Manchester United FC"},
+                     "away": {"name": "Chelsea"}}]
+        self.assertIsNotNone(bot.match_sportscore_fixture("Manchester United", "Chelsea FC", fixtures))
+        self.assertIsNone(bot.match_sportscore_fixture("Liverpool", "Arsenal", fixtures))
+
     def test_phase_windows_and_daily_cap(self):
         self.assertEqual((bot.HT_MIN_MINUTE, bot.HT_MAX_MINUTE), (1, 35))
         self.assertEqual((bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (1, 75))
