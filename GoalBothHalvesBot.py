@@ -41,6 +41,48 @@ def api_events():
     return payload.get("events") or []
 
 
+def api_event_details(event_ids):
+    """Pobiera pełne dane (w tym rynki) partiami; lista wydarzeń często ich nie zawiera."""
+    details = {}
+    ids = [str(value) for value in event_ids if value]
+    for offset in range(0, len(ids), 20):
+        batch = ids[offset:offset + 20]
+        try:
+            response = http.get(API + "/v3/pl-PL/events",
+                                params={"events": ",".join(batch)}, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            rows = payload.get("events") or payload.get("data") or []
+            if isinstance(rows, dict):
+                rows = list(rows.values())
+            if isinstance(rows, list):
+                for row in rows:
+                    if isinstance(row, dict):
+                        rid = str(row.get("event_id") or row.get("id") or "")
+                        if rid:
+                            details[rid] = row
+        except Exception as exc:
+            logging.warning("Superbet: błąd pobrania paczki szczegółów %s: %s", batch[:3], exc)
+    # Uzupełnij tylko brakujące ID pojedynczym zapytaniem, jeśli endpoint nie obsłużył paczki.
+    missing = [eid for eid in ids if eid not in details]
+    for eid in missing:
+        try:
+            response = http.get(API + "/v3/pl-PL/events", params={"events": eid}, timeout=20)
+            response.raise_for_status()
+            payload = response.json()
+            rows = payload.get("events") or payload.get("data") or []
+            if isinstance(rows, dict):
+                rows = list(rows.values())
+            if isinstance(rows, list):
+                for row in rows:
+                    if isinstance(row, dict) and str(row.get("event_id") or row.get("id") or "") == eid:
+                        details[eid] = row
+                        break
+        except Exception as exc:
+            logging.warning("Superbet: nie pobrano szczegółów meczu %s: %s", eid, exc)
+    return details
+
+
 def normalize(value):
     value = unicodedata.normalize("NFKD", str(value or "").lower())
     value = "".join(c for c in value if not unicodedata.combining(c))
@@ -255,12 +297,22 @@ def main():
         events = api_events()
         football = [e for e in events if str((e.get("fixture") or {}).get("sport_id")) == "5"]
         logging.info("Superbet: %d wydarzeń piłkarskich z %d wszystkich.", len(football), len(events))
+        # Wydarzenia z listy dnia często nie mają rynków — pobierz pełne dane Superbet.
+        eligible = [e for e in football if event_id(e) and is_prematch(e)]
+        detail_map = api_event_details([event_id(e) for e in eligible])
+        logging.info("Superbet: pobrano szczegóły %d/%d spotkań przedmeczowych.",
+                     len(detail_map), len(eligible))
         candidates = []
-        for event in football:
-            eid = event_id(event)
+        for listed in eligible:
+            eid = event_id(listed)
             if not eid or conn.execute("SELECT 1 FROM both_halves_sent WHERE event_id=?", (eid,)).fetchone():
                 continue
+            event = detail_map.get(eid)
+            if not event or not is_prematch(event):
+                continue
             home, away = event_teams(event)
+            if not home or not away:
+                home, away = event_teams(listed)
             if not home or not away:
                 continue
             selection = both_halves_yes_market(event)
