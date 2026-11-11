@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   scan:
+    if: ${{ false }} # Wstrzymane: ten skaner publikuje rożne FT, a kanał jest przeznaczony dla rożnych HT.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
