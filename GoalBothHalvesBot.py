@@ -210,10 +210,10 @@ def both_halves_yes_market(event):
             continue
         for odd in market.get("odds") or []:
             meta = odd.get("metadata") or {}
-            label = normalize(" ".join(str(x or "") for x in (
+            labels = {normalize(x) for x in (
                 odd.get("name"), odd.get("label"), meta.get("name"), meta.get("info")
-            )))
-            if label not in {"yes", "tak", "oba tak", "obie tak"}:
+            ) if x is not None}
+            if not labels.intersection({"yes", "tak", "oba tak", "obie tak"}):
                 continue
             try:
                 price = float(odd.get("price"))
