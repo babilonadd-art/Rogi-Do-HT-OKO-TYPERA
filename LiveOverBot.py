@@ -11,7 +11,6 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
-from bs4 import BeautifulSoup
 
 SUPERBET_API = "https://production-superbet-offer-pl.freetls.fastly.net"
 SPORTSCORE_API = "https://sportscore.com/api/v1"
@@ -415,6 +414,7 @@ def extract_sportscore_stats(payload):
         "shots": {"shots", "total shots", "total_shots", "shots total", "strzaly", "strzały"},
         "shots_on_target": {"shots on target", "shots_on_target", "shots on goal",
                             "shots_on_goal", "celne strzaly", "strzały celne"},
+        "shots_off_target": {"shots off target", "shots_off_target", "shots off goal"},
         "dangerous_attacks": {"dangerous attacks", "dangerous_attacks", "dangerous attack",
                               "grozne ataki", "groźne ataki"},
         "corners": {"corners", "corner kicks", "corner_kicks", "rogi", "rzuty rozne", "rzuty rożne"},
@@ -452,6 +452,8 @@ def extract_sportscore_stats(payload):
             for item in node:
                 walk(item)
     walk(payload)
+    if "shots" not in totals and "shots_on_target" in totals and "shots_off_target" in totals:
+        totals["shots"] = totals["shots_on_target"] + totals["shots_off_target"]
     if "shots" not in totals or "shots_on_target" not in totals:
         return None
     if "dangerous_attacks" not in totals and "corners" not in totals:
@@ -470,51 +472,6 @@ def sportscore_fixture_slug(fixture):
         if index + 1 < len(parts):
             return parts[index + 1]
     return None
-
-
-def extract_sportscore_text_stats(text):
-    """Awaryjnie czyta statystyki z publicznej strony meczu SportScore."""
-    flat = re.sub(r"\s+", " ", str(text or " "))
-    labels = {
-        "shots": ("total shots", "shots"),
-        "shots_on_target": ("shots on target", "shots on goal"),
-        "dangerous_attacks": ("dangerous attacks",),
-        "corners": ("corner kicks", "corners"),
-    }
-    totals = {}
-    for category, names in labels.items():
-        for label in names:
-            escaped = re.escape(label)
-            match = re.search(rf"{escaped}\s*[:\-]?\s*(\d+)\s+(\d+)", flat, re.I)
-            if not match:
-                match = re.search(rf"(\d+)\s+{escaped}\s+(\d+)", flat, re.I)
-            if match:
-                totals[category] = int(match.group(1)) + int(match.group(2))
-                break
-    if "shots" not in totals or "shots_on_target" not in totals:
-        return None
-    if "dangerous_attacks" not in totals and "corners" not in totals:
-        return None
-    return totals
-
-
-def sportscore_page_stats(fixture):
-    path = str(fixture.get("url") or fixture.get("match_url") or "")
-    if not path:
-        return None
-    url = path if path.startswith("https://") else "https://sportscore.com/" + path.lstrip("/")
-    try:
-        response = http.get(url, timeout=18)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        text = soup.get_text(" ", strip=True)
-        stats = extract_sportscore_text_stats(text)
-        if stats:
-            logging.info("SportScore: statystyki odczytane ze strony meczu %s: %s", url, stats)
-        return stats
-    except Exception as exc:
-        logging.warning("SportScore: błąd odczytu strony statystyk %s: %s", url, exc)
-        return None
 
 
 def sportscore_match_stats(fixture):
@@ -551,16 +508,10 @@ def sportscore_match_stats(fixture):
                 except Exception as exc:
                     logging.info("SportScore tracker niedostępny dla %s: %s", slug, exc)
         if not stats:
-            stats = sportscore_page_stats(fixture)
-        if not stats:
             match_obj = payload.get("match") if isinstance(payload, dict) else {}
-            logging.info("SportScore: brak kompletnych statystyk dla %s; top_keys=%s match_keys=%s",
-                         slug, sorted(payload.keys()) if isinstance(payload, dict) else type(payload).__name__,
-                         sorted(match_obj.keys()) if isinstance(match_obj, dict) else type(match_obj).__name__)
-            if isinstance(match_obj, dict):
-                logging.info("SportScore pola stats w meczu: %s | tracker: %s",
-                             json.dumps(match_obj.get("stats"), ensure_ascii=False)[:1500],
-                             json.dumps(match_obj.get("tracker"), ensure_ascii=False)[:2500])
+            raw_stats = match_obj.get("stats") if isinstance(match_obj, dict) else None
+            logging.info("SportScore: brak pełnych statystyk LIVE dla %s; stats=%s",
+                         slug, json.dumps(raw_stats, ensure_ascii=False)[:1200])
         return stats
     except Exception as exc:
         logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
@@ -685,17 +636,8 @@ def main():
         # Twarda bramka statystyczna: bez potwierdzonych statystyk LIVE SportScore nie publikujemy typu.
         stats_fixtures = sportscore_live_fixtures()
         stats_cache = {}
-        # Kontrola źródła: raz na skan pobierz próbkę statystyk z jednego meczu LIVE.
-        if stats_fixtures:
-            sample_indexes = sorted(set((0, len(stats_fixtures) // 2, len(stats_fixtures) - 1)))
-            for sample_index in sample_indexes:
-                sample_fixture = stats_fixtures[sample_index]
-                sample_slug = sportscore_fixture_slug(sample_fixture)
-                if sample_slug:
-                    stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
-                    logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
-                else:
-                    logging.warning("SportScore mecz LIVE bez adresu szczegółów; pola=%s", sorted(sample_fixture.keys()))
+        stats_fixtures = sportscore_live_fixtures()
+        stats_cache = {}
         candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
