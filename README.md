@@ -4,11 +4,13 @@ Repozytorium obsługuje osobno:
 - dotychczasowe strategie rożnych — ich kryteria i harmonogram pozostają bez zmian;
 - dodatkowe typy LIVE na gole, publikowane przez `LiveOverBot.py`.
 
-## LIVE Over 0.5 gola
+## LIVE Over 0.5 i Over 1.5 gola
 
-- **Over 0.5 HT:** tylko wynik 0:0, minuty 1–35, kurs co najmniej 1.60.
-- **Over 0.5 FT:** tylko wynik 0:0, minuty 1–75, kurs co najmniej 1.70.
-- Tylko dokładna linia Over 0.5; bot nie zamienia jej na Over 1.5 ani inne rynki.
+- **Over 0.5 HT i FT:** typ dostępny tylko przed pierwszym golem w odpowiednim okresie.
+- **Over 1.5 HT i FT:** typ dostępny, dopóki w odpowiednim okresie nie padły 2 gole.
+- **HT:** minuty 1–35, kurs co najmniej 1.60.
+- **FT:** minuty 1–75, kurs co najmniej 1.70.
+- Bot wybiera wyłącznie dokładne linie Over 0.5 lub Over 1.5, bez podmiany na inne rynki.
 - Kurs i rynek są sprawdzane ponownie bezpośrednio przed wysłaniem.
 - Maksymalnie **10 typów łącznie dziennie** dla HT i FT (strefa Europe/Warsaw).
 - Skan LIVE uruchamia się co 5 minut.
