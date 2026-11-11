@@ -616,8 +616,6 @@ def main():
         # Twarda bramka statystyczna: bez potwierdzonych statystyk LIVE SportScore nie publikujemy typu.
         stats_fixtures = sportscore_live_fixtures()
         stats_cache = {}
-        stats_fixtures = sportscore_live_fixtures()
-        stats_cache = {}
         candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
