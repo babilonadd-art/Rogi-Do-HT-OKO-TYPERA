@@ -13,15 +13,15 @@ DB = "okotypera_rogi.db"
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
-# LIVE: HT do 35. minuty (maks. linia Over 1.5), FT od 46. do 75. minuty (maks. linia Over 2.5).
-HT_MAX_MINUTE = 0  # HT obsługuje osobny Algorytm 2 z PitchAPI
-FT_MIN_MINUTE = 46
+# LIVE: wyłącznie stałe rynki Over 0.5 gola przy wyniku 0:0.
+# HT: 1–35 minuta, minimalny kurs 1.60. FT: 1–75 minuta, minimalny kurs 1.70.
+HT_MIN_MINUTE = 1
+HT_MAX_MINUTE = 35
+FT_MIN_MINUTE = 1
 FT_MAX_MINUTE = 75
-HT_MAX_LINE = 1.5
-FT_MAX_LINE = 2.5
-# Luźniejsze widełki, ale nadal wymagamy prawdziwego, aktywnego kursu Superbet.
-MIN_ODDS = 1.60
-MAX_ODDS = 2.80
+HT_MIN_ODDS = 1.60
+FT_MIN_ODDS = 1.70
+MAX_PICKS_PER_DAY = 10
 MAX_PICKS_PER_RUN = 10
 STAKE = 10
 
@@ -224,13 +224,14 @@ def market_phase(name):
 
 
 def exact_live_over_markets(event, phase, current_total):
-    """Pobiera aktywną linię na następnego gola, z limitem linii dla danej połowy."""
-    if not event_is_still_live(event):
+    """Zwraca wyłącznie aktywny Over 0.5 dla wyniku 0:0 i minimalnego kursu danej fazy."""
+    if phase not in ("HT", "FT") or not event_is_still_live(event):
         return []
-    max_line = HT_MAX_LINE if phase == "HT" else FT_MAX_LINE
-    min_line = current_total + 0.5
-    if min_line > max_line:
+    # Over 0.5 jest już rozliczony po pierwszym golu — nie wysyłamy go przy innym wyniku.
+    if current_total != 0:
         return []
+    min_odds = HT_MIN_ODDS if phase == "HT" else FT_MIN_ODDS
+    required_line = 0.5
     results = []
     for market in event.get("markets") or []:
         name = str(market.get("name") or "")
@@ -254,18 +255,17 @@ def exact_live_over_markets(event, phase, current_total):
             )).lower()
             if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
-            # Gramy wyłącznie najbliższą linię: przy 0:0 Over 0.5,
-            # przy 1 golu Over 1.5 itd. Nie przeskakujemy od razu na wyższą linię.
-            if abs(line - min_line) > 0.001 or line > max_line + 0.001:
+            # Żądany rynek to zawsze dokładnie Over 0.5 — bez podmiany na Over 1.5 itd.
+            if abs(line - required_line) > 0.001:
                 continue
             if odd.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active", "OPEN", "open", "AVAILABLE", "available", "TRADING", "trading", True) or odd.get("display") is False:
                 continue
             if str(meta.get("offer_state_id", 1)) not in ("1", "2"):
                 continue
-            if not MIN_ODDS <= price <= MAX_ODDS:
+            if price < min_odds:
                 continue
             results.append({"line": line, "odds": price, "market": name})
-    results.sort(key=lambda item: abs(item["odds"] - 1.80))
+    results.sort(key=lambda item: item["odds"])
     return results
 
 
@@ -304,6 +304,16 @@ def db_connect():
     return conn
 
 
+def daily_sent_count(conn, day=None):
+    """Liczba typów LIVE Over wysłanych w bieżącym dniu w strefie Europe/Warsaw."""
+    day = day or datetime.now(TZ).date().isoformat()
+    row = conn.execute(
+        "SELECT COUNT(*) FROM live_over_sent WHERE substr(sent_at, 1, 10)=?",
+        (day,),
+    ).fetchone()
+    return int(row[0] or 0)
+
+
 def send_telegram(message):
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID")
@@ -328,6 +338,11 @@ def main():
         return
     conn = db_connect()
     try:
+        sent_today = daily_sent_count(conn)
+        remaining_today = max(0, MAX_PICKS_PER_DAY - sent_today)
+        if remaining_today == 0:
+            logging.info("Osiągnięto dzienny limit %d typów LIVE Over.", MAX_PICKS_PER_DAY)
+            return
         events = live_superbet_events()
         candidates = []
         for listed in events:
@@ -347,17 +362,9 @@ def main():
                 home, away = event_teams(listed)
             if not home or not away:
                 continue
-            # HT: wyłącznie 1–35'. FT: wyłącznie 46–75'.
+            # HT i FT są niezależnymi rynkami, ale oba dotyczą dokładnie Over 0.5.
             phases = []
-            if 1 <= minute <= HT_MAX_MINUTE:
-                phases.append("HT")
-            if FT_MIN_MINUTE <= minute <= FT_MAX_MINUTE:
-                phases.append("FT")
-            if not phases:
-                continue
-            # Po ponownym pobraniu zawsze sprawdzamy granice minuty.
-            phases = []
-            if 1 <= minute <= HT_MAX_MINUTE:
+            if HT_MIN_MINUTE <= minute <= HT_MAX_MINUTE:
                 phases.append("HT")
             if FT_MIN_MINUTE <= minute <= FT_MAX_MINUTE:
                 phases.append("FT")
@@ -385,9 +392,13 @@ def main():
             current = best.get(group_key)
             if current is None or abs(item["odds"] - 2.35) < abs(current["odds"] - 2.35):
                 best[group_key] = item
-        picks = sorted(best.values(), key=lambda x: (x["phase"] != "HT", abs(x["odds"] - 2.35)))[:MAX_PICKS_PER_RUN]
-        logging.info("Superbet LIVE: %d kandydatów, %d wybranych do wysyłki", len(candidates), len(picks))
+        picks = sorted(best.values(), key=lambda x: (x["phase"] != "HT", abs(x["odds"] - 2.10)))[:min(MAX_PICKS_PER_RUN, remaining_today)]
+        logging.info("Superbet LIVE: %d kandydatów, %d wybranych; wysłano dziś %d/%d",
+                     len(candidates), len(picks), sent_today, MAX_PICKS_PER_DAY)
         for pick in picks:
+            if sent_today >= MAX_PICKS_PER_DAY:
+                logging.info("Osiągnięto dzienny limit %d typów LIVE Over.", MAX_PICKS_PER_DAY)
+                break
             fresh = superbet_event_details(pick["event_id"])
             if not fresh or not event_is_still_live(fresh):
                 continue
@@ -395,7 +406,7 @@ def main():
             fresh_score = event_score(fresh)
             if fresh_minute is None or fresh_score is None:
                 continue
-            if pick["phase"] == "HT" and not 1 <= fresh_minute <= HT_MAX_MINUTE:
+            if pick["phase"] == "HT" and not HT_MIN_MINUTE <= fresh_minute <= HT_MAX_MINUTE:
                 continue
             if pick["phase"] == "FT" and not FT_MIN_MINUTE <= fresh_minute <= FT_MAX_MINUTE:
                 continue
@@ -423,8 +434,10 @@ def main():
                      home, away, matching["line"], matching["odds"], fresh_minute),
                 )
                 conn.commit()
-                logging.info("Wysłano LIVE %s %s - %s | linia %.1f | kurs %.2f",
-                             pick["phase"], home, away, matching["line"], matching["odds"])
+                sent_today += 1
+                logging.info("Wysłano LIVE %s %s - %s | linia %.1f | kurs %.2f | limit dzienny %d/%d",
+                             pick["phase"], home, away, matching["line"], matching["odds"],
+                             sent_today, MAX_PICKS_PER_DAY)
     finally:
         conn.close()
 
