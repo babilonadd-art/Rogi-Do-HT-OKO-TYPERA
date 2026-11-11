@@ -13,7 +13,7 @@ DB = "okotypera_rogi.db"
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT = os.getenv("TELEGRAM_CHAT_ID")
 
-# LIVE: wyłącznie stałe rynki Over 0.5 gola przy wyniku 0:0.
+# LIVE: stałe rynki Over 0.5 i Over 1.5 gola, dopóki dana linia nie jest rozliczona.
 # HT: 1–35 minuta, minimalny kurs 1.60. FT: 1–75 minuta, minimalny kurs 1.70.
 HT_MIN_MINUTE = 1
 HT_MAX_MINUTE = 35
@@ -224,14 +224,11 @@ def market_phase(name):
 
 
 def exact_live_over_markets(event, phase, current_total):
-    """Zwraca wyłącznie aktywny Over 0.5 dla wyniku 0:0 i minimalnego kursu danej fazy."""
+    """Zwraca aktywne Over 0.5/1.5, jeśli linia nie jest jeszcze rozliczona."""
     if phase not in ("HT", "FT") or not event_is_still_live(event):
         return []
-    # Over 0.5 jest już rozliczony po pierwszym golu — nie wysyłamy go przy innym wyniku.
-    if current_total != 0:
-        return []
     min_odds = HT_MIN_ODDS if phase == "HT" else FT_MIN_ODDS
-    required_line = 0.5
+    available_lines = (0.5, 1.5) if current_total < 2 else ()
     results = []
     for market in event.get("markets") or []:
         name = str(market.get("name") or "")
@@ -255,8 +252,10 @@ def exact_live_over_markets(event, phase, current_total):
             )).lower()
             if not re.search(r"\b(over|powyżej|powyzej|üst)\b", labels):
                 continue
-            # Żądany rynek to zawsze dokładnie Over 0.5 — bez podmiany na Over 1.5 itd.
-            if abs(line - required_line) > 0.001:
+            # Dopuszczamy wyłącznie wskazane linie; rynek musi być jeszcze nierozliczony.
+            if not any(abs(line - required) <= 0.001 for required in available_lines):
+                continue
+            if current_total >= line + 0.5:
                 continue
             if odd.get("status") not in (None, 1, 2, "1", "2", "ACTIVE", "active", "OPEN", "open", "AVAILABLE", "available", "TRADING", "trading", True) or odd.get("display") is False:
                 continue
@@ -362,7 +361,7 @@ def main():
                 home, away = event_teams(listed)
             if not home or not away:
                 continue
-            # HT i FT są niezależnymi rynkami, ale oba dotyczą dokładnie Over 0.5.
+            # HT i FT są niezależnymi rynkami; dopuszczamy Over 0.5 i Over 1.5.
             phases = []
             if HT_MIN_MINUTE <= minute <= HT_MAX_MINUTE:
                 phases.append("HT")
@@ -419,7 +418,7 @@ def main():
                 home, away = pick["home"], pick["away"]
             phase_label = "DO PRZERWY (HT)" if pick["phase"] == "HT" else "DO KOŃCA MECZU (FT)"
             message = (
-                f"🔴 LIVE OVER 0.5 | Typ {sent_today + 1}/{MAX_PICKS_PER_DAY} | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
+                f"🔴 LIVE OVER {matching['line']:.1f} | Typ {sent_today + 1}/{MAX_PICKS_PER_DAY} | {fresh_minute}' | {fresh_score[0]}:{fresh_score[1]}\n"
                 f"⚽ {home} – {away}\n"
                 f"📌 Typ: OVER {matching['line']:.1f} GOLI — {phase_label}\n"
                 f"🏷 Rynek: {matching['market']}\n"
