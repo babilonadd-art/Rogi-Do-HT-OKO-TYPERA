@@ -482,9 +482,11 @@ def sportscore_match_stats(fixture):
             timeout=18,
         )
         response.raise_for_status()
-        stats = extract_sportscore_stats(response.json())
+        payload = response.json()
+        stats = extract_sportscore_stats(payload)
         if not stats:
-            logging.info("SportScore: brak kompletnych statystyk dla %s", slug)
+            logging.info("SportScore: brak kompletnych statystyk dla %s; odpowiedź=%s",
+                         slug, json.dumps(payload, ensure_ascii=False)[:1800])
         return stats
     except Exception as exc:
         logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
