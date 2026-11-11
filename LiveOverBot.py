@@ -528,6 +528,8 @@ def db_connect():
 
 
 def reset_live_over_history_if_requested(conn):
+    # Marker reset_live_over_history.flag jest usuwany po jednorazowym resecie,
+    # a workflow zapisuje jego usunięcie razem z bazą, aby reset nie powtarzał się.
     """Jednorazowo czyści wyłącznie historię wysłanych typów LIVE Over HT/FT."""
     marker = "reset_live_over_history.flag"
     if not os.path.exists(marker):
