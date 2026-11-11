@@ -530,6 +530,26 @@ def sportscore_match_stats(fixture):
         response.raise_for_status()
         payload = response.json()
         stats = extract_sportscore_stats(payload)
+        if not stats and isinstance(payload, dict):
+            match_obj = payload.get("match") or {}
+            tracker = match_obj.get("tracker") or {}
+            tracker_id = tracker.get("id") if isinstance(tracker, dict) else None
+            if tracker_id:
+                try:
+                    tracker_response = http.get(
+                        "https://sportscore.com/api/widget/tracker/",
+                        params={"sport": "football", "id": str(tracker_id), "src": "rogidotypera-live"},
+                        timeout=18,
+                    )
+                    tracker_response.raise_for_status()
+                    tracker_payload = tracker_response.json()
+                    stats = extract_sportscore_stats(tracker_payload)
+                    if not stats:
+                        logging.info("SportScore tracker bez statystyk: keys=%s body=%s",
+                                     sorted(tracker_payload.keys()) if isinstance(tracker_payload, dict) else type(tracker_payload).__name__,
+                                     json.dumps(tracker_payload, ensure_ascii=False)[:2000])
+                except Exception as exc:
+                    logging.info("SportScore tracker niedostępny dla %s: %s", slug, exc)
         if not stats:
             stats = sportscore_page_stats(fixture)
         if not stats:
