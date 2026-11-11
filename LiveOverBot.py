@@ -538,7 +538,9 @@ def sportscore_match_stats(fixture):
                          slug, sorted(payload.keys()) if isinstance(payload, dict) else type(payload).__name__,
                          sorted(match_obj.keys()) if isinstance(match_obj, dict) else type(match_obj).__name__)
             if isinstance(match_obj, dict):
-                logging.info("SportScore pola stats w meczu: %s", json.dumps(match_obj.get("stats"), ensure_ascii=False)[:3500])
+                logging.info("SportScore pola stats w meczu: %s | tracker: %s",
+                             json.dumps(match_obj.get("stats"), ensure_ascii=False)[:1500],
+                             json.dumps(match_obj.get("tracker"), ensure_ascii=False)[:2500])
         return stats
     except Exception as exc:
         logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
