@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
+from bs4 import BeautifulSoup
 
 SUPERBET_API = "https://production-superbet-offer-pl.freetls.fastly.net"
 SPORTSCORE_API = "https://sportscore.com/api/v1"
@@ -471,6 +472,51 @@ def sportscore_fixture_slug(fixture):
     return None
 
 
+def extract_sportscore_text_stats(text):
+    """Awaryjnie czyta statystyki z publicznej strony meczu SportScore."""
+    flat = re.sub(r"\s+", " ", str(text or " "))
+    labels = {
+        "shots": ("total shots", "shots"),
+        "shots_on_target": ("shots on target", "shots on goal"),
+        "dangerous_attacks": ("dangerous attacks",),
+        "corners": ("corner kicks", "corners"),
+    }
+    totals = {}
+    for category, names in labels.items():
+        for label in names:
+            escaped = re.escape(label)
+            match = re.search(rf"{escaped}\s*[:\-]?\s*(\d+)\s+(\d+)", flat, re.I)
+            if not match:
+                match = re.search(rf"(\d+)\s+{escaped}\s+(\d+)", flat, re.I)
+            if match:
+                totals[category] = int(match.group(1)) + int(match.group(2))
+                break
+    if "shots" not in totals or "shots_on_target" not in totals:
+        return None
+    if "dangerous_attacks" not in totals and "corners" not in totals:
+        return None
+    return totals
+
+
+def sportscore_page_stats(fixture):
+    path = str(fixture.get("url") or fixture.get("match_url") or "")
+    if not path:
+        return None
+    url = path if path.startswith("https://") else "https://sportscore.com/" + path.lstrip("/")
+    try:
+        response = http.get(url, timeout=18)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        text = soup.get_text(" ", strip=True)
+        stats = extract_sportscore_text_stats(text)
+        if stats:
+            logging.info("SportScore: statystyki odczytane ze strony meczu %s: %s", url, stats)
+        return stats
+    except Exception as exc:
+        logging.warning("SportScore: błąd odczytu strony statystyk %s: %s", url, exc)
+        return None
+
+
 def sportscore_match_stats(fixture):
     slug = sportscore_fixture_slug(fixture)
     if not slug:
@@ -485,11 +531,12 @@ def sportscore_match_stats(fixture):
         payload = response.json()
         stats = extract_sportscore_stats(payload)
         if not stats:
+            stats = sportscore_page_stats(fixture)
+        if not stats:
             match_obj = payload.get("match") if isinstance(payload, dict) else {}
-            logging.info("SportScore: brak kompletnych statystyk dla %s; top_keys=%s match_keys=%s; odpowiedź=%s",
+            logging.info("SportScore: brak kompletnych statystyk dla %s; top_keys=%s match_keys=%s",
                          slug, sorted(payload.keys()) if isinstance(payload, dict) else type(payload).__name__,
-                         sorted(match_obj.keys()) if isinstance(match_obj, dict) else type(match_obj).__name__,
-                         json.dumps(payload, ensure_ascii=False)[:5000])
+                         sorted(match_obj.keys()) if isinstance(match_obj, dict) else type(match_obj).__name__)
         return stats
     except Exception as exc:
         logging.warning("SportScore: błąd pobrania statystyk %s: %s", slug, exc)
