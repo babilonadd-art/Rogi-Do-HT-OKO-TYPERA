@@ -58,7 +58,7 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.event_score(sample), (1, 0))
 
     def test_accepts_live_market_status_two(self):
-        data = event("Liczba goli", 1.5)
+        data = event("Liczba goli", 0.5)
         data["markets"][0]["status"] = 2
         data["markets"][0]["odds"][0]["status"] = 2
         data["markets"][0]["odds"][0]["metadata"]["offer_state_id"] = 2
