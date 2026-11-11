@@ -26,35 +26,30 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertFalse(bot.event_is_still_live({"inplay_stats_metadata": {"status": "NOT_STARTED"}}))
         self.assertFalse(bot.event_is_still_live({"fixture": {"status": "FINISHED"}}))
 
-    def test_ht_selects_next_goal_line_up_to_over_15(self):
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5), "HT", 0)[0]["line"], 0.5)
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5), "HT", 1)[0]["line"], 1.5)
+    def test_ht_requires_exact_over_05_and_minimum_odds_160(self):
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5, 1.60), "HT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5, 1.59), "HT", 0), [])
+        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 1.5, 2.20), "HT", 0), [])
 
-    def test_ht_does_not_exceed_max_line(self):
-        self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 2.5), "HT", 2), [])
-
-    def test_ft_selects_next_goal_line_up_to_over_25(self):
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 2.5), "FT", 2)[0]["line"], 2.5)
+    def test_ft_requires_exact_over_05_and_minimum_odds_170(self):
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.70), "FT", 0)[0]["line"], 0.5)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.69), "FT", 0), [])
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.20), "FT", 0), [])
 
     def test_ft_rejects_half_market_and_ht_rejects_full_match_market(self):
         self.assertEqual(bot.exact_live_over_markets(event("1. połowa - liczba goli", 0.5), "FT", 0), [])
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5), "HT", 0), [])
 
-    def test_relaxed_odds_and_multiple_goal_lines(self):
-        self.assertEqual((bot.MIN_ODDS, bot.MAX_ODDS), (1.60, 2.80))
-        # Kurs 1.25 jest poniżej ustalonego minimum 1.60 i musi zostać odrzucony.
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.25), "FT", 0), [])
-        # Przy 0:0 bot nie może przeskoczyć na Over 1.5.
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 0), [])
-        # Po jednym golu właściwą następną linią jest Over 1.5.
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.2), "FT", 1)[0]["line"], 1.5)
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.59), "FT", 0), [])
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.79), "FT", 0)[0]["line"], 0.5)
-        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 3.5, 2.2), "FT", 0), [])
+    def test_over_05_is_not_sent_after_a_goal_and_minimum_odds_differ_by_phase(self):
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 1.69), "FT", 0), [])
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.80), "FT", 0)[0]["odds"], 2.80)
+        self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 0.5, 2.20), "FT", 1), [])
+        self.assertEqual((bot.HT_MIN_ODDS, bot.FT_MIN_ODDS), (1.60, 1.70))
 
-    def test_phase_windows_and_line_caps(self):
-        self.assertEqual((bot.HT_MAX_MINUTE, bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (0, 46, 75))
-        self.assertEqual((bot.HT_MAX_LINE, bot.FT_MAX_LINE), (1.5, 2.5))
+    def test_phase_windows_and_daily_cap(self):
+        self.assertEqual((bot.HT_MIN_MINUTE, bot.HT_MAX_MINUTE), (1, 35))
+        self.assertEqual((bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (1, 75))
+        self.assertEqual(bot.MAX_PICKS_PER_DAY, 10)
 
 
     def test_superbet_live_stats_clock_and_score_fields(self):
@@ -67,7 +62,7 @@ class LiveOverBotTests(unittest.TestCase):
         data["markets"][0]["status"] = 2
         data["markets"][0]["odds"][0]["status"] = 2
         data["markets"][0]["odds"][0]["metadata"]["offer_state_id"] = 2
-        self.assertEqual(bot.exact_live_over_markets(data, "FT", 1)[0]["line"], 1.5)
+        self.assertEqual(bot.exact_live_over_markets(data, "FT", 0)[0]["line"], 0.5)
 
     def test_polish_live_total_goals_market_name_is_detected(self):
         self.assertEqual(bot.market_phase("Liczba goli"), "FT")
