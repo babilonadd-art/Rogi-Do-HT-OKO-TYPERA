@@ -46,6 +46,11 @@ class LiveOverBotTests(unittest.TestCase):
         self.assertEqual(bot.exact_live_over_markets(event("Total Goals", 1.5, 2.20), "FT", 2), [])
         self.assertEqual((bot.HT_MIN_ODDS, bot.FT_MIN_ODDS), (1.60, 1.70))
 
+    def test_superbet_url_finds_nested_direct_event_url_only(self):
+        direct = "https://superbet.pl/zaklady-bukmacherskie/pilka-nozna/testowy-mecz"
+        self.assertEqual(bot.superbet_url({"fixture": {"links": {"event_url": direct}}}), direct)
+        self.assertIsNone(bot.superbet_url({"event_id": "123", "fixture": {"event_name": "A · B"}}))
+
     def test_phase_windows_and_daily_cap(self):
         self.assertEqual((bot.HT_MIN_MINUTE, bot.HT_MAX_MINUTE), (1, 35))
         self.assertEqual((bot.FT_MIN_MINUTE, bot.FT_MAX_MINUTE), (1, 75))
