@@ -603,7 +603,7 @@ def main():
                 stats_cache[sample_slug] = sportscore_match_stats(sample_fixture)
                 logging.info("SportScore kontrola statystyk LIVE: slug=%s stats=%s", sample_slug, stats_cache[sample_slug])
             else:
-                logging.warning("SportScore zwrócił mecz LIVE bez slug — nie można pobrać statystyk.")
+                logging.warning("SportScore mecz LIVE bez slug; pola=%s próbka=%s", sorted(sample_fixture.keys()), sample_fixture)
         candidate_count_before_stats = len(candidates)
         verified_candidates = []
         for item in candidates:
