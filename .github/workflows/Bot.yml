@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   scan:
+    if: ${{ false }} # Wstrzymane: publikuje gole w obu połowach, a repozytorium jest przypisane do kanału rożnych HT.
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
