@@ -45,6 +45,18 @@ def send(text):
 def fetch_candidates(now):
     start = now.astimezone(timezone.utc)
     end = now.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(timezone.utc)
+    raw = source.superbet_api("/v3/pl-PL/events", {
+        "startDate": source.utc_hour(start).isoformat().replace("+00:00", "Z"),
+        "endDate": source.utc_hour(end, round_up=True).isoformat().replace("+00:00", "Z"),
+    })
+    raw_events = raw.get("events") or []
+    for sample in raw_events[:5]:
+        fx = sample.get("fixture") or {}
+        logging.info("Superbet diagnostyka: sport_id=%r offer_state=%r phase=%r utc_date=%r event=%r",
+                     fx.get("sport_id", sample.get("sport_id")),
+                     fx.get("offer_state_status", sample.get("offer_state_status")),
+                     (sample.get("inplay_stats_metadata") or {}).get("status"),
+                     fx.get("utc_date"), fx.get("event_name"))
     events = source.superbet_football_events(start, end)
     candidates = []
     earliest = int((now + timedelta(hours=MIN_HOURS_BEFORE_KICKOFF)).timestamp())
