@@ -1,0 +1,46 @@
+name: FootyBets Probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "footybets_probe.py"
+      - ".github/workflows/FootyBets-Probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: footybets-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install probe dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run read-only FootyBets probe
+        run: python footybets_probe.py
+
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: footybets-probe-report
+          path: footybets_probe_report.json
+          if-no-files-found: warn
+          retention-days: 14
