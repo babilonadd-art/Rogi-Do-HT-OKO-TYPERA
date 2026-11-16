@@ -260,7 +260,7 @@ def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
     wanted={round(float(value),2) for value in lines}
     found={}
     for market in event.get("markets") or []:
-        name=re.sub(r"\\s+"," ",str(market.get("name") or "").strip().lower())
+        name=re.sub(r"\s+"," ",str(market.get("name") or "").strip().lower())
         if not any(term in name for term in ("corner","corners","roż","rzutów rożnych","suma rzutów")):
             continue
         if any(term in name for term in ("1st half","first half","1. połowa","1 połowa","pierwsza połowa",
@@ -280,7 +280,7 @@ def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
             if odd_line not in wanted:
                 continue
             selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
-            if not re.search(r"\\b(powyżej|powyzej|over)\\b",selection):
+            if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
                 continue
             if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
                 continue
