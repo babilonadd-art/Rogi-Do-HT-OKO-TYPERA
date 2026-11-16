@@ -92,6 +92,17 @@ def send_new_doubles(c, now):
         "SELECT COUNT(*) FROM ft_doubles WHERE day=?", (day,)
     ).fetchone()[0]
     remaining = max(0, MAX_DOUBLES_PER_DAY - int(sent_today))
+    history = c.execute(
+        "SELECT coupon_id,sent_at,total_odds,status FROM ft_doubles WHERE day=? ORDER BY sent_at",
+        (day,),
+    ).fetchall()
+    for coupon_id, sent_at, total_odds, status in history:
+        legs = c.execute(
+            "SELECT home,away,line,odds FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts",
+            (coupon_id,),
+        ).fetchall()
+        logging.info("Historia dubla %s | %s | kurs %.3f | %s | zdarzenia=%s",
+                     coupon_id, sent_at, total_odds, status, legs)
     if remaining == 0:
         logging.info("Limit dubli na dziś osiągnięty: %s/%s", sent_today, MAX_DOUBLES_PER_DAY)
         return
