@@ -1,0 +1,51 @@
+name: ROGI FT — DUBLE PREMATCH
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "RogiFTDuble.py"
+      - "tests/test_rogi_ft_duble.py"
+      - ".github/workflows/Rogi-FT-Duble.yml"
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rogi-ft-duble
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja zależności
+        run: pip install -r requirements.txt
+      - name: Kontrola składni i testów
+        run: |
+          python -m py_compile Main.py RogiFTDuble.py
+          python -m unittest discover -s tests -p "test_rogi_ft_duble.py"
+      - name: Skanowanie i rozliczanie dubli FT
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python RogiFTDuble.py
+      - name: Zapis historii dubli
+        run: |
+          if [ -f rogift_duble.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add rogift_duble.db
+            git diff --cached --quiet || git commit -m "Persist FT corner doubles"
+            git pull --rebase --autostash origin main
+            git push
+          fi
