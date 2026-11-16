@@ -1,30 +1,34 @@
-# Rogi do HT — OKO TYPERA
+# Rogi FT — OKO TYPERA
 
-Repozytorium obsługuje osobno:
-- dotychczasowe strategie rożnych — ich kryteria i harmonogram pozostają bez zmian;
-- dodatkowe typy LIVE na gole, publikowane przez `LiveOverBot.py`.
+Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzuty rożne FT (cały mecz).
 
-## LIVE Over 0.5 i Over 1.5 gola
+## Zasady typowania
+- Wyłącznie rynek rożnych FT — bez HT i bez LIVE.
+- Wyłącznie Overy; żadne Undery nie są publikowane.
+- Każde zdarzenie w dubelu musi mieć kurs co najmniej **1.80**.
+- Jeden dubel = dokładnie 2 zdarzenia.
+- Maksymalnie **2 duble dziennie** (4 pojedyncze zdarzenia).
+- Skanowanie co 5 minut przez GitHub Actions.
+- Mecz musi rozpoczynać się co najmniej 3 godziny po skanowaniu.
+- Nie są używane statystyki ani historia drużyn do wyboru zdarzeń.
+- Bot nie publikuje ponownie tego samego meczu.
+- Stawka rozliczeniowa: 50 zł za dubel.
+- Automatyczne rozliczanie po meczu i dzienne podsumowanie zysku/straty.
 
-- **Over 0.5 HT i FT:** typ dostępny tylko przed pierwszym golem w odpowiednim okresie.
-- **Over 1.5 HT i FT:** typ dostępny, dopóki w odpowiednim okresie nie padły 2 gole.
-- **HT:** minuty 1–35, kurs co najmniej 1.60.
-- **FT:** minuty 1–75, kurs co najmniej 1.70.
-- Bot wybiera wyłącznie dokładne linie Over 0.5 lub Over 1.5, bez podmiany na inne rynki.
-- Kurs i rynek są sprawdzane ponownie bezpośrednio przed wysłaniem.
-- Maksymalnie **10 typów łącznie dziennie** dla HT i FT (strefa Europe/Warsaw).
-- Skan LIVE uruchamia się co 5 minut.
-- Źródło kursów i listy spotkań: oferta LIVE Superbet. Nie używamy Flashscore ani SofaScore.
-- Historia wysłanych typów LIVE jest zapisywana w `okotypera_rogi.db`, co blokuje duplikaty.
+## Źródła i ograniczenia
+- Lista meczów, rynek FT Over i kurs są pobierane z publicznej oferty Superbet.
+- Wynik rożnych do rozliczenia jest sprawdzany w Cornerflick, a awaryjnie w Open Matchday.
+- FootyBets został na razie sprawdzony diagnostycznie, ale nie jest aktywnym źródłem produkcyjnym: test nie potwierdził jeszcze stabilnego, jednoznacznego odczytu wszystkich pól potrzebnych do bezpiecznego wysyłania dubli.
+- Publiczna dostępność strony nie oznacza automatycznie zgody na masowe pobieranie i dalsze publikowanie jej prognoz.
 
-## Telegram
-
+## Konfiguracja Telegrama
 W GitHub → Settings → Secrets and variables → Actions wymagane są:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-Bot Telegram musi mieć uprawnienie administratora do publikowania na kanale.
+Bot musi mieć uprawnienie do publikowania na kanale.
 
-## Ważne
+## Uruchamianie
+Workflow `.github/workflows/Rogi-FT-Duble.yml` uruchamia skan co 5 minut. Historia dubli jest przechowywana w `rogift_duble.db` i zapisywana w repozytorium po wykonaniu skanu.
 
-Bot publikuje tylko rzeczywisty, aktywny rynek i kurs od wskazanego minimum. Jeśli Superbet nie udostępnia odpowiedniego rynku albo wynik nie wynosi 0:0, typ nie zostanie wysłany. Brak typu nie jest powodem do dobierania meczu na siłę. Typy nie gwarantują wygranej.
+Brak dubla oznacza, że nie znaleziono dwóch zdarzeń spełniających warunki — bot nie dobiera meczów na siłę. Kursy mogą się zmieniać, a typy nie gwarantują wygranej.
