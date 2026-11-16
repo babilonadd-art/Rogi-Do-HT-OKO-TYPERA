@@ -65,7 +65,7 @@ def superbet_events_from_payload(payload):
 def superbet_event_is_prematch(event):
     fixture=event.get("fixture") or {}
     sport_id=fixture.get("sport_id",event.get("sport_id"))
-    if sport_id is not None and str(sport_id)!="4":
+    if sport_id is not None and str(sport_id)!="5":
         return False
     # Some Superbet event-list responses omit these optional status fields entirely.
     # Missing status is not evidence that an event is closed or already live.
