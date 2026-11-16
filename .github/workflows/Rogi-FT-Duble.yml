@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - "Main.py"
       - "RogiFTDuble.py"
       - "tests/test_rogi_ft_duble.py"
       - ".github/workflows/Rogi-FT-Duble.yml"
