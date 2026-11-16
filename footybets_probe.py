@@ -68,6 +68,30 @@ def extract_html(url, report):
             if len(value) >= 100:
                 item["market_contexts"].append(value[:900])
         item["market_contexts"] = list(dict.fromkeys(item["market_contexts"]))[:20]
+        item["candidate_dom_nodes"] = []
+        seen_nodes = set()
+        for node in soup.find_all(["article", "li", "section", "div"]):
+            value = text_of(node)
+            if not value or len(value) > 900:
+                continue
+            if not MARKET_RE.search(value) or not re.search(r"\\bodds\\s*[: ]\\s*\\d", value, re.I):
+                continue
+            key = (node.name, str(node.get("class")), value)
+            if key in seen_nodes:
+                continue
+            seen_nodes.add(key)
+            parent = node.parent
+            item["candidate_dom_nodes"].append({
+                "tag": node.name,
+                "class": node.get("class"),
+                "id": node.get("id"),
+                "parent_tag": parent.name if parent else None,
+                "parent_class": parent.get("class") if parent else None,
+                "text": value[:900],
+                "html": str(node)[:2500],
+            })
+        item["candidate_dom_nodes"].sort(key=lambda x: len(x["text"]))
+        item["candidate_dom_nodes"] = item["candidate_dom_nodes"][:12]
     except Exception as exc:
         report["http_errors"].append({"url": url, "error": f"{type(exc).__name__}: {exc}"})
 
