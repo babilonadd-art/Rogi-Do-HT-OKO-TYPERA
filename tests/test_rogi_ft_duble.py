@@ -29,7 +29,7 @@ class StrategyRulesTests(unittest.TestCase):
     def test_all_ft_over_lines_are_read_with_one_detail_request(self, api):
         api.return_value = {"events": [{
             "id": 123,
-            "fixture": {"offer_state_status": {"1": 1}},
+            "fixture": {"event_name": "Coritiba·Santos", "offer_state_status": {"1": 1}},
             "inplay_stats_metadata": {"status": "NOT_STARTED"},
             "markets": [{
                 "name": "Liczba rzutów rożnych",
@@ -42,6 +42,13 @@ class StrategyRulesTests(unittest.TestCase):
                     {"name": "Powyżej 11.5", "price": 2.20, "status": 1,
                      "display": True, "metadata": {"special_bet_value": "11.5", "offer_state_id": 1}},
                 ],
+            }, {
+                "name": "Coritiba - liczba rzutów rożnych",
+                "status": 1,
+                "odds": [{
+                    "name": "Powyżej 12.5", "price": 2.80, "status": 1,
+                    "display": True, "metadata": {"special_bet_value": "12.5", "offer_state_id": 1},
+                }],
             }],
         }]}
         result = Main.superbet_ft_corners_over_prices(123, lines=FT_LINES, min_odds=1.80)
