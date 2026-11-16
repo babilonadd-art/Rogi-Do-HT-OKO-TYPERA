@@ -16,7 +16,7 @@ Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzut
 - Automatyczne rozliczanie po meczu i dzienne podsumowanie zysku/straty.
 
 ## Źródła i ograniczenia
-- Lista meczów, rynek FT Over i kurs są pobierane z publicznej oferty Superbet.
+- Lista meczów, rynek FT Over i kurs są pobierane z publicznej oferty Superbet. Filtr piłki nożnej korzysta z identyfikatora sportu 5.
 - Wynik rożnych do rozliczenia jest sprawdzany w Cornerflick, a awaryjnie w Open Matchday.
 - FootyBets został na razie sprawdzony diagnostycznie, ale nie jest aktywnym źródłem produkcyjnym: test nie potwierdził jeszcze stabilnego, jednoznacznego odczytu wszystkich pól potrzebnych do bezpiecznego wysyłania dubli.
 - Publiczna dostępność strony nie oznacza automatycznie zgody na masowe pobieranie i dalsze publikowanie jej prognoz.
