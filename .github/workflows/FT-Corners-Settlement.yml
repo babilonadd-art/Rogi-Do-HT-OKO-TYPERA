@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   settle:
+    if: ${{ false }} # Zastąpiono nowym modułem dubli FT; nie rozliczaj starych kuponów pojedynczych.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
