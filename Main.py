@@ -251,6 +251,11 @@ def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
         if event is None:
             return {}
     fixture=event.get("fixture") or {}
+    event_teams = [
+        part.strip() for part in str(fixture.get("event_name") or "").split("·", 1)
+        if part.strip()
+    ]
+    team_keys = [normalized_team(team) for team in event_teams]
     offer_states=fixture.get("offer_state_status") or {}
     if offer_states and offer_states.get("1") not in (1,"1",True,"ACTIVE","active"):
         return {}
@@ -266,6 +271,9 @@ def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
         if any(term in name for term in ("1st half","first half","1. połowa","1 połowa","pierwsza połowa",
                                           "2nd half","second half","2. połowa","2 połowa","druga połowa",
                                           "home","away","gospodarze","goście","drużyn","team total","handicap","h2h")):
+            continue
+        market_key=normalized_team(name)
+        if any(team and team in market_key for team in team_keys):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
