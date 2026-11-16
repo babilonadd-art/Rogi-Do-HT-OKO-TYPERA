@@ -44,7 +44,8 @@ def send(text):
 
 def fetch_candidates(now):
     start = now.astimezone(timezone.utc)
-    end = now.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(timezone.utc)
+    # Look ahead 36 hours so late-night scans also see tomorrow's fixtures.
+    end = start + timedelta(hours=36)
     events = source.superbet_football_events(start, end)
     candidates = []
     earliest = int((now + timedelta(hours=MIN_HOURS_BEFORE_KICKOFF)).timestamp())
