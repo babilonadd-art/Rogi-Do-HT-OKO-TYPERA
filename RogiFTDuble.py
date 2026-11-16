@@ -66,14 +66,13 @@ def fetch_candidates(now):
         home, away = (part.strip() for part in parts)
         if not home or not away:
             continue
-        chosen = None
-        for line in FT_LINES:
-            price = source.superbet_ft_corners_over_odds(
-                int(event_id), line=line, min_odds=MIN_LEG_ODDS
-            )
-            if price is not None and float(price) >= MIN_LEG_ODDS:
-                chosen = (line, float(price))
-                break
+        prices = source.superbet_ft_corners_over_prices(
+            int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
+        )
+        chosen = next(
+            ((line, float(prices[line])) for line in FT_LINES if line in prices),
+            None,
+        )
         if not chosen:
             continue
         candidates.append({
@@ -82,7 +81,8 @@ def fetch_candidates(now):
             "home": home, "away": away, "start_ts": kickoff,
             "line": chosen[0], "odds": chosen[1],
         })
-    candidates.sort(key=lambda x: (x["start_ts"], abs(x["odds"] - MIN_LEG_ODDS)))
+    candidates.sort(key=lambda x: (x["start_ts"], x["line"], abs(x["odds"] - MIN_LEG_ODDS)))
+    logging.info("ROGI FT: kandydaci spełniający kurs >= %.2f: %s", MIN_LEG_ODDS, len(candidates))
     return candidates
 
 
