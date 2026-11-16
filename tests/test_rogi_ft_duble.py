@@ -15,11 +15,11 @@ class StrategyRulesTests(unittest.TestCase):
 
     def test_superbet_football_sport_id(self):
         self.assertTrue(superbet_event_is_prematch({
-            "fixture": {"sport_id": 4, "offer_state_status": {"1": 1}},
+            "fixture": {"sport_id": 5, "offer_state_status": {"1": 1}},
             "inplay_stats_metadata": {"status": "NOT_STARTED"},
         }))
         self.assertFalse(superbet_event_is_prematch({
-            "fixture": {"sport_id": 5, "offer_state_status": {"1": 1}},
+            "fixture": {"sport_id": 4, "offer_state_status": {"1": 1}},
             "inplay_stats_metadata": {"status": "NOT_STARTED"},
         }))
 
