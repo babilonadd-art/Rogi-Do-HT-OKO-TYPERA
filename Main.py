@@ -235,36 +235,37 @@ def superbet_event_for_match(home,away,start_ts,events):
             best=(score,event)
     return best[1] if best else None
 
-def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE,min_odds=1.68):
-    """Return the current price only when the exact active FT match-corners Over line exists."""
+def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
+    """Fetch one event detail once and return qualifying full-match corner Over prices by line."""
     payload=superbet_api("/v3/pl-PL/events",{"events":str(event_id)})
     events=payload.get("events",[])
     if not events:
-        return None
+        return {}
     if len(events)==1:
         event=events[0]
         returned_id=event.get("event_id") or event.get("id")
         if returned_id is not None and str(returned_id)!=str(event_id):
-            return None
+            return {}
     else:
         event=next((e for e in events if str(e.get("event_id") or e.get("id"))==str(event_id)),None)
         if event is None:
-            return None
+            return {}
     fixture=event.get("fixture") or {}
     offer_states=fixture.get("offer_state_status") or {}
-    if offer_states and offer_states.get("1") not in (1,"1"):
-        return None
-    if (event.get("inplay_stats_metadata") or {}).get("status") not in (None,"","NOT_STARTED"):
-        return None
+    if offer_states and offer_states.get("1") not in (1,"1",True,"ACTIVE","active"):
+        return {}
+    phase=str((event.get("inplay_stats_metadata") or {}).get("status") or "").strip().upper()
+    if phase not in ("","NOT_STARTED","NOTSTARTED","PREMATCH"):
+        return {}
+    wanted={round(float(value),2) for value in lines}
+    found={}
     for market in event.get("markets") or []:
-        name=re.sub(r"\s+"," ",str(market.get("name") or "").strip().lower())
-        has_corners=any(term in name for term in ("corner","corners","roż","rzutów rożnych","suma rzutów"))
-        if not has_corners:
+        name=re.sub(r"\\s+"," ",str(market.get("name") or "").strip().lower())
+        if not any(term in name for term in ("corner","corners","roż","rzutów rożnych","suma rzutów")):
             continue
-        # Reject all half markets and team-only totals; accept only the match total.
         if any(term in name for term in ("1st half","first half","1. połowa","1 połowa","pierwsza połowa",
-                                         "2nd half","second half","2. połowa","2 połowa","druga połowa",
-                                         "home","away","gospodarze","goście","drużyn","team total")):
+                                          "2nd half","second half","2. połowa","2 połowa","druga połowa",
+                                          "home","away","gospodarze","goście","drużyn","team total","handicap","h2h")):
             continue
         if market.get("status") not in (None,1,"1","ACTIVE","active"):
             continue
@@ -272,29 +273,27 @@ def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE,min_odds=1.68):
             meta=odd.get("metadata") or {}
             raw_line=meta.get("special_bet_value",odd.get("special_bet_value"))
             try:
-                odd_line=float(str(raw_line).replace(",","." ))
-            except (TypeError,ValueError):
-                continue
-            selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
-            if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
-                continue
-            if abs(odd_line-float(line))>0.001:
-                continue
-            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
-                continue
-            if str(meta.get("offer_state_id",1))!="1":
-                continue
-            try:
+                odd_line=round(float(str(raw_line).replace(",",".")),2)
                 price=float(odd.get("price"))
             except (TypeError,ValueError):
                 continue
-            if price<float(min_odds):
-                logging.info("Superbet FT corners: event %s | Over %.1f odrzucony — kurs %.2f < %.2f",event_id,line,price,min_odds)
+            if odd_line not in wanted:
                 continue
-            logging.info("Superbet FT corners: event %s | active Over %.1f | kurs %.2f",event_id,line,price)
-            return price
-    logging.info("Superbet: brak aktywnego rynku FT rożne Over %.1f dla event %s",line,event_id)
-    return None
+            selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
+            if not re.search(r"\\b(powyżej|powyzej|over)\\b",selection):
+                continue
+            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+                continue
+            if str(meta.get("offer_state_id",1))!="1" or price<float(min_odds):
+                continue
+            found[odd_line]=price
+    logging.info("Superbet FT: event %s — znalezione kwalifikujące linie Over: %s",event_id,found)
+    return found
+
+
+def superbet_ft_corners_over_odds(event_id,line=FT_CORNERS_LINE,min_odds=1.80):
+    """Compatibility wrapper for callers needing one exact FT corner Over line."""
+    return superbet_ft_corners_over_prices(event_id,(line,),min_odds).get(round(float(line),2))
 
 
 def superbet_ht_over_odds(event_id,line=HT_CORNERS_LINE):
