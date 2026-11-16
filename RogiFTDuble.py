@@ -249,9 +249,20 @@ def main():
     c = db_open()
     try:
         now = datetime.now(TZ)
-        settle_doubles(c, now)
-        if os.getenv("BOT_MODE", "scan").lower() != "settle":
-            send_new_doubles(c, now)
+        mode = os.getenv("BOT_MODE", "scan").strip().lower()
+        if mode == "dry-run":
+            used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
+            candidates = [x for x in fetch_candidates(now) if x["event_id"] not in used]
+            logging.info("DRY RUN: wolne zdarzenia po filtrze duplikatów: %s", len(candidates))
+            for item in candidates[:20]:
+                kickoff = datetime.fromtimestamp(item["start_ts"], timezone.utc).astimezone(TZ)
+                logging.info("DRY RUN: %s | %s - %s | OVER %.1f FT @%.2f | %s",
+                             item["league"], item["home"], item["away"], item["line"],
+                             item["odds"], kickoff.isoformat())
+        else:
+            settle_doubles(c, now)
+            if mode != "settle":
+                send_new_doubles(c, now)
     finally:
         c.close()
 
