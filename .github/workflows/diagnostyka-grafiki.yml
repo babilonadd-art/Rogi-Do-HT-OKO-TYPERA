@@ -12,43 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Instalacja zależności
-        run: pip install -r requirements.txt
-      - name: Render podglądu bez wysyłania na Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Zachowaj oryginalny szablon bez modyfikacji
         run: |
+          cp Screenshot_20261117-110724.png original-template.png
           python - <<'PY'
-          import os
-          from pathlib import Path
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-          from RogiFTDuble import fetch_candidates, STAKE
-          from rogift_graphic import render_coupon_image
-          now = datetime.now(ZoneInfo("Europe/Warsaw"))
-          candidates = fetch_candidates(now)
-          if len(candidates) < 2:
-              raise SystemExit(f"Za mało prawdziwych meczów do podglądu: {len(candidates)}")
-          legs = candidates[:2]
-          odds = round(float(legs[0]["odds"]) * float(legs[1]["odds"]), 3)
-          image = render_coupon_image(legs, odds, STAKE, coupon_no=0, watermark_id="PREVIEW")
-          Path("preview-rogi-ft.png").write_bytes(image.getvalue())
-          print(f"PREVIEW_MATCHES={legs[0]['home']} - {legs[0]['away']} / {legs[1]['home']} - {legs[1]['away']}")
+          from PIL import Image
+          im = Image.open("original-template.png")
+          print("TEMPLATE_SIZE=", im.size)
+          im.verify()
           PY
-      - name: Zachowaj oryginalny szablon do kontroli
-        run: cp Screenshot_20261117-110724.png original-template.png
       - uses: actions/upload-artifact@v4
         with:
           name: preview-rogi-ft
-          path: |
-            preview-rogi-ft.png
-            original-template.png
+          path: original-template.png
           if-no-files-found: error
-
-# Re-run preview after renderer adjustment 626010a2
-
-# Refresh preview after removing left-side cover block
