@@ -14,6 +14,9 @@ Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzut
 - Bot nie publikuje ponownie tego samego meczu.
 - Stawka rozliczeniowa: 50 zł za dubel.
 - Nowe duble są wysyłane jako dynamiczna grafika PNG w stylu OKO TYPERA; grafika zawiera oba mecze, linie FT, kursy, podatek 12%, kwotę grającą, kurs łączny, wypłatę i zysk netto.
+- Każda publikacja otrzymuje unikalny identyfikator `OT-...`, zapisany razem z kuponem w bazie i powtarzany w ramce grafiki oraz podpisie Telegrama.
+- Ramka ochronna znajduje się poza oryginalną grafiką — nie zasłania nazw drużyn, linii ani typów; test sprawdza zgodność pikseli oryginału.
+- Zdjęcia i wiadomości są wysyłane z `protect_content=True`; ogranicza to natywne przekazywanie i zapisywanie w Telegramie, ale nie blokuje zrzutów ekranu ani fotografowania ekranu.
 - Automatyczne rozliczanie po meczu i dzienne podsumowanie zysku/straty.
 
 ## Źródła i ograniczenia
