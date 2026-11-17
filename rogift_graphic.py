@@ -67,11 +67,11 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
 
     # Szablon ma trzeci, nieużywany wiersz „Mecz C”. Wyczyść jego
     # lewy fragment, który nie był przykrywany przez panel podsumowania.
-    d.rectangle((61, 690, 193, 840), fill=CREAM)
+    d.rectangle((61, 670, 193, 840), fill=CREAM)
 
     # Kolejność zgodnie z prośbą: kurs, stawka, podatek, kwota grająca.
     # Osobne kolumny i mniejsze fonty zabezpieczają przed nachodzeniem tekstu.
-    d.rectangle((194, 704, 970, 990), fill=CREAM)
+    d.rectangle((194, 680, 970, 990), fill=CREAM)
     rows = [
         ("Kurs łączny:", pl_number(displayed_odds), BLUE),
         ("Stawka:", f"{pl_number(stake)} zł", INK),
