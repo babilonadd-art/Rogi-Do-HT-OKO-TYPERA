@@ -2,13 +2,6 @@ name: TEST — podpis cyfrowy i QR ROGI FT
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'Screenshot_20261117-110724.png'
-      - 'scripts/rogift_test_graphic.py'
-      - 'rogift_graphic.py'
-      - 'tests/test_rogi_ft_security.py'
-      - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
   contents: read
