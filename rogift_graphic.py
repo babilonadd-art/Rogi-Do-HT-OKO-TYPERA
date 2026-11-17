@@ -42,6 +42,57 @@ def _pl(value):
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", " ")
 
 
+def apply_watermark(image_bytes):
+    """Return a watermarked PNG copy; the source image bytes are never modified."""
+    with Image.open(BytesIO(image_bytes)) as source:
+        base = source.convert("RGBA")
+
+    width, height = base.size
+    font_size = max(20, min(48, width // 24))
+    font = _font(font_size, bold=True)
+    label = "OKO TYPERA  •  NIE KOPIOWAĆ"
+
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bounds = probe.textbbox((0, 0), label, font=font, stroke_width=2)
+    pad_x = max(18, font_size // 2)
+    pad_y = max(14, font_size // 3)
+    stamp_w = bounds[2] - bounds[0] + 2 * pad_x
+    stamp_h = bounds[3] - bounds[1] + 2 * pad_y
+
+    stamp = Image.new("RGBA", (stamp_w, stamp_h), (0, 0, 0, 0))
+    stamp_draw = ImageDraw.Draw(stamp)
+    stamp_draw.rounded_rectangle(
+        (1, 1, stamp_w - 2, stamp_h - 2),
+        radius=max(10, font_size // 3),
+        fill=(255, 255, 255, 48),
+        outline=(5, 24, 53, 125),
+        width=max(2, font_size // 20),
+    )
+    stamp_draw.text(
+        (pad_x - bounds[0], pad_y - bounds[1]),
+        label,
+        font=font,
+        fill=(5, 24, 53, 165),
+        stroke_width=2,
+        stroke_fill=(255, 255, 255, 185),
+    )
+
+    rotated = stamp.rotate(
+        -18,
+        resample=Image.Resampling.BICUBIC,
+        expand=True,
+    )
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    x = (width - rotated.width) // 2
+    y = (height - rotated.height) // 2
+    overlay.alpha_composite(rotated, (x, y))
+    result = Image.alpha_composite(base, overlay)
+
+    output = BytesIO()
+    result.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12):
     """Return a polished PNG BytesIO for a two-leg FT corners double."""
     img = Image.new("RGB", (W, H), PAPER)
@@ -132,4 +183,4 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12):
     out = BytesIO()
     img.save(out, format="PNG", optimize=True)
     out.seek(0)
-    return out
+    return BytesIO(apply_watermark(out.getvalue()))
