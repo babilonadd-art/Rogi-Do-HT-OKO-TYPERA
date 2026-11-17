@@ -126,7 +126,7 @@ def telegram_message_link(token, chat_id, message_id):
 
 
 def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None):
-    """Publish a signed graphic, then add a QR linking to that exact official post."""
+    """Send the exact original PNG to Telegram, without caption or modifications."""
     from pathlib import Path
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -136,108 +136,32 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         logging.error("Brak oryginalnej grafiki: %s", image_path)
         return None
 
-    post_code = publication_code(coupon_id)
-    proof_payload, generated_signature = publication_proof(legs, total_odds, coupon_id)
-    signature = (existing_proof or {}).get("signature") or generated_signature
-    verification_url = (existing_proof or {}).get("verification_url")
-
-    caption_lines = [
-        f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze",
-        f"🔐 ID ORYGINALNEJ PUBLIKACJI: {post_code}",
-        f"🛡 PODPIS CYFROWY: {signature}",
-        *[
-            f"{i}. {leg['home']} – {leg['away']} | OVER {float(leg['line']):.1f} rożnych FT | kurs {float(leg['odds']):.2f}"
-            for i, leg in enumerate(legs[:2], 1)
-        ],
-        f"💹 KURS ŁĄCZNY: {float(total_odds):.2f}",
-        f"💰 STAWKA: {STAKE:.2f} zł",
-        "",
-        "🔒 OCHRONA TREŚCI: NIE KOPIOWAĆ",
-        "Grafika i autorskie opisy Oko Typera są materiałami chronionymi. Nie podszywaj się pod oficjalne publikacje.",
-    ]
-
+    proof_payload, signature = publication_proof(legs, total_odds, coupon_id)
     try:
-        source_bytes = image_path.read_bytes()
-        first_copy = apply_watermark(
-            source_bytes, watermark_id=post_code, signature=signature
-        )
-        response = requests.post(
-            f"https://api.telegram.org/bot{token}/sendPhoto",
-            data={
-                "chat_id": chat_id,
-                "protect_content": True,
-                "caption": "\n".join(caption_lines),
-            },
-            files={"photo": (f"{post_code}_OKO_TYPERA_ROGI_FT.png", BytesIO(first_copy), "image/png")},
-            timeout=45,
-        )
+        with image_path.open("rb") as photo:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": chat_id},
+                files={"photo": (image_path.name, photo, "image/png")},
+                timeout=45,
+            )
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
             logging.error("Telegram sendPhoto: %s", payload)
             return None
         message_id = int(payload["result"]["message_id"])
-
-        # For a first publication, point QR to this exact Telegram message.
-        # A repost reuses the first publication's permanent verification link.
-        if not verification_url:
-            verification_url = telegram_message_link(token, chat_id, message_id)
-
-        if verification_url:
-            final_copy = apply_watermark(
-                source_bytes,
-                watermark_id=post_code,
-                signature=signature,
-                verification_url=verification_url,
-            )
-            final_caption = "\n".join(
-                caption_lines + [f"🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"]
-            )
-            media = {
-                "type": "photo",
-                "media": "attach://photo",
-                "caption": final_caption,
-            }
-            try:
-                edited = requests.post(
-                    f"https://api.telegram.org/bot{token}/editMessageMedia",
-                    data={
-                        "chat_id": chat_id,
-                        "message_id": message_id,
-                        "media": json.dumps(media, ensure_ascii=False),
-                    },
-                    files={
-                        "photo": (
-                            f"{post_code}_SIGNED_QR.png",
-                            BytesIO(final_copy),
-                            "image/png",
-                        )
-                    },
-                    timeout=45,
-                )
-                edited.raise_for_status()
-                edit_payload = edited.json()
-                if not edit_payload.get("ok"):
-                    logging.error("Telegram editMessageMedia: %s", edit_payload)
-                    verification_url = None
-                else:
-                    logging.info("Dodano QR do dokładnego posta Telegram: %s", verification_url)
-            except Exception:
-                logging.exception("Post wysłany, ale nie udało się dodać QR/linku w edycji")
-                verification_url = None
-        else:
-            logging.warning("Post wysłany z podpisem, ale bez QR — brak linku do posta")
-
+        logging.info("Wysłano oryginalną grafikę bez opisu, Telegram message_id=%s", message_id)
         return {
             "message_id": message_id,
-            "publication_code": post_code,
+            "publication_code": publication_code(coupon_id),
             "signature": signature,
             "payload_json": json.dumps(proof_payload, ensure_ascii=False, sort_keys=True),
-            "verification_url": verification_url,
+            "verification_url": None,
             "created_at": datetime.now(TZ).isoformat(),
         }
     except Exception:
-        logging.exception("Nie udało się wysłać podpisanej grafiki dubla FT")
+        logging.exception("Nie udało się wysłać oryginalnej grafiki dubla FT")
         return None
 
 
@@ -433,6 +357,23 @@ def repost_pending_doubles(c, now):
         logging.info("Ponownie opublikowano dubel %s, Telegram message_id=%s", coupon_id, message_id)
     logging.info("Ponownie opublikowane istniejące duble: %s", sent)
 
+
+def reset_today_pending_and_scan(c, now):
+    """Remove today's unsettled coupons only, then build fresh picks."""
+    day = now.date().isoformat()
+    old_ids = [row[0] for row in c.execute(
+        "SELECT coupon_id FROM ft_doubles WHERE day=? AND status='PENDING'", (day,)
+    ).fetchall()]
+    for coupon_id in old_ids:
+        c.execute("DELETE FROM ft_double_legs WHERE coupon_id=?", (coupon_id,))
+        c.execute("DELETE FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,))
+        c.execute("DELETE FROM ft_publication_proofs WHERE coupon_id=?", (coupon_id,))
+        c.execute("DELETE FROM ft_doubles WHERE coupon_id=? AND status='PENDING'", (coupon_id,))
+    c.commit()
+    logging.info("Reset: usunięto dzisiejsze nierozliczone duble: %s; rozliczone archiwum zachowane", len(old_ids))
+    send_new_doubles(c, now)
+
+
 def settle_doubles(c, now):
     pending = c.execute("""SELECT event_id,coupon_id,league,home,away,start_ts,line,odds
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
@@ -528,6 +469,8 @@ def main():
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
         if mode == "repost-pending":
             repost_pending_doubles(c, now)
+        elif mode == "reset-today-and-scan":
+            reset_today_pending_and_scan(c, now)
         elif mode == "dry-run":
             used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
             candidates = [x for x in fetch_candidates(now) if x["event_id"] not in used]
