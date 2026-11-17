@@ -50,16 +50,20 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertTrue(TEMPLATE.is_file())
         rendered = render_coupon_image(self.legs, 3.7245, 50.0)
         with Image.open(rendered) as image:
-            self.assertEqual(image.size, (1024, 1536))
+            with Image.open(TEMPLATE) as original:
+                self.assertEqual(image.size, original.size)
             self.assertEqual(image.format, "PNG")
 
     def test_static_branding_and_signature_area_remain_unchanged(self):
         rendered = render_coupon_image(self.legs, 3.7245, 50.0)
         with Image.open(rendered) as output, Image.open(TEMPLATE) as original:
-            self.assertEqual(output.crop((0, 0, 1024, 380)).tobytes(),
-                             original.crop((0, 0, 1024, 380)).tobytes())
-            self.assertEqual(output.crop((0, 1180, 1024, 1536)).tobytes(),
-                             original.crop((0, 1180, 1024, 1536)).tobytes())
+            width, height = original.size
+            top = round(height * 380 / 1536)
+            bottom = round(height * 1180 / 1536)
+            self.assertEqual(output.crop((0, 0, width, top)).tobytes(),
+                             original.crop((0, 0, width, top)).tobytes())
+            self.assertEqual(output.crop((0, bottom, width, height)).tobytes(),
+                             original.crop((0, bottom, width, height)).tobytes())
 
 
 if __name__ == "__main__":
