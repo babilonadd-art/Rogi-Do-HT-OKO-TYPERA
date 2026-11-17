@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, daily_quota_count, reset_daily_quota
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, daily_quota_count
 from Main import superbet_event_is_prematch
 
 
@@ -37,7 +37,7 @@ class StrategyRulesTests(unittest.TestCase):
              ('old-2', day, '2026-11-17T13:00:00+01:00')],
         )
         now = datetime(2026, 11, 17, 20, 0, tzinfo=ZoneInfo('Europe/Warsaw'))
-        reset_daily_quota(db, now)
+        db.execute('INSERT INTO ft_daily_quota_resets VALUES(?,?)', (day, now.isoformat()))
         self.assertEqual(daily_quota_count(db, day), 0)
         self.assertEqual(db.execute('SELECT COUNT(*) FROM ft_doubles').fetchone()[0], 2)
         db.execute('INSERT INTO ft_doubles VALUES(?,?,?)',
