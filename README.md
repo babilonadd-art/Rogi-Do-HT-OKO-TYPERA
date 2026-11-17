@@ -13,6 +13,7 @@ Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzut
 - Nie są używane statystyki ani historia drużyn do wyboru zdarzeń.
 - Bot nie publikuje ponownie tego samego meczu.
 - Stawka rozliczeniowa: 50 zł za dubel.
+- Nowe duble są wysyłane jako dynamiczna grafika PNG w stylu OKO TYPERA; grafika zawiera oba mecze, linie FT, kursy, podatek 12%, kwotę grającą, kurs łączny, wypłatę i zysk netto.
 - Automatyczne rozliczanie po meczu i dzienne podsumowanie zysku/straty.
 
 ## Źródła i ograniczenia
