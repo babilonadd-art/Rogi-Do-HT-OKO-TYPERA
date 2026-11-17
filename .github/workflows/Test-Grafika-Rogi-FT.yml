@@ -1,4 +1,4 @@
-name: TEST — znak wodny ROGI FT na Telegram
+name: TEST — podpis cyfrowy i QR ROGI FT
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Instalacja zależności
-        run: pip install "requests>=2.31,<3" "Pillow>=10,<13"
+        run: pip install "requests>=2.31,<3" "Pillow>=10,<13" "qrcode>=7.4,<9"
       - name: Wyślij testową grafikę ze znakiem wodnym
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
