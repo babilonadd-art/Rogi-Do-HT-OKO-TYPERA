@@ -39,10 +39,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
         raise ValueError("Grafika dubla wymaga dwóch prawdziwych meczów")
     if not TEMPLATE.is_file():
         raise FileNotFoundError(f"Brak oryginalnego szablonu: {TEMPLATE}")
-    im = Image.open(TEMPLATE).convert("RGB")
+    # Zachowaj dokładny tryb i piksele oryginału poza polami dynamicznymi.
+    im = Image.open(TEMPLATE).copy()
     d = ImageDraw.Draw(im)
 
-    # Nazwy drużyn, linie i kursy w dwóch oryginalnych panelach.
     for i, leg in enumerate(legs[:2]):
         top = 397 + i * 155
         d.rectangle((225, top, 766, top + 120), fill=CREAM)
@@ -74,7 +74,6 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     for y in (774, 846, 918, 990):
         d.line((61, y, 950, y), fill=(120, 126, 133), width=2)
 
-    # Wypłata i zysk pozostają w dwóch dolnych polach oryginalnej grafiki.
     d.rectangle((205, 1018, 553, 1167), fill=(7, 27, 58))
     d.rectangle((572, 1018, 971, 1167), fill=(110, 255, 0))
     d.text((239, 1027), "Wypłata:", font=_font(42, True), fill=(255, 255, 255))
