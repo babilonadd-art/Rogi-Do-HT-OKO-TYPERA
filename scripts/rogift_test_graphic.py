@@ -90,20 +90,44 @@ def make_graphic():
 def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat = os.environ["TELEGRAM_CHAT_ID"]
-    buf = BytesIO()
-    make_graphic().save(buf, format="PNG", optimize=True)
-    buf.seek(0)
-    response = requests.post(
-        f"https://api.telegram.org/bot{token}/sendPhoto",
-        data={"chat_id": chat, "caption": "🧪 TEST GRAFIKI — ROGI FT\nFikcyjne mecze i kursy. Nie jest to typ do gry."},
-        files={"photo": ("oko_typera_test_rogi_ft.png", buf, "image/png")},
-        timeout=45,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if not payload.get("ok"):
-        raise RuntimeError(f"Telegram API error: {payload}")
-    print("TEST PHOTO SENT; message_id=" + str(payload["result"]["message_id"]))
+    image_buffer = BytesIO()
+    make_graphic().save(image_buffer, format="PNG", optimize=True)
+    photo_bytes = image_buffer.getvalue()
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    caption = "🧪 TEST GRAFIKI — ROGI FT\nFikcyjne mecze i kursy. Nie jest to typ do gry."
+
+    # Telegram occasionally resets the TLS connection. Retry transient network
+    # errors and 5xx/429 responses, rebuilding the multipart upload each time.
+    last_error = None
+    for attempt in range(1, 6):
+        try:
+            response = requests.post(
+                url,
+                data={"chat_id": chat, "caption": caption},
+                files={"photo": ("oko_typera_test_rogi_ft.png", BytesIO(photo_bytes), "image/png")},
+                timeout=(15, 60),
+            )
+            if response.status_code == 429 or response.status_code >= 500:
+                last_error = RuntimeError(f"Temporary Telegram HTTP {response.status_code}: {response.text[:300]}")
+                if attempt < 5:
+                    import time
+                    time.sleep(min(2 ** attempt, 20))
+                    continue
+            response.raise_for_status()
+            payload = response.json()
+            if not payload.get("ok"):
+                raise RuntimeError(f"Telegram API error: {payload}")
+            print("TEST PHOTO SENT; message_id=" + str(payload["result"]["message_id"]))
+            return
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            last_error = exc
+            print(f"Telegram connection attempt {attempt}/5 failed: {exc}")
+            if attempt < 5:
+                import time
+                time.sleep(min(2 ** attempt, 20))
+        except requests.exceptions.HTTPError:
+            raise
+    raise RuntimeError(f"Telegram photo was not sent after 5 attempts: {last_error}")
 
 if __name__ == "__main__":
     main()
