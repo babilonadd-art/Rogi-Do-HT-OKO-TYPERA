@@ -4,7 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
-CREAM = (248, 246, 237)
+CREAM = (250, 248, 245)
 INK = (8, 24, 52)
 BLUE = (0, 105, 205)
 RED = (205, 22, 18)
@@ -46,16 +46,16 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     d = ImageDraw.Draw(overlay)
 
     for i, leg in enumerate(legs[:2]):
-        top = 397 + i * 155
-        d.rectangle((225, top, 766, top + 120), fill=CREAM)
-        d.rectangle((775, top + 8, 975, top + 116), fill=CREAM)
+        top = 386 + i * 155
+        d.rectangle((225, top, 765, top + 143), fill=CREAM)
+        d.rectangle((775, top, 975, top + 143), fill=CREAM)
         match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
-        d.text((235, top + 8), match, font=_fit(d, match, 525, 48), fill=INK)
+        d.text((235, top + 16), match, font=_fit(d, match, 525, 48), fill=INK)
         market = f"Over {float(leg['line']):.1f} rożnych FT"
-        d.text((235, top + 68), market, font=_fit(d, market, 525, 39, False, True), fill=INK)
-        d.text((801, top + 4), "Kurs", font=_font(27, True, True), fill=INK)
+        d.text((235, top + 78), market, font=_fit(d, market, 525, 39, False, True), fill=INK)
+        d.text((801, top + 13), "Kurs", font=_font(27, True, True), fill=INK)
         odds = f"{float(leg['odds']):.2f}"
-        d.text((801, top + 35), odds, font=_fit(d, odds, 160, 64), fill=BLUE)
+        d.text((801, top + 47), odds, font=_fit(d, odds, 160, 64), fill=BLUE)
 
     tax = round(float(stake) * float(tax_rate), 2)
     playing = round(float(stake) - tax, 2)
