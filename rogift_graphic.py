@@ -1,5 +1,6 @@
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import qrcode
 import math
 import os
 
@@ -44,10 +45,10 @@ def _pl(value):
 
 WATERMARK_SIDE = 48
 WATERMARK_TOP = 62
-WATERMARK_BOTTOM = 70
+WATERMARK_BOTTOM = 150
 
 
-def apply_watermark(image_bytes, watermark_id=None):
+def apply_watermark(image_bytes, watermark_id=None, signature=None, verification_url=None):
     """
     Add an outer branded frame without covering any part of the source image.
     A stable publication ID makes each sent coupon traceable.
@@ -73,14 +74,34 @@ def apply_watermark(image_bytes, watermark_id=None):
     draw.text((header_x, header_y), header, font=header_font, fill=(255, 255, 255, 255))
 
     serial = str(watermark_id or "ID-NIE-NADANO").strip().upper()[:40]
-    footer = f"ID: {serial}  •  NIE KOPIOWAĆ"
-    footer_font = _fit(draw, footer, canvas.width - 28, 23, bold=True)
-    footer_box = draw.textbbox((0, 0), footer, font=footer_font)
-    footer_x = (canvas.width - (footer_box[2] - footer_box[0])) // 2
-    footer_y = WATERMARK_TOP + height + max(
-        5, (WATERMARK_BOTTOM - (footer_box[3] - footer_box[1])) // 2 - footer_box[1]
-    )
-    draw.text((footer_x, footer_y), footer, font=footer_font, fill=(255, 255, 255, 255))
+    footer_y = WATERMARK_TOP + height + 12
+    signature_text = f"CYFROWY PODPIS: {str(signature or 'BRAK').strip().upper()[:32]}"
+    footer_lines = [
+        f"ID PUBLIKACJI: {serial}",
+        signature_text,
+        "SKANUJ KOD QR I SPRAWDŹ ORYGINALNY POST",
+    ]
+    for index, line in enumerate(footer_lines):
+        font = _fit(draw, line, canvas.width - 190, 22 if index < 2 else 17, bold=True)
+        draw.text((WATERMARK_SIDE, footer_y + index * 34), line, font=font,
+                  fill=(255, 255, 255, 255))
+
+    # QR points to the exact original post in the official Telegram channel.
+    # It is placed entirely in the added frame, never over the betting graphic.
+    if verification_url:
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=5,
+            border=2,
+        )
+        qr.add_data(str(verification_url))
+        qr.make(fit=True)
+        qr_image = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
+        qr_image = qr_image.resize((112, 112), Image.Resampling.NEAREST)
+        qr_x = canvas.width - WATERMARK_SIDE - 112
+        qr_y = WATERMARK_TOP + height + 18
+        canvas.alpha_composite(qr_image, (qr_x, qr_y))
 
     # Accent rules and vertical brand marks reinforce the frame on all sides.
     draw.line((WATERMARK_SIDE, WATERMARK_TOP - 3, WATERMARK_SIDE + width, WATERMARK_TOP - 3),
