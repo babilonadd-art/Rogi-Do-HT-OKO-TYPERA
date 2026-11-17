@@ -22,11 +22,11 @@ MAX_NAME_WIDTH = 355
 
 
 def _font_for(draw, text):
-    for size in range(36, 17, -1):
+    for size in range(36, 12, -1):
         font = ImageFont.truetype(FONT_PATH, size)
         if draw.textbbox((0, 0), text, font=font)[2] <= MAX_NAME_WIDTH:
             return font
-    raise ValueError(f"Nazwa drużyn jest za długa dla oryginalnego pola: {text}")
+    return ImageFont.truetype(FONT_PATH, 12)
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
