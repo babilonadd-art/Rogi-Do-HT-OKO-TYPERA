@@ -118,16 +118,19 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         (f"{float(total_odds):.2f}", BLUE, 940),
     ]
     for value, color, y in values:
-        font = _fit(draw, value, 245, 48)
-        width = draw.textbbox((0, 0), value, font=font)[2]
-        draw.text((970 - width, y), value, font=font, fill=color)
+        font = _fit(draw, value, round(245 * sx), scaled_font(48))
+        text_width = draw.textbbox((0, 0), value, font=font)[2]
+        draw.text((round(970 * sx) - text_width, round(y * sy)),
+                  value, font=font, fill=color)
 
     payout_text = f"{payout:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
     profit_text = f"{profit:+,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
-    draw.text((220, 1083), payout_text,
-              font=_fit(draw, payout_text, 300, 55, italic=True), fill=(255, 255, 255))
-    draw.text((600, 1083), profit_text,
-              font=_fit(draw, profit_text, 330, 55), fill=(0, 0, 0))
+    draw.text((round(220 * sx), round(1083 * sy)), payout_text,
+              font=_fit(draw, payout_text, round(300 * sx), scaled_font(55), italic=True),
+              fill=(255, 255, 255))
+    draw.text((round(600 * sx), round(1083 * sy)), profit_text,
+              font=_fit(draw, profit_text, round(330 * sx), scaled_font(55)),
+              fill=(0, 0, 0))
 
     output = BytesIO()
     poster.save(output, format="PNG", optimize=True)
