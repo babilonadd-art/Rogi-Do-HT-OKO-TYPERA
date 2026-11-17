@@ -29,8 +29,8 @@ SUMMARY_VALUE_BOXES = (
     (510, 829, 685, 881), (510, 883, 685, 934),
     (510, 936, 685, 987), (510, 990, 685, 1041),
 )
-PAYOUT_BOX = (145, 1058, 548, 1148)
-NET_PROFIT_BOX = (410, 1058, 690, 1148)
+PAYOUT_BOX = (205, 1080, 395, 1145)
+NET_PROFIT_BOX = (425, 1080, 685, 1145)
 BLUE = (0, 105, 190)
 NAVY = (8, 18, 35)
 RED = (205, 24, 20)
@@ -150,11 +150,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     for box, (value, color) in zip(SUMMARY_VALUE_BOXES, summary):
         _right_text(draw, box, value, _font(34), color, 8)
 
-    _right_text(draw, PAYOUT_BOX, f"{payout:.2f}".replace(".", ",") + " zł",
-                _font(48), WHITE, 8)
-    _right_text(draw, NET_PROFIT_BOX,
-                ("+" if net_profit >= 0 else "") + f"{net_profit:.2f}".replace(".", ",") + " zł",
-                _font(42), GREEN_TEXT, 8)
+    payout_text = f"{payout:.2f}".replace(".", ",") + " zł"
+    net_text = ("+" if net_profit >= 0 else "") + f"{net_profit:.2f}".replace(".", ",") + " zł"
+    _right_text(draw, PAYOUT_BOX, payout_text, _font(34), WHITE, 4)
+    _right_text(draw, NET_PROFIT_BOX, net_text, _font(34), GREEN_TEXT, 4)
 
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
