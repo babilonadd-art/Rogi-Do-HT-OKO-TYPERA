@@ -65,9 +65,7 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     def pl_number(value):
         return f"{float(value):.2f}".replace(".", ",")
 
-    # Szablon ma trzeci, nieużywany wiersz „Mecz C”. Wyczyść jego
-    # lewy fragment, który nie był przykrywany przez panel podsumowania.
-    d.rectangle((61, 670, 193, 840), fill=CREAM)
+    # Nie zamalowujemy lewej kolumny — zostawiamy oryginalne tło i ikonę piłki.
 
     # Kolejność zgodnie z prośbą: kurs, stawka, podatek, kwota grająca.
     # Osobne kolumny i mniejsze fonty zabezpieczają przed nachodzeniem tekstu.
