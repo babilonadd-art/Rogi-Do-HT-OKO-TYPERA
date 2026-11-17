@@ -1,4 +1,4 @@
-name: TEST — oryginalna grafika ROGI FT na Telegram
+name: TEST — znak wodny ROGI FT na Telegram
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     paths:
       - 'Screenshot_20261117-110724.png'
       - 'scripts/rogift_test_graphic.py'
+      - 'rogift_graphic.py'
       - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
@@ -20,9 +21,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Instalacja requests
-        run: pip install "requests>=2.31,<3"
-      - name: Wyślij oryginalny plik PNG bez przerabiania
+      - name: Instalacja zależności
+        run: pip install "requests>=2.31,<3" "Pillow>=10,<13"
+      - name: Wyślij testową grafikę ze znakiem wodnym
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
