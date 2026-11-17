@@ -30,7 +30,7 @@ def main():
         try:
             response = requests.post(
                 url,
-                data={"chat_id": chat, "caption": caption},
+                data={"chat_id": chat, "caption": caption, "protect_content": True},
                 files={"photo": (IMAGE_PATH.name, BytesIO(photo_bytes), "image/png")},
                 timeout=(15, 60),
             )
