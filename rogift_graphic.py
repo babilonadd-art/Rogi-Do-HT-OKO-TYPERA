@@ -1,222 +1,124 @@
+"""Render dynamic picks on the user's exact original FT-corners poster."""
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import qrcode
-import math
-import os
+from pathlib import Path
 
-W, H = 1080, 1350
-NAVY = (5, 24, 53)
-BLUE = (0, 105, 205)
-PAPER = (247, 244, 235)
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
 INK = (8, 20, 42)
-GREEN = (155, 255, 0)
+BLUE = (0, 105, 205)
 RED = (190, 20, 20)
+NAVY_BGR = (53, 24, 5)
 
 
-def _font(size, bold=False, italic=False):
-    candidates = []
-    if bold and italic:
-        candidates += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"]
-    elif bold:
-        candidates += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-    elif italic:
-        candidates += ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"]
-    candidates += [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
+def _font(size, italic=False):
+    paths = (
+        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"]
+        if italic else
+        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+    )
+    paths += ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+    for path in paths:
+        try:
             return ImageFont.truetype(path, size=size)
+        except OSError:
+            pass
     return ImageFont.load_default()
 
 
-def _fit(draw, text, max_width, size, bold=False):
-    font = _font(size, bold=bold)
-    while size > 20 and draw.textbbox((0, 0), text, font=font)[2] > max_width:
+def _fit(draw, text, max_width, size, italic=False):
+    font = _font(size, italic)
+    while size > 18 and draw.textbbox((0, 0), text, font=font)[2] > max_width:
         size -= 2
-        font = _font(size, bold=bold)
+        font = _font(size, italic)
     return font
 
 
-def _pl(value):
-    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", " ")
+def _erase_text(image, box, mode):
+    """Inpaint only the old variable lettering, retaining the poster texture."""
+    x1, y1, x2, y2 = box
+    region = image[y1:y2, x1:x2]
+    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    if mode == "light":
+        mask = (gray < 155).astype(np.uint8) * 255
+    elif mode == "white":
+        mask = (gray > 190).astype(np.uint8) * 255
+    else:
+        mask = (gray < 80).astype(np.uint8) * 255
+    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
+    image[y1:y2, x1:x2] = cv2.inpaint(region, mask, 4, cv2.INPAINT_TELEA)
 
 
-WATERMARK_SIDE = 48
-WATERMARK_TOP = 62
-WATERMARK_BOTTOM = 150
+def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
+                        watermark_id=None):
+    """Use the original poster unchanged except for its variable betting data."""
+    if not TEMPLATE.is_file():
+        raise FileNotFoundError(f"Brak oryginalnego wzoru grafiki: {TEMPLATE}")
+    if len(legs) < 2:
+        raise ValueError("Grafika dubla wymaga dokładnie dwóch zdarzeń")
 
+    source = cv2.imread(str(TEMPLATE), cv2.IMREAD_COLOR)
+    if source is None or source.shape[:2] != (1536, 1024):
+        raise ValueError("Oryginalny wzór grafiki ma nieprawidłowy format")
+    image = source.copy()
 
-def apply_watermark(image_bytes, watermark_id=None, signature=None, verification_url=None):
-    """
-    Add an outer branded frame without covering any part of the source image.
-    A stable publication ID makes each sent coupon traceable.
-    """
-    with Image.open(BytesIO(image_bytes)) as source:
-        base = source.convert("RGBA")
+    # Remove only old variable text; the logo, background, panels, icons,
+    # labels, footballs, brush strokes and signature remain the original pixels.
+    for row_y in (400, 558):
+        _erase_text(image, (225, row_y, 765, row_y + 115), "light")
+        _erase_text(image, (795, row_y + 40, 985, row_y + 115), "light")
+    for value_y in (700, 778, 850, 925):
+        _erase_text(image, (735, value_y, 984, value_y + 63), "light")
+    _erase_text(image, (205, 1075, 550, 1160), "white")
+    _erase_text(image, (585, 1075, 940, 1160), "dark")
 
-    width, height = base.size
-    canvas = Image.new(
-        "RGBA",
-        (width + 2 * WATERMARK_SIDE, height + WATERMARK_TOP + WATERMARK_BOTTOM),
-        NAVY + (255,),
-    )
-    # Preserve the complete source image pixel-for-pixel inside the new frame.
-    canvas.alpha_composite(base, (WATERMARK_SIDE, WATERMARK_TOP))
-    draw = ImageDraw.Draw(canvas)
+    poster = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(poster)
 
-    header = "OKO TYPERA  •  OFICJALNA PUBLIKACJA"
-    header_font = _fit(draw, header, canvas.width - 28, 25, bold=True)
-    header_box = draw.textbbox((0, 0), header, font=header_font)
-    header_x = (canvas.width - (header_box[2] - header_box[0])) // 2
-    header_y = max(7, (WATERMARK_TOP - (header_box[3] - header_box[1])) // 2 - header_box[1])
-    draw.text((header_x, header_y), header, font=header_font, fill=(255, 255, 255, 255))
+    # Two fixture panels: same positions and colors as the supplied artwork.
+    for index, leg in enumerate(legs[:2]):
+        y = 400 + index * 158
+        home = str(leg["home"]).strip()
+        away = str(leg["away"]).strip()
+        match = f"{home} – {away}"
+        draw.text((238, y), match, font=_fit(draw, match, 515, 45), fill=INK)
 
-    serial = str(watermark_id or "ID-NIE-NADANO").strip().upper()[:40]
-    footer_y = WATERMARK_TOP + height + 12
-    signature_text = f"CYFROWY PODPIS: {str(signature or 'BRAK').strip().upper()[:32]}"
-    footer_lines = [
-        f"ID PUBLIKACJI: {serial}",
-        signature_text,
-        "SKANUJ KOD QR I SPRAWDŹ ORYGINALNY POST",
+        line = float(leg["line"])
+        draw.text((238, y + 58), "Over", font=_font(40, italic=True), fill=INK)
+        draw.text((355, y + 58), f"{line:.1f}", font=_font(42), fill=BLUE)
+        draw.text((440, y + 58), "rożnych FT",
+                  font=_fit(draw, "rożnych FT", 310, 40, italic=True), fill=INK)
+
+        odds = f"{float(leg['odds']):.2f}"
+        draw.text((802, y + 48), odds, font=_fit(draw, odds, 180, 67), fill=BLUE)
+
+    # Financial figures follow the arithmetic and labels in the original poster.
+    tax = round(float(stake) * float(tax_rate), 2)
+    playing = round(float(stake) - tax, 2)
+    payout = round(playing * float(total_odds), 2)
+    profit = round(payout - float(stake), 2)
+
+    values = [
+        (f"{float(stake):,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), INK, 708),
+        (f"{tax:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), RED, 786),
+        (f"{playing:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), INK, 863),
+        (f"{float(total_odds):.2f}", BLUE, 940),
     ]
-    for index, line in enumerate(footer_lines):
-        font = _fit(draw, line, canvas.width - 190, 22 if index < 2 else 17, bold=True)
-        draw.text((WATERMARK_SIDE, footer_y + index * 34), line, font=font,
-                  fill=(255, 255, 255, 255))
+    for value, color, y in values:
+        font = _fit(draw, value, 245, 48)
+        width = draw.textbbox((0, 0), value, font=font)[2]
+        draw.text((970 - width, y), value, font=font, fill=color)
 
-    # QR points to the exact original post in the official Telegram channel.
-    # It is placed entirely in the added frame, never over the betting graphic.
-    if verification_url:
-        qr = qrcode.QRCode(
-            version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=5,
-            border=2,
-        )
-        qr.add_data(str(verification_url))
-        qr.make(fit=True)
-        qr_image = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
-        qr_image = qr_image.resize((112, 112), Image.Resampling.NEAREST)
-        qr_x = canvas.width - WATERMARK_SIDE - 112
-        qr_y = WATERMARK_TOP + height + 18
-        canvas.alpha_composite(qr_image, (qr_x, qr_y))
-
-    # Accent rules and vertical brand marks reinforce the frame on all sides.
-    draw.line((WATERMARK_SIDE, WATERMARK_TOP - 3, WATERMARK_SIDE + width, WATERMARK_TOP - 3),
-              fill=BLUE + (255,), width=3)
-    draw.line((WATERMARK_SIDE, WATERMARK_TOP + height + 2,
-               WATERMARK_SIDE + width, WATERMARK_TOP + height + 2),
-              fill=BLUE + (255,), width=3)
-
-    def vertical_mark(label, side_x):
-        font = _font(14, bold=True)
-        box = draw.textbbox((0, 0), label, font=font)
-        mark = Image.new("RGBA", (box[2] - box[0] + 8, box[3] - box[1] + 8), (0, 0, 0, 0))
-        mark_draw = ImageDraw.Draw(mark)
-        mark_draw.text((4 - box[0], 4 - box[1]), label, font=font,
-                       fill=(255, 255, 255, 235))
-        rotated = mark.rotate(90, resample=Image.Resampling.BICUBIC, expand=True)
-        x = side_x + (WATERMARK_SIDE - rotated.width) // 2
-        y = (canvas.height - rotated.height) // 2
-        canvas.alpha_composite(rotated, (x, y))
-
-    vertical_mark("OKO TYPERA", 0)
-    vertical_mark("ORYGINAŁ", WATERMARK_SIDE + width)
+    payout_text = f"{payout:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
+    profit_text = f"{profit:+,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
+    draw.text((220, 1083), payout_text,
+              font=_fit(draw, payout_text, 300, 55, italic=True), fill=(255, 255, 255))
+    draw.text((600, 1083), profit_text,
+              font=_fit(draw, profit_text, 330, 55), fill=(0, 0, 0))
 
     output = BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
-    return output.getvalue()
-
-def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
-    """Return a polished PNG BytesIO for a two-leg FT corners double."""
-    img = Image.new("RGB", (W, H), PAPER)
-    px = img.load()
-    for y in range(H):
-        shade = int(248 - 13 * y / H)
-        for x in range(W):
-            grain = ((x * 17 + y * 31) % 7) - 3
-            px[x, y] = (max(0, shade + grain), max(0, shade - 2 + grain), max(0, shade - 10 + grain))
-
-    d = ImageDraw.Draw(img)
-    # Dark stadium header with floodlights.
-    d.rectangle((0, 0, W, 360), fill=NAVY)
-    for i in range(34):
-        x = 26 + i * 31
-        y = 20 + int(35 * math.sin(i / 4))
-        d.ellipse((x, y, x + 9, y + 9), fill=(220, 241, 255))
-    d.ellipse((720, -210, 1190, 280), fill=(17, 65, 111))
-    d.ellipse((800, -160, 1140, 180), fill=(25, 87, 143))
-    # Branding
-    d.text((42, 35), "♛", font=_font(74, bold=True), fill=(255, 194, 35))
-    d.text((45, 118), "OKO", font=_font(58, bold=True), fill=(255, 255, 255))
-    d.text((45, 177), "TYPERA", font=_font(54, bold=True), fill=(0, 145, 255))
-    d.line((285, 35, 285, 255), fill=(255, 255, 255), width=4)
-    d.text((330, 48), "ROGI FT", font=_font(100, bold=True), fill=(255, 255, 255), stroke_width=2, stroke_fill=(4, 16, 36))
-    d.text((350, 165), "DUBEL", font=_font(70, bold=True), fill=(255, 255, 255))
-    d.line((350, 252, 850, 230), fill=BLUE, width=10)
-
-    # Match panels
-    y_positions = [390, 585]
-    for idx, leg in enumerate(legs[:2]):
-        y = y_positions[idx]
-        d.rounded_rectangle((34, y, 1046, y + 164), radius=30, fill=(255, 255, 250), outline=(210, 215, 220), width=3)
-        d.rounded_rectangle((50, y + 18, 190, y + 146), radius=18, fill=NAVY)
-        # football icon
-        cx, cy = 120, y + 82
-        d.ellipse((75, cy - 43, 165, cy + 47), fill=(245, 245, 245), outline=INK, width=5)
-        d.polygon([(120,cy-24),(139,cy-10),(132,cy+12),(108,cy+12),(101,cy-10)], fill=INK)
-        d.line((120,cy-24,120,cy-42), fill=INK, width=4)
-        d.line((101,cy-10,82,cy-20), fill=INK, width=4)
-        d.line((139,cy-10,158,cy-20), fill=INK, width=4)
-        d.line((108,cy+12,96,cy+34), fill=INK, width=4)
-        d.line((132,cy+12,144,cy+34), fill=INK, width=4)
-        d.line((210, y + 20, 210, y + 144), fill=BLUE, width=5)
-        match = f"{leg['home']} – {leg['away']}"
-        d.text((240, y + 22), match, font=_fit(d, match, 520, 43, bold=True), fill=INK)
-        market = f"Over {leg['line']:.1f} rożnych FT"
-        d.text((240, y + 88), market, font=_fit(d, market, 520, 39), fill=INK)
-        d.line((790, y + 18, 790, y + 146), fill=BLUE, width=4)
-        d.text((824, y + 24), "Kurs", font=_font(28, bold=True), fill=INK)
-        odd = f"{float(leg['odds']):.2f}"
-        d.text((820, y + 60), odd, font=_fit(d, odd, 195, 66, bold=True), fill=BLUE)
-
-    tax = round(stake * tax_rate, 2)
-    playing = round(stake - tax, 2)
-    payout = round(playing * float(total_odds), 2)
-    profit = round(payout - stake, 2)
-    rows = [
-        ("Stawka:", f"{_pl(stake)} zł", INK),
-        (f"Podatek {tax_rate*100:.0f}%:", f"{_pl(tax)} zł", RED),
-        ("Kwota grająca:", f"{_pl(playing)} zł", INK),
-        ("Kurs łączny:", f"{float(total_odds):.2f}", BLUE),
-    ]
-    y = 790
-    for label, value, color in rows:
-        d.text((205, y), label, font=_font(39, bold=True), fill=INK)
-        f = _fit(d, value, 380, 43, bold=True)
-        box = d.textbbox((0, 0), value, font=f)
-        d.text((1005 - (box[2] - box[0]), y), value, font=f, fill=color)
-        d.line((68, y + 65, 1010, y + 65), fill=(150, 158, 170), width=2)
-        y += 78
-
-    # Payout / net profit banners
-    d.rounded_rectangle((34, 1110, 535, 1245), radius=22, fill=NAVY)
-    d.text((72, 1126), "Wypłata:", font=_font(33, bold=True), fill=(255, 255, 255))
-    payout_text = f"{_pl(payout)} zł"
-    d.text((72, 1170), payout_text, font=_fit(d, payout_text, 420, 57, bold=True), fill=(255, 255, 255))
-    d.rounded_rectangle((555, 1110, 1046, 1245), radius=22, fill=GREEN)
-    d.text((590, 1126), "Zysk netto:", font=_font(33, bold=True), fill=(0, 0, 0))
-    profit_text = f"{profit:+,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
-    d.text((590, 1170), profit_text, font=_fit(d, profit_text, 420, 57, bold=True), fill=(0, 0, 0))
-    d.text((48, 1280), "Przykład — zasady podatku zależą od bukmachera", font=_font(22, bold=True), fill=INK)
-    d.text((770, 1280), f"DUBEL {coupon_no}", font=_font(22, bold=True), fill=BLUE)
-
-    # Subtle blue pitch lines in footer.
-    d.line((0, 1335, 1080, 1300), fill=BLUE, width=7)
-    d.line((780, 1350, 930, 1288), fill=NAVY, width=4)
-    out = BytesIO()
-    img.save(out, format="PNG", optimize=True)
-    out.seek(0)
-    return BytesIO(apply_watermark(out.getvalue(), watermark_id=watermark_id))
+    poster.save(output, format="PNG", optimize=True)
+    output.seek(0)
+    return output
