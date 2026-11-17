@@ -40,8 +40,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     if not TEMPLATE.is_file():
         raise FileNotFoundError(f"Brak oryginalnego szablonu: {TEMPLATE}")
     # Zachowaj dokładny tryb i piksele oryginału poza polami dynamicznymi.
-    im = Image.open(TEMPLATE).copy()
-    d = ImageDraw.Draw(im)
+    base = Image.open(TEMPLATE).copy()
+    # Rysuj w układzie 1024x1536 i skaluj warstwę do rozmiaru oryginału.
+    overlay = Image.new("RGBA", (1024, 1536), (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
 
     for i, leg in enumerate(legs[:2]):
         top = 397 + i * 155
@@ -83,6 +85,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     profit_text = f"{profit:+.2f} zł"
     _center(d, 770, 1080, profit_text, _fit(d, profit_text, 360, 58, True, True), (0, 0, 0))
 
+    overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
+    im = Image.alpha_composite(base.convert("RGBA"), overlay).convert(base.mode)
     out = BytesIO()
     im.save(out, format="PNG", optimize=True)
     out.seek(0)
