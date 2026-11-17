@@ -6,6 +6,8 @@ on:
     paths:
       - "Main.py"
       - "RogiFTDuble.py"
+      - "rogift_graphic.py"
+      - "requirements.txt"
       - "tests/test_rogi_ft_duble.py"
       - ".github/workflows/Rogi-FT-Duble.yml"
   schedule:
