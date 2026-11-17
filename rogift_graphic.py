@@ -1,4 +1,4 @@
-"""Replace only the two fixture labels on the untouched original poster."""
+"""Replace fixture labels and reorder the summary on the original poster."""
 from io import BytesIO
 from pathlib import Path
 
@@ -20,6 +20,30 @@ NAME_ORIGINS = ((174, 600), (174, 722))
 NAME_COLOR = (8, 18, 35)
 MAX_NAME_WIDTH = 350
 
+# Four summary-row content strips, from top to bottom in the source image:
+# Stawka, Podatek 12%, Kwota grająca, Kurs łączny.
+# Reassemble them as: Kurs łączny, Stawka, Podatek 12%, Kwota grająca.
+# Separator rules remain in their original positions.
+SUMMARY_ROW_BANDS = ((829, 881), (883, 934), (936, 987), (990, 1041))
+SUMMARY_ROW_ORDER = (3, 0, 1, 2)
+SUMMARY_ROW_LEFT = 35
+SUMMARY_ROW_RIGHT = 690
+
+
+def _reorder_summary_rows(image):
+    rows = [
+        image.crop((SUMMARY_ROW_LEFT, top, SUMMARY_ROW_RIGHT, bottom))
+        for top, bottom in SUMMARY_ROW_BANDS
+    ]
+    for slot, source_index in enumerate(SUMMARY_ROW_ORDER):
+        top, bottom = SUMMARY_ROW_BANDS[slot]
+        row = rows[source_index]
+        target_height = bottom - top
+        if row.height != target_height:
+            row = row.resize((row.width, target_height), Image.Resampling.LANCZOS)
+        image.paste(row, (SUMMARY_ROW_LEFT, top))
+    return image
+
 
 def _font_for(draw, text):
     for size in range(36, 12, -1):
@@ -30,7 +54,7 @@ def _font_for(draw, text):
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
-    """Return the original screenshot with only its two team-name labels replaced."""
+    """Return the original screenshot with reordered totals and real team names."""
     if len(legs) != 2:
         raise ValueError("Grafika dubla wymaga dokładnie dwóch prawdziwych meczów")
     if not TEMPLATE.is_file():
@@ -40,8 +64,11 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     if original.size != (720, 1640):
         raise ValueError(f"Nieoczekiwany rozmiar oryginalnego szablonu: {original.size}")
 
+    original = _reorder_summary_rows(original)
+
     # Remove only the old text areas with local inpainting. Everything outside
-    # these two narrow rectangles remains byte-for-byte visually untouched.
+    # these two narrow rectangles remains unchanged apart from the requested
+    # four-row summary reorder above.
     rgb = np.asarray(original)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
