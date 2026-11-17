@@ -3,6 +3,9 @@
 import os
 import sqlite3
 import logging
+import requests
+
+from rogift_graphic import render_coupon_image
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -40,6 +43,30 @@ def db_open():
 
 def send(text):
     return source.send(text)
+
+
+def send_coupon_graphic(legs, total_odds, coupon_no):
+    """Send the dynamic coupon poster to the configured Telegram channel."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    image = render_coupon_image(legs, total_odds, STAKE, coupon_no=coupon_no)
+    caption = f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze | kurs łączny {total_odds:.2f}"
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id, "caption": caption},
+            files={"photo": ("rogi-ft-dubel.png", image, "image/png")},
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            logging.error("Telegram sendPhoto: %s", payload)
+            return None
+        return payload["result"]["message_id"]
+    except Exception:
+        logging.exception("Nie udało się wysłać grafiki dubla FT")
+        return None
 
 
 def fetch_candidates(now):
@@ -137,9 +164,10 @@ def send_new_doubles(c, now):
             f"🏦 Potencjalna wygrana: {STAKE * total_odds:.2f} zł\n"
             "ℹ️ Wyłącznie rożne FT — cały mecz"
         )
-        message_id = send(message)
+        coupon_no = int(sent_today) + made + 1
+        message_id = send_coupon_graphic(pair, total_odds, coupon_no)
         if not message_id:
-            logging.error("Telegram nie potwierdził wysłania dubla %s", coupon_id)
+            logging.error("Telegram nie potwierdził wysłania grafiki dubla %s", coupon_id)
             break
         c.execute(
             "INSERT INTO ft_doubles(coupon_id,day,sent_at,total_odds,stake) VALUES(?,?,?,?,?)",
