@@ -1,16 +1,23 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team
 from Main import superbet_event_is_prematch
 
 
 class StrategyRulesTests(unittest.TestCase):
     def test_rules_are_ft_over_only_and_minimum_odds(self):
-        self.assertEqual(MIN_LEG_ODDS, 1.80)
+        self.assertEqual(MIN_LEG_ODDS, 1.90)
+        self.assertEqual(MAX_LEG_ODDS, 3.50)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
         self.assertTrue(all(line >= 9.5 for line in FT_LINES))
+
+    def test_placeholder_team_names_are_rejected(self):
+        for name in ("A", "B", "Team A", "Team B", "Drużyna A", "Drużyna B", "Unknown", "TBD"):
+            self.assertTrue(_placeholder_team(name))
+        self.assertFalse(_placeholder_team("Kuwejt"))
+        self.assertFalse(_placeholder_team("Honduras"))
 
     def test_daily_cap_is_two_doubles(self):
         self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 4)
