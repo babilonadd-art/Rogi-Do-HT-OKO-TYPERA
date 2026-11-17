@@ -9,7 +9,7 @@ import logging
 import requests
 from io import BytesIO
 
-from rogift_graphic import apply_watermark, render_coupon_image
+from rogift_graphic import render_coupon_image
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
