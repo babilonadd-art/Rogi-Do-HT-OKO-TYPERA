@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prematch FT corner Over doubles. No team-history/statistical filters."""
 import os
+import hashlib
 import sqlite3
 import logging
 import requests
@@ -49,8 +50,13 @@ def send(text):
     return source.send(text)
 
 
-def send_coupon_graphic(legs, total_odds, coupon_no):
-    """Send a watermarked copy of the repository poster; keep the original file untouched."""
+def publication_code(coupon_id):
+    digest = hashlib.sha256(str(coupon_id).encode('utf-8')).hexdigest()[:10].upper()
+    return f"OT-{digest}"
+
+
+def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id):
+    """Send a framed, uniquely identified copy; preserve the original poster unchanged."""
     from pathlib import Path
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -60,8 +66,10 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
         logging.error("Brak oryginalnej grafiki: %s", image_path)
         return None
 
+    post_code = publication_code(coupon_id)
     caption_lines = [
         f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze",
+        f"🔐 ID ORYGINALNEJ PUBLIKACJI: {post_code}",
         *[
             f"{i}. {leg['home']} – {leg['away']} | OVER {float(leg['line']):.1f} rożnych FT | kurs {float(leg['odds']):.2f}"
             for i, leg in enumerate(legs[:2], 1)
@@ -69,17 +77,17 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
         f"💹 KURS ŁĄCZNY: {float(total_odds):.2f}",
         f"💰 STAWKA: {STAKE:.2f} zł",
         "",
-        "🔒 KOPIOWANIE TREŚCI ZABRONIONE",
-        "Wszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera.",
+        "🔒 OCHRONA TREŚCI: NIE KOPIOWAĆ",
+        "Grafika i autorskie opisy Oko Typera są materiałami chronionymi. Nie podszywaj się pod oficjalne publikacje.",
     ]
     try:
-        # Watermark only the in-memory copy; the source PNG in the repository stays untouched.
-        photo_bytes = apply_watermark(image_path.read_bytes())
+        # The unique ID is placed in an outer frame; no part of the original pick is covered.
+        photo_bytes = apply_watermark(image_path.read_bytes(), watermark_id=post_code)
         with BytesIO(photo_bytes) as photo:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
                 data={"chat_id": chat_id, "protect_content": True, "caption": "\n".join(caption_lines)},
-                files={"photo": ("OKO_TYPERA_ROGI_FT.png", photo, "image/png")},
+                files={"photo": (f"{post_code}_OKO_TYPERA_ROGI_FT.png", photo, "image/png")},
                 timeout=45,
             )
         response.raise_for_status()
@@ -189,7 +197,7 @@ def send_new_doubles(c, now):
             "ℹ️ Wyłącznie rożne FT — cały mecz"
         )
         coupon_no = int(sent_today) + made + 1
-        message_id = send_coupon_graphic(pair, total_odds, coupon_no)
+        message_id = send_coupon_graphic(pair, total_odds, coupon_no, coupon_id)
         if not message_id:
             logging.error("Telegram nie potwierdził wysłania grafiki dubla %s", coupon_id)
             break
@@ -232,7 +240,7 @@ def repost_pending_doubles(c, now):
         ]
         coupon_no = c.execute("SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at<=?",
                               (day, now.isoformat())).fetchone()[0]
-        message_id = send_coupon_graphic(graphic_legs, float(total_odds), max(1, coupon_no))
+        message_id = send_coupon_graphic(graphic_legs, float(total_odds), max(1, coupon_no), coupon_id)
         if not message_id:
             logging.error("Nie udało się ponownie opublikować dubla %s — zatrzymuję", coupon_id)
             break
