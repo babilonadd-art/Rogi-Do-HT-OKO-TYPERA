@@ -1,0 +1,24 @@
+name: TEST — grafika ROGI FT na Telegram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-test-graphic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja Pillow i requests
+        run: pip install "Pillow>=10,<13" "requests>=2.31,<3"
+      - name: Wygeneruj i wyślij grafikę testową
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scripts/rogift_test_graphic.py
