@@ -42,58 +42,73 @@ def _pl(value):
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", " ")
 
 
-def apply_watermark(image_bytes):
-    """Return a watermarked PNG copy; the source image bytes are never modified."""
+WATERMARK_SIDE = 48
+WATERMARK_TOP = 62
+WATERMARK_BOTTOM = 70
+
+
+def apply_watermark(image_bytes, watermark_id=None):
+    """
+    Add an outer branded frame without covering any part of the source image.
+    A stable publication ID makes each sent coupon traceable.
+    """
     with Image.open(BytesIO(image_bytes)) as source:
         base = source.convert("RGBA")
 
     width, height = base.size
-    font_size = max(20, min(48, width // 24))
-    font = _font(font_size, bold=True)
-    label = "OKO TYPERA  •  NIE KOPIOWAĆ"
-
-    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    bounds = probe.textbbox((0, 0), label, font=font, stroke_width=2)
-    pad_x = max(18, font_size // 2)
-    pad_y = max(14, font_size // 3)
-    stamp_w = bounds[2] - bounds[0] + 2 * pad_x
-    stamp_h = bounds[3] - bounds[1] + 2 * pad_y
-
-    stamp = Image.new("RGBA", (stamp_w, stamp_h), (0, 0, 0, 0))
-    stamp_draw = ImageDraw.Draw(stamp)
-    stamp_draw.rounded_rectangle(
-        (1, 1, stamp_w - 2, stamp_h - 2),
-        radius=max(10, font_size // 3),
-        fill=(255, 255, 255, 48),
-        outline=(5, 24, 53, 125),
-        width=max(2, font_size // 20),
+    canvas = Image.new(
+        "RGBA",
+        (width + 2 * WATERMARK_SIDE, height + WATERMARK_TOP + WATERMARK_BOTTOM),
+        NAVY + (255,),
     )
-    stamp_draw.text(
-        (pad_x - bounds[0], pad_y - bounds[1]),
-        label,
-        font=font,
-        fill=(5, 24, 53, 165),
-        stroke_width=2,
-        stroke_fill=(255, 255, 255, 185),
-    )
+    # Preserve the complete source image pixel-for-pixel inside the new frame.
+    canvas.alpha_composite(base, (WATERMARK_SIDE, WATERMARK_TOP))
+    draw = ImageDraw.Draw(canvas)
 
-    rotated = stamp.rotate(
-        -18,
-        resample=Image.Resampling.BICUBIC,
-        expand=True,
+    header = "OKO TYPERA  •  OFICJALNA PUBLIKACJA"
+    header_font = _fit(draw, header, canvas.width - 28, 25, bold=True)
+    header_box = draw.textbbox((0, 0), header, font=header_font)
+    header_x = (canvas.width - (header_box[2] - header_box[0])) // 2
+    header_y = max(7, (WATERMARK_TOP - (header_box[3] - header_box[1])) // 2 - header_box[1])
+    draw.text((header_x, header_y), header, font=header_font, fill=(255, 255, 255, 255))
+
+    serial = str(watermark_id or "ID-NIE-NADANO").strip().upper()[:40]
+    footer = f"ID: {serial}  •  NIE KOPIOWAĆ"
+    footer_font = _fit(draw, footer, canvas.width - 28, 23, bold=True)
+    footer_box = draw.textbbox((0, 0), footer, font=footer_font)
+    footer_x = (canvas.width - (footer_box[2] - footer_box[0])) // 2
+    footer_y = WATERMARK_TOP + height + max(
+        5, (WATERMARK_BOTTOM - (footer_box[3] - footer_box[1])) // 2 - footer_box[1]
     )
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    x = (width - rotated.width) // 2
-    y = (height - rotated.height) // 2
-    overlay.alpha_composite(rotated, (x, y))
-    result = Image.alpha_composite(base, overlay)
+    draw.text((footer_x, footer_y), footer, font=footer_font, fill=(255, 255, 255, 255))
+
+    # Accent rules and vertical brand marks reinforce the frame on all sides.
+    draw.line((WATERMARK_SIDE, WATERMARK_TOP - 3, WATERMARK_SIDE + width, WATERMARK_TOP - 3),
+              fill=BLUE + (255,), width=3)
+    draw.line((WATERMARK_SIDE, WATERMARK_TOP + height + 2,
+               WATERMARK_SIDE + width, WATERMARK_TOP + height + 2),
+              fill=BLUE + (255,), width=3)
+
+    def vertical_mark(label, side_x):
+        font = _font(14, bold=True)
+        box = draw.textbbox((0, 0), label, font=font)
+        mark = Image.new("RGBA", (box[2] - box[0] + 8, box[3] - box[1] + 8), (0, 0, 0, 0))
+        mark_draw = ImageDraw.Draw(mark)
+        mark_draw.text((4 - box[0], 4 - box[1]), label, font=font,
+                       fill=(255, 255, 255, 235))
+        rotated = mark.rotate(90, resample=Image.Resampling.BICUBIC, expand=True)
+        x = side_x + (WATERMARK_SIDE - rotated.width) // 2
+        y = (canvas.height - rotated.height) // 2
+        canvas.alpha_composite(rotated, (x, y))
+
+    vertical_mark("OKO TYPERA", 0)
+    vertical_mark("ORYGINAŁ", WATERMARK_SIDE + width)
 
     output = BytesIO()
-    result.save(output, format="PNG", optimize=True)
+    canvas.save(output, format="PNG", optimize=True)
     return output.getvalue()
 
-
-def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12):
+def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
     """Return a polished PNG BytesIO for a two-leg FT corners double."""
     img = Image.new("RGB", (W, H), PAPER)
     px = img.load()
@@ -183,4 +198,4 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12):
     out = BytesIO()
     img.save(out, format="PNG", optimize=True)
     out.seek(0)
-    return BytesIO(apply_watermark(out.getvalue()))
+    return BytesIO(apply_watermark(out.getvalue(), watermark_id=watermark_id))
