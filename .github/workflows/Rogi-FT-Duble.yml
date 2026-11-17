@@ -2,6 +2,15 @@ name: ROGI FT — DUBLE PREMATCH
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Tryb działania"
+        required: true
+        default: "scan"
+        type: choice
+        options:
+          - scan
+          - repost-pending
   push:
     paths:
       - "Main.py"
@@ -41,7 +50,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_MODE: ${{ github.event_name == 'push' && 'dry-run' || 'scan' }}
+          BOT_MODE: ${{ github.event_name == 'push' && 'dry-run' || (github.event.inputs.mode || 'scan') }}
         run: python RogiFTDuble.py
       - name: Zapis historii dubli
         run: |
