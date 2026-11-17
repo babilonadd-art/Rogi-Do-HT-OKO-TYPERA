@@ -67,12 +67,15 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
         ],
         f"💹 KURS ŁĄCZNY: {float(total_odds):.2f}",
         f"💰 STAWKA: {STAKE:.2f} zł",
+        "",
+        "🔒 KOPIOWANIE TREŚCI ZABRONIONE",
+        "Wszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera.",
     ]
     try:
         with image_path.open("rb") as photo:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id, "protect_content": True},
+                data={"chat_id": chat_id, "protect_content": True, "caption": "\\n".join(caption_lines)},
                 files={"photo": (image_path.name, photo, "image/png")},
                 timeout=45,
             )
