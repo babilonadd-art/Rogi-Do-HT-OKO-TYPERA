@@ -309,11 +309,47 @@ def send_new_doubles(c, now):
 
 
 
+
+def _placeholder_team(value):
+    text = str(value or "").strip().lower()
+    return text in {"a", "b", "team a", "team b", "drużyna a", "drużyna b",
+                    "mecz a", "mecz b", "unknown", "tbd", "?"}
+
+
+def refresh_saved_fixture_names(rows, now):
+    """Refresh saved team labels from Superbet before reposting old coupons."""
+    start = now.astimezone(timezone.utc) - timedelta(hours=12)
+    end = now.astimezone(timezone.utc) + timedelta(hours=48)
+    try:
+        events = source.superbet_football_events(start, end)
+    except Exception:
+        logging.exception("Nie udało się odświeżyć nazw drużyn przed ponowną publikacją")
+        return {}
+
+    resolved = {}
+    wanted = {int(row[0]) for row in rows}
+    for event in events:
+        fixture = event.get("fixture") or {}
+        event_id = event.get("event_id") or event.get("id")
+        if not event_id or int(event_id) not in wanted:
+            continue
+        parts = str(fixture.get("event_name") or "").split("·", 1)
+        if len(parts) != 2:
+            continue
+        home, away = (part.strip() for part in parts)
+        if home and away and not _placeholder_team(home) and not _placeholder_team(away):
+            resolved[int(event_id)] = (home, away)
+    return resolved
+
+
 def repost_pending_doubles(c, now):
     """Re-publish saved pending coupons without changing their settlement records."""
     rows = c.execute("""SELECT coupon_id,day,total_odds
         FROM ft_doubles WHERE status='PENDING' ORDER BY sent_at""").fetchall()
     sent = 0
+    saved_legs = c.execute("""SELECT event_id FROM ft_double_legs
+        WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE status='PENDING')""").fetchall()
+    fresh_names = refresh_saved_fixture_names(saved_legs, now)
     for coupon_id, day, total_odds in rows:
         if not os.getenv("FORCE_REPOST", "").strip().lower() in ("1", "true", "yes"):
             if c.execute("SELECT 1 FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,)).fetchone():
@@ -324,11 +360,26 @@ def repost_pending_doubles(c, now):
         if len(legs) != LEGS_PER_DOUBLE:
             logging.warning("Dubel %s ma %s nóg zamiast %s — pomijam", coupon_id, len(legs), LEGS_PER_DOUBLE)
             continue
-        graphic_legs = [
-            {"event_id": event_id, "league": league, "home": home, "away": away,
-             "start_ts": start_ts, "line": float(line), "odds": float(odds)}
-            for event_id, league, home, away, start_ts, line, odds in legs
-        ]
+        graphic_legs = []
+        invalid_names = False
+        for event_id, league, home, away, start_ts, line, odds in legs:
+            fresh = fresh_names.get(int(event_id))
+            if fresh:
+                home, away = fresh
+                c.execute("UPDATE ft_double_legs SET home=?,away=? WHERE event_id=?",
+                          (home, away, int(event_id)))
+            if _placeholder_team(home) or _placeholder_team(away):
+                logging.error("Dubel %s pominięty: brak prawdziwych nazw drużyn dla event_id=%s (%s - %s)",
+                              coupon_id, event_id, home, away)
+                invalid_names = True
+                break
+            graphic_legs.append(
+                {"event_id": event_id, "league": league, "home": home, "away": away,
+                 "start_ts": start_ts, "line": float(line), "odds": float(odds)}
+            )
+        if invalid_names:
+            c.commit()
+            continue
         coupon_no = c.execute("SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at<=?",
                               (day, now.isoformat())).fetchone()[0]
         stored = c.execute(
