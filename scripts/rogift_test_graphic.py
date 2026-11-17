@@ -24,7 +24,7 @@ def main():
     print(f"Sending repository original unchanged: {IMAGE_PATH.name}; sha256={digest}")
 
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
-    caption = "🧪 TEST GRAFIKI — ROGI FT\\n\\n🔒 KOPIOWANIE TREŚCI ZABRONIONE\\nWszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera."
+    caption = "🧪 TEST GRAFIKI — ROGI FT\n\n🔒 KOPIOWANIE TREŚCI ZABRONIONE\nWszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera."
     last_error = None
     for attempt in range(1, 6):
         try:
