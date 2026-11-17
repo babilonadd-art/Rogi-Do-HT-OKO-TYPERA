@@ -37,6 +37,9 @@ def db_open():
         ft_corners INTEGER, FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
     c.execute("""CREATE TABLE IF NOT EXISTS ft_double_daily_reports(
         day TEXT PRIMARY KEY, sent_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_double_reposts(
+        coupon_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, message_id INTEGER,
+        FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
     c.commit()
     return c
 
@@ -185,6 +188,39 @@ def send_new_doubles(c, now):
     logging.info("Nowe duble dziś: %s; maksymalny limit: %s", made, MAX_DOUBLES_PER_DAY)
 
 
+
+def repost_pending_doubles(c, now):
+    """Re-publish saved pending coupons without changing their settlement records."""
+    rows = c.execute("""SELECT coupon_id,day,total_odds
+        FROM ft_doubles WHERE status='PENDING' ORDER BY sent_at""").fetchall()
+    sent = 0
+    for coupon_id, day, total_odds in rows:
+        if c.execute("SELECT 1 FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,)).fetchone():
+            logging.info("Dubel %s był już ponownie opublikowany — pomijam", coupon_id)
+            continue
+        legs = c.execute("""SELECT event_id,league,home,away,start_ts,line,odds
+            FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
+        if len(legs) != LEGS_PER_DOUBLE:
+            logging.warning("Dubel %s ma %s nóg zamiast %s — pomijam", coupon_id, len(legs), LEGS_PER_DOUBLE)
+            continue
+        graphic_legs = [
+            {"event_id": event_id, "league": league, "home": home, "away": away,
+             "start_ts": start_ts, "line": float(line), "odds": float(odds)}
+            for event_id, league, home, away, start_ts, line, odds in legs
+        ]
+        coupon_no = c.execute("SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at<=?",
+                              (day, now.isoformat())).fetchone()[0]
+        message_id = send_coupon_graphic(graphic_legs, float(total_odds), max(1, coupon_no))
+        if not message_id:
+            logging.error("Nie udało się ponownie opublikować dubla %s — zatrzymuję", coupon_id)
+            break
+        c.execute("INSERT INTO ft_double_reposts(coupon_id,sent_at,message_id) VALUES(?,?,?)",
+                  (coupon_id, now.astimezone(TZ).isoformat(), int(message_id)))
+        c.commit()
+        sent += 1
+        logging.info("Ponownie opublikowano dubel %s, Telegram message_id=%s", coupon_id, message_id)
+    logging.info("Ponownie opublikowane istniejące duble: %s", sent)
+
 def settle_doubles(c, now):
     pending = c.execute("""SELECT event_id,coupon_id,league,home,away,start_ts,line,odds
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
@@ -278,7 +314,9 @@ def main():
     try:
         now = datetime.now(TZ)
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
-        if mode == "dry-run":
+        if mode == "repost-pending":
+            repost_pending_doubles(c, now)
+        elif mode == "dry-run":
             used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
             candidates = [x for x in fetch_candidates(now) if x["event_id"] not in used]
             logging.info("DRY RUN: wolne zdarzenia po filtrze duplikatów: %s", len(candidates))
