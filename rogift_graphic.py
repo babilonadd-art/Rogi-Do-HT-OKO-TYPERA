@@ -69,7 +69,7 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
     for row_y in (400, 558):
         _erase_text(image, (225, row_y, 765, row_y + 115), "light")
         _erase_text(image, (795, row_y + 40, 985, row_y + 115), "light")
-    for value_y in (700, 778, 850, 925):
+    for value_y in (700, 778, 845, 915):
         _erase_text(image, (735, value_y, 984, value_y + 63), "light")
     _erase_text(image, (205, 1075, 550, 1160), "white")
     _erase_text(image, (585, 1075, 940, 1160), "dark")
