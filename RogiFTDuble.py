@@ -18,7 +18,8 @@ import Main as source
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.80
+MIN_LEG_ODDS = 1.90
+MAX_LEG_ODDS = 3.50
 MAX_DOUBLES_PER_DAY = 2
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 3
@@ -212,11 +213,15 @@ def fetch_candidates(now):
         if len(parts) != 2:
             continue
         home, away = (part.strip() for part in parts)
-        if not home or not away:
+        if (not home or not away or _placeholder_team(home) or _placeholder_team(away)):
+            logging.warning("Pomijam zdarzenie %s: brak prawdziwych nazw drużyn (%r - %r)",
+                            event_id, home, away)
             continue
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
         )
+        prices = {line: price for line, price in prices.items()
+                  if MIN_LEG_ODDS <= float(price) <= MAX_LEG_ODDS}
         chosen = next(
             ((line, float(prices[line])) for line in FT_LINES if line in prices),
             None,
