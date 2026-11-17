@@ -1,114 +1,90 @@
-"""Fresh, clean FT-corners double graphic. No inherited placeholder text."""
+"""Renderer uses the original OKO TYPERA poster stored in the repository."""
 from io import BytesIO
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1536
-BG = (8, 18, 38)
-PANEL = (17, 34, 62)
-WHITE = (247, 250, 255)
-MUTED = (164, 183, 207)
-BLUE = (50, 157, 255)
-GREEN = (46, 210, 160)
-RED = (255, 105, 105)
+TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
+CREAM = (248, 246, 237)
+INK = (8, 24, 52)
+BLUE = (0, 105, 205)
+RED = (205, 22, 18)
 
 
 def _font(size, bold=False, italic=False):
-    if italic:
-        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"]
-    elif bold:
-        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-    else:
-        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
-    for path in paths:
-        try:
-            return ImageFont.truetype(path, size)
-        except OSError:
-            pass
-    return ImageFont.load_default()
+    name = "DejaVuSans-BoldOblique.ttf" if italic else ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
+    try:
+        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/" + name, size)
+    except OSError:
+        return ImageFont.load_default()
 
 
-def _fit(draw, text, max_width, size, bold=True):
-    while size > 18:
-        font = _font(size, bold=bold)
-        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
-            return font
+def _fit(draw, text, width, size, bold=True, italic=False):
+    while size > 17 and draw.textbbox((0, 0), text, font=_font(size, bold, italic))[2] > width:
         size -= 2
-    return _font(size, bold=bold)
+    return _font(size, bold, italic)
 
 
-def _center(draw, xy, text, font, fill):
-    x, y = xy
+def _right(draw, x, y, text, font, fill):
     box = draw.textbbox((0, 0), text, font=font)
-    draw.text((x - (box[2] - box[0]) / 2, y), text, font=font, fill=fill)
+    draw.text((x - box[2], y), text, font=font, fill=fill)
 
 
-def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
-                        watermark_id=None):
-    """Render a fresh poster from a blank canvas; no old placeholder can remain."""
+def _center(draw, x, y, text, font, fill):
+    box = draw.textbbox((0, 0), text, font=font)
+    draw.text((x - box[2] / 2, y), text, font=font, fill=fill)
+
+
+def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
     if len(legs) < 2:
-        raise ValueError("Grafika dubla wymaga dwóch zdarzeń")
-
-    im = Image.new("RGB", (W, H), BG)
+        raise ValueError("Grafika dubla wymaga dwóch prawdziwych meczów")
+    if not TEMPLATE.is_file():
+        raise FileNotFoundError(f"Brak oryginalnego szablonu: {TEMPLATE}")
+    im = Image.open(TEMPLATE).convert("RGB")
     d = ImageDraw.Draw(im)
 
-    # Subtle vertical background bands and decorative accents.
-    for y in range(H):
-        t = y / H
-        c = (int(8 + 5*t), int(18 + 8*t), int(38 + 12*t))
-        d.line((0, y, W, y), fill=c)
-    d.rounded_rectangle((34, 34, 990, 1502), radius=38,
-                        outline=(38, 75, 112), width=3)
-
-    _center(d, (W//2, 105), "ROGI FT", _font(76, bold=True), WHITE)
-    _center(d, (W//2, 205), "DUBLE • RZUTY ROŻNE", _font(30, bold=True), BLUE)
-    d.line((100, 275, 924, 275), fill=(46, 91, 135), width=3)
-
+    # Nazwy drużyn, linie i kursy w dwóch oryginalnych panelach.
     for i, leg in enumerate(legs[:2]):
-        top = 330 + i * 300
-        d.rounded_rectangle((78, top, 946, top+250), radius=28,
-                            fill=PANEL, outline=(39, 80, 120), width=3)
-        d.rounded_rectangle((78, top, 94, top+250), radius=7, fill=BLUE)
-        home = str(leg["home"]).strip()
-        away = str(leg["away"]).strip()
-        match = f"{home}  –  {away}"
-        match_font = _fit(d, match, 790, 43)
-        _center(d, (512, top+42), match, match_font, WHITE)
-
-        line = float(leg["line"])
-        market = f"OVER {line:.1f} RZUTÓW ROŻNYCH FT"
-        _center(d, (512, top+122), market, _font(27, bold=True), MUTED)
-
-        odds = f"KURS  {float(leg['odds']):.2f}"
-        d.rounded_rectangle((350, top+174, 674, top+230), radius=18, fill=(14, 74, 125))
-        _center(d, (512, top+183), odds, _font(31, bold=True), WHITE)
-
-    d.line((100, 990, 924, 990), fill=(46, 91, 135), width=3)
-    _center(d, (512, 1030), "PODSUMOWANIE KUPONU", _font(30, bold=True), BLUE)
+        top = 397 + i * 155
+        d.rectangle((225, top, 766, top + 120), fill=CREAM)
+        d.rectangle((775, top + 8, 975, top + 116), fill=CREAM)
+        match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
+        d.text((235, top + 8), match, font=_fit(d, match, 525, 48), fill=INK)
+        market = f"Over {float(leg['line']):.1f} rożnych FT"
+        d.text((235, top + 68), market, font=_fit(d, market, 525, 39, False, True), fill=INK)
+        d.text((801, top + 4), "Kurs", font=_font(27, True, True), fill=INK)
+        odds = f"{float(leg['odds']):.2f}"
+        d.text((801, top + 35), odds, font=_fit(d, odds, 160, 64), fill=BLUE)
 
     tax = round(float(stake) * float(tax_rate), 2)
     playing = round(float(stake) - tax, 2)
     payout = round(playing * float(total_odds), 2)
     profit = round(payout - float(stake), 2)
 
+    # Ustalona kolejność: kurs łączny, podatek, stawka, kwota grająca.
+    d.rectangle((194, 704, 970, 990), fill=CREAM)
     rows = [
-        ("STAWKA", f"{float(stake):.2f} zł", WHITE),
-        ("PODATEK", f"{tax:.2f} zł", RED),
-        ("STAWKA PO PODATKU", f"{playing:.2f} zł", WHITE),
-        ("KURS ŁĄCZNY", f"{float(total_odds):.2f}", BLUE),
+        ("Kurs łączny:", f"{float(total_odds):.2f}", BLUE),
+        ("Podatek 12%:", f"{tax:.2f} zł", RED),
+        ("Stawka:", f"{float(stake):.2f} zł", INK),
+        ("Kwota grająca:", f"{playing:.2f} zł", INK),
     ]
-    y = 1100
-    for label, value, color in rows:
-        d.text((130, y), label, font=_font(25, bold=True), fill=MUTED)
-        value_font = _fit(d, value, 330, 32)
-        d.text((890-d.textbbox((0,0), value, font=value_font)[2],
-                y-5), value, font=value_font, fill=color)
-        y += 76
+    for y, (label, value, color) in zip((713, 785, 857, 929), rows):
+        d.text((202, y), label, font=_font(39, True), fill=INK)
+        _right(d, 952, y - 1, value, _fit(d, value, 240, 43), color)
+    for y in (774, 846, 918, 990):
+        d.line((61, y, 950, y), fill=(120, 126, 133), width=2)
 
-    d.rounded_rectangle((92, 1420, 932, 1480), radius=18, fill=(13, 73, 82))
-    payout_label = f"MOŻLIWA WYGRANA: {payout:.2f} zł   |   ZYSK: {profit:+.2f} zł"
-    _center(d, (512, 1434), payout_label, _fit(d, payout_label, 790, 25), GREEN)
+    # Wypłata i zysk pozostają w dwóch dolnych polach oryginalnej grafiki.
+    d.rectangle((205, 1018, 553, 1167), fill=(7, 27, 58))
+    d.rectangle((572, 1018, 971, 1167), fill=(110, 255, 0))
+    d.text((239, 1027), "Wypłata:", font=_font(42, True), fill=(255, 255, 255))
+    payout_text = f"{payout:.2f} zł"
+    d.text((224, 1080), payout_text, font=_fit(d, payout_text, 310, 55), fill=(255, 255, 255))
+    _center(d, 770, 1027, "Zysk netto:", _font(38, True, True), (0, 0, 0))
+    profit_text = f"{profit:+.2f} zł"
+    _center(d, 770, 1080, profit_text, _fit(d, profit_text, 360, 58, True, True), (0, 0, 0))
 
-    output = BytesIO()
-    im.save(output, format="PNG", optimize=True)
-    output.seek(0)
-    return output
+    out = BytesIO()
+    im.save(out, format="PNG", optimize=True)
+    out.seek(0)
+    return out
