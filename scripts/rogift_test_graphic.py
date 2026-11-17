@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Send a test copy of the repository poster with the Oko Typera watermark."""
 import hashlib
+import hmac
+import json
 import os
 from pathlib import Path
 from io import BytesIO
@@ -26,7 +28,22 @@ def main():
 
     digest = hashlib.sha256(original_bytes).hexdigest()
     publication_code = "OT-TEST-20261117"
-    photo_bytes = apply_watermark(original_bytes, watermark_id=publication_code)
+    proof_payload = {
+        "brand": "OKO TYPERA",
+        "test_id": publication_code,
+        "source_sha256": digest,
+        "purpose": "QR_POST_VERIFICATION_TEST",
+    }
+    canonical = json.dumps(proof_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    signing_secret = os.getenv("PUBLICATION_SIGNING_SECRET") or token
+    signature = hmac.new(
+        signing_secret.encode("utf-8"),
+        b"OKO-TYPERA-ROGI-FT-TEST-V1\\0" + canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:24].upper()
+    photo_bytes = apply_watermark(
+        original_bytes, watermark_id=publication_code, signature=signature
+    )
     # Verify that the source graphic is preserved pixel-for-pixel inside the frame.
     with Image.open(BytesIO(original_bytes)) as original_image:
         original_rgba = original_image.convert("RGBA")
@@ -74,9 +91,61 @@ def main():
             payload = response.json()
             if not payload.get("ok"):
                 raise RuntimeError(f"Telegram API error: {payload}")
+            message_id = int(payload["result"]["message_id"])
+            chat_response = requests.post(
+                f"https://api.telegram.org/bot{token}/getChat",
+                data={"chat_id": chat},
+                timeout=20,
+            )
+            chat_response.raise_for_status()
+            chat_payload = chat_response.json()
+            if not chat_payload.get("ok"):
+                raise RuntimeError(f"Telegram getChat error: {chat_payload}")
+            chat_info = chat_payload.get("result") or {}
+            if chat_info.get("username"):
+                verification_url = f"https://t.me/{chat_info['username']}/{message_id}"
+            elif str(chat).startswith("-100"):
+                verification_url = f"https://t.me/c/{str(chat)[4:]}/{message_id}"
+            else:
+                raise RuntimeError("Nie udało się utworzyć linku weryfikacyjnego do kanału")
+
+            final_bytes = apply_watermark(
+                original_bytes,
+                watermark_id=publication_code,
+                signature=signature,
+                verification_url=verification_url,
+            )
+            final_caption = caption + f"\\n🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"
+            media = {
+                "type": "photo",
+                "media": "attach://photo",
+                "caption": final_caption,
+            }
+            edit_response = requests.post(
+                f"https://api.telegram.org/bot{token}/editMessageMedia",
+                data={
+                    "chat_id": chat,
+                    "message_id": message_id,
+                    "media": json.dumps(media, ensure_ascii=False),
+                },
+                files={
+                    "photo": (
+                        f"{publication_code}_SIGNED_QR_TEST.png",
+                        BytesIO(final_bytes),
+                        "image/png",
+                    )
+                },
+                timeout=45,
+            )
+            edit_response.raise_for_status()
+            edit_payload = edit_response.json()
+            if not edit_payload.get("ok"):
+                raise RuntimeError(f"Telegram editMessageMedia error: {edit_payload}")
             print(
-                "FRAMED ORIGINAL-PRESERVING PNG SENT; message_id="
-                + str(payload["result"]["message_id"])
+                "SIGNED QR GRAPHIC SENT; message_id="
+                + str(message_id)
+                + "; verification_url="
+                + verification_url
             )
             return
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
