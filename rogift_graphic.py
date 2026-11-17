@@ -74,7 +74,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
     # Scale the reference layout to the exact dimensions of the repository image.
     for row_y in (400, 558):
         _erase_text(image, scaled_box((225, row_y, 765, row_y + 115)), "light")
-        _erase_text(image, scaled_box((795, row_y + 40, 985, row_y + 115)), "light")
+        # Clear the full old odds, including their top edge, but preserve "Kurs".
+        _erase_text(image, scaled_box((795, row_y + 28, 985, row_y + 115)), "light")
     for value_y in (700, 778, 845, 915):
         _erase_text(image, scaled_box((735, value_y, 984, value_y + 63)), "light")
     _erase_text(image, scaled_box((205, 1075, 550, 1160)), "white")
@@ -93,13 +94,19 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
                   font=_fit(draw, match, round(515 * sx), scaled_font(45)), fill=INK)
 
         line = float(leg["line"])
-        draw.text((round(238 * sx), y + round(58 * sy)), "Over",
-                  font=_font(scaled_font(40, italic=True), italic=True), fill=INK)
-        draw.text((round(355 * sx), y + round(58 * sy)), f"{line:.1f}",
-                  font=_font(scaled_font(42)), fill=BLUE)
-        draw.text((round(440 * sx), y + round(58 * sy)), "rożnych FT",
-                  font=_fit(draw, "rożnych FT", round(310 * sx),
-                            scaled_font(40), italic=True), fill=INK)
+        line_y = y + round(58 * sy)
+        over_font = _font(scaled_font(40, italic=True), italic=True)
+        number_font = _font(scaled_font(42))
+        x = round(238 * sx)
+        draw.text((x, line_y), "Over", font=over_font, fill=INK)
+        x += draw.textbbox((0, 0), "Over", font=over_font)[2] + round(10 * sx)
+        number_text = f"{line:.1f}"
+        draw.text((x, line_y), number_text, font=number_font, fill=BLUE)
+        x += draw.textbbox((0, 0), number_text, font=number_font)[2] + round(12 * sx)
+        suffix = "rożnych FT"
+        suffix_font = _fit(draw, suffix, round(765 * sx) - x,
+                           scaled_font(40), italic=True)
+        draw.text((x, line_y), suffix, font=suffix_font, fill=INK)
 
         odds = f"{float(leg['odds']):.2f}"
         draw.text((round(802 * sx), y + round(48 * sy)), odds,
