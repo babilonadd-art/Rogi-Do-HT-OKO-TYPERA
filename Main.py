@@ -797,9 +797,9 @@ def evaluate_matchday_quality(league,home,away,start_ts):
 
 def send(msg):
     # Stała informacja o prawach do publikowanych typów.
-    notice = "🔒 KOPIOWANIE TREŚCI ZABRONIONE\\nWszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera."
+    notice = "🔒 KOPIOWANIE TREŚCI ZABRONIONE\nWszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera."
     if "KOPIOWANIE TREŚCI ZABRONIONE" not in msg:
-        msg = f"{msg}\\n\\n{notice}"
+        msg = f"{msg}\n\n{notice}"
     if not TOKEN or not CHAT:
         logging.error("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID"); return False
     try:
