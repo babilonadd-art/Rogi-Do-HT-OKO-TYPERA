@@ -16,6 +16,7 @@ on:
       - "Main.py"
       - "RogiFTDuble.py"
       - "rogift_graphic.py"
+      - "tests/test_rogi_ft_security.py"
       - "requirements.txt"
       - "tests/test_rogi_ft_duble.py"
       - ".github/workflows/Rogi-FT-Duble.yml"
@@ -50,6 +51,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUBLICATION_SIGNING_SECRET: ${{ secrets.PUBLICATION_SIGNING_SECRET }}
           BOT_MODE: ${{ github.event_name == 'push' && 'dry-run' || (github.event.inputs.mode || 'scan') }}
         run: python RogiFTDuble.py
       - name: Zapis historii dubli
