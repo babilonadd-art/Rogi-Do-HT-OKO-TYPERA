@@ -70,7 +70,7 @@ def main():
     )
 
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
-    caption = f"🧪 TEST RAMKI OCHRONNEJ — ROGI FT\n\n🔐 ID PUBLIKACJI: {publication_code}\nZnak wodny znajduje się poza oryginalną grafiką — typy i nazwy drużyn nie są zasłaniane."
+    caption = f"🧪 TEST PODPISU CYFROWEGO — ROGI FT\n\n🔐 ID: {publication_code}\n🛡 PODPIS: {signature}\nQR prowadzi do dokładnie tego posta w oficjalnym kanale."
     last_error = None
     for attempt in range(1, 6):
         try:
