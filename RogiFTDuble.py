@@ -356,10 +356,11 @@ def send_new_doubles(c, now):
             "ℹ️ Wyłącznie rożne FT — cały mecz"
         )
         coupon_no = int(sent_today) + made + 1
-        message_id = send_coupon_graphic(pair, total_odds, coupon_no, coupon_id)
-        if not message_id:
-            logging.error("Telegram nie potwierdził wysłania grafiki dubla %s", coupon_id)
+        proof = send_coupon_graphic(pair, total_odds, coupon_no, coupon_id)
+        if not proof:
+            logging.error("Telegram nie potwierdził wysłania podpisanej grafiki dubla %s", coupon_id)
             break
+        message_id = proof["message_id"]
         c.execute(
             "INSERT INTO ft_doubles(coupon_id,day,sent_at,total_odds,stake) VALUES(?,?,?,?,?)",
             (coupon_id, day, now.isoformat(), total_odds, STAKE),
@@ -370,6 +371,7 @@ def send_new_doubles(c, now):
                 VALUES(?,?,?,?,?,?,?,?)""",
                 (item["event_id"], coupon_id, item["league"], item["home"], item["away"],
                  item["start_ts"], item["line"], item["odds"]))
+        save_publication_proof(c, coupon_id, proof)
         c.commit()
         made += 1
         remaining -= 1
@@ -399,10 +401,23 @@ def repost_pending_doubles(c, now):
         ]
         coupon_no = c.execute("SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at<=?",
                               (day, now.isoformat())).fetchone()[0]
-        message_id = send_coupon_graphic(graphic_legs, float(total_odds), max(1, coupon_no), coupon_id)
-        if not message_id:
-            logging.error("Nie udało się ponownie opublikować dubla %s — zatrzymuję", coupon_id)
+        stored = c.execute(
+            "SELECT signature,verification_url FROM ft_publication_proofs WHERE coupon_id=?",
+            (coupon_id,),
+        ).fetchone()
+        existing_proof = (
+            {"signature": stored[0], "verification_url": stored[1]}
+            if stored else None
+        )
+        proof = send_coupon_graphic(
+            graphic_legs, float(total_odds), max(1, coupon_no), coupon_id,
+            existing_proof=existing_proof,
+        )
+        if not proof:
+            logging.error("Nie udało się ponownie opublikować podpisanego dubla %s — zatrzymuję", coupon_id)
             break
+        message_id = proof["message_id"]
+        save_publication_proof(c, coupon_id, proof)
         c.execute("INSERT OR REPLACE INTO ft_double_reposts(coupon_id,sent_at,message_id) VALUES(?,?,?)",
                   (coupon_id, now.astimezone(TZ).isoformat(), int(message_id)))
         c.commit()
