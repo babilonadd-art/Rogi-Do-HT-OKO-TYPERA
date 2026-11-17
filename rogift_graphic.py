@@ -94,12 +94,13 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         away = str(leg["away"]).strip()
         match = f"{home} – {away}"
         draw.text((round(238 * sx), y), match,
-                  font=_fit(draw, match, round(515 * sx), scaled_font(45)), fill=INK)
+                  font=_fit(draw, match, round(515 * sx), scaled_font(38)), fill=INK)
 
         line = float(leg["line"])
-        line_y = y + round(58 * sy)
-        over_font = _font(scaled_font(40, italic=True), italic=True)
-        number_font = _font(scaled_font(42))
+        # Add vertical separation so tall team names cannot touch the market line.
+        line_y = y + round(66 * sy)
+        over_font = _font(scaled_font(34, italic=True), italic=True)
+        number_font = _font(scaled_font(36))
         x = round(238 * sx)
         draw.text((x, line_y), "Over", font=over_font, fill=INK)
         x += draw.textbbox((0, 0), "Over", font=over_font)[2] + round(10 * sx)
@@ -108,11 +109,11 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         x += draw.textbbox((0, 0), number_text, font=number_font)[2] + round(12 * sx)
         suffix = "rożnych FT"
         suffix_font = _fit(draw, suffix, round(765 * sx) - x,
-                           scaled_font(40), italic=True)
+                           scaled_font(34), italic=True)
         draw.text((x, line_y), suffix, font=suffix_font, fill=INK)
 
         odds = f"{float(leg['odds']):.2f}"
-        draw.text((round(802 * sx), y + round(48 * sy)), odds,
+        draw.text((round(802 * sx), y + round(44 * sy)), odds,
                   font=_fit(draw, odds, round(180 * sx), scaled_font(67)), fill=BLUE)
 
     # Financial figures follow the arithmetic and labels in the original poster.
