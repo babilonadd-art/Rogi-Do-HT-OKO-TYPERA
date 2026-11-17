@@ -15,12 +15,6 @@ jobs:
       - name: Zachowaj oryginalny szablon bez modyfikacji
         run: |
           cp Screenshot_20261117-110724.png original-template.png
-          python - <<'PY'
-          from PIL import Image
-          im = Image.open("original-template.png")
-          print("TEMPLATE_SIZE=", im.size)
-          im.verify()
-          PY
       - uses: actions/upload-artifact@v4
         with:
           name: preview-rogi-ft
