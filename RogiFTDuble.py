@@ -18,12 +18,13 @@ import Main as source
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.90
+MIN_LEG_ODDS = 1.70
 MAX_LEG_ODDS = 3.50
 MAX_DOUBLES_PER_DAY = 2
 LEGS_PER_DOUBLE = 2
-MIN_HOURS_BEFORE_KICKOFF = 3
+MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
+MIN_FT_CORNERS_LINE = 9.5
 FT_LINES = (9.5, 10.5, 11.5, 12.5, 13.5, 14.5)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -222,8 +223,12 @@ def fetch_candidates(now):
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
         )
-        prices = {line: price for line, price in prices.items()
-                  if MIN_LEG_ODDS <= float(price) <= MAX_LEG_ODDS}
+        prices = {
+            float(line): float(price)
+            for line, price in prices.items()
+            if float(line) >= MIN_FT_CORNERS_LINE
+            and MIN_LEG_ODDS <= float(price) <= MAX_LEG_ODDS
+        }
         chosen = next(
             ((line, float(prices[line])) for line in FT_LINES if line in prices),
             None,
