@@ -1,9 +1,10 @@
-name: TEST — grafika ROGI FT na Telegram
+name: TEST — oryginalna grafika ROGI FT na Telegram
 
 on:
   workflow_dispatch:
   push:
     paths:
+      - 'Screenshot_20261117-110724.png'
       - 'scripts/rogift_test_graphic.py'
       - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
@@ -19,9 +20,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Instalacja Pillow i requests
-        run: pip install "Pillow>=10,<13" "requests>=2.31,<3"
-      - name: Wygeneruj i wyślij grafikę testową
+      - name: Instalacja requests
+        run: pip install "requests>=2.31,<3"
+      - name: Wyślij oryginalny plik PNG bez przerabiania
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
