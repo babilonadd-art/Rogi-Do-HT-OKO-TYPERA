@@ -51,6 +51,8 @@ def db_open():
         verification_url TEXT, telegram_message_id INTEGER NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_daily_quota_resets(
+        day TEXT PRIMARY KEY, reset_at TEXT NOT NULL)""")
     c.commit()
     return c
 
@@ -239,12 +241,41 @@ def fetch_candidates(now):
     return candidates
 
 
+def daily_quota_count(c, day):
+    """Count only coupons published after the latest explicit quota reset."""
+    reset = c.execute(
+        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (day,)
+    ).fetchone()
+    if reset:
+        return int(c.execute(
+            "SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at>?",
+            (day, reset[0]),
+        ).fetchone()[0])
+    return int(c.execute(
+        "SELECT COUNT(*) FROM ft_doubles WHERE day=?", (day,)
+    ).fetchone()[0])
+
+
+def reset_daily_quota(c, now):
+    """Unlock a fresh daily batch without deleting or modifying any old picks."""
+    day = now.date().isoformat()
+    c.execute(
+        "INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?) "
+        "ON CONFLICT(day) DO UPDATE SET reset_at=excluded.reset_at",
+        (day, now.isoformat()),
+    )
+    c.commit()
+    logging.info("Reset limitu %s: historia i nierozliczone duble zachowane.", day)
+    send_new_doubles(c, now)
+
+
 def send_new_doubles(c, now):
     day = now.date().isoformat()
     sent_today = c.execute(
         "SELECT COUNT(*) FROM ft_doubles WHERE day=?", (day,)
     ).fetchone()[0]
-    remaining = max(0, MAX_DOUBLES_PER_DAY - int(sent_today))
+    quota_count = daily_quota_count(c, day)
+    remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
     history = c.execute(
         "SELECT coupon_id,sent_at,total_odds,status FROM ft_doubles WHERE day=? ORDER BY sent_at",
         (day,),
@@ -257,7 +288,7 @@ def send_new_doubles(c, now):
         logging.info("Historia dubla %s | %s | kurs %.3f | %s | zdarzenia=%s",
                      coupon_id, sent_at, total_odds, status, legs)
     if remaining == 0:
-        logging.info("Limit dubli na dziś osiągnięty: %s/%s", sent_today, MAX_DOUBLES_PER_DAY)
+        logging.info("Limit nowej puli dubli osiągnięty: %s/%s (łącznie w historii dziś: %s)", quota_count, MAX_DOUBLES_PER_DAY, sent_today)
         return
 
     already_used = {int(row[0]) for row in c.execute(
@@ -523,6 +554,8 @@ def main():
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
         if mode == "repost-pending":
             repost_pending_doubles(c, now)
+        elif mode == "reset-limit":
+            reset_daily_quota(c, now)
         elif mode == "reset-today-and-scan":
             reset_today_pending_and_scan(c, now)
         elif mode == "dry-run":
