@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Send one image-only layout sample using two real current FT-corners candidates."""
 import os
+import sys
+from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
+
+# Running this file from scripts/ puts that folder on sys.path, not the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from RogiFTDuble import fetch_candidates, STAKE
 from rogift_graphic import render_coupon_image
