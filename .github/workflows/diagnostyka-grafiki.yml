@@ -39,10 +39,14 @@ jobs:
           Path("preview-rogi-ft.png").write_bytes(image.getvalue())
           print(f"PREVIEW_MATCHES={legs[0]['home']} - {legs[0]['away']} / {legs[1]['home']} - {legs[1]['away']}")
           PY
+      - name: Zachowaj oryginalny szablon do kontroli
+        run: cp Screenshot_20261117-110724.png original-template.png
       - uses: actions/upload-artifact@v4
         with:
           name: preview-rogi-ft
-          path: preview-rogi-ft.png
+          path: |
+            preview-rogi-ft.png
+            original-template.png
           if-no-files-found: error
 
 # Re-run preview after renderer adjustment 626010a2
