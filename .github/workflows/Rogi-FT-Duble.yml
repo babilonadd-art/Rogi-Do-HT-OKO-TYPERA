@@ -46,7 +46,7 @@ jobs:
       - name: Kontrola składni i testów
         run: |
           python -m py_compile Main.py RogiFTDuble.py
-          python -m unittest discover -s tests -p "test_rogi_ft_duble.py"
+          python -m unittest discover -s tests -p "test_rogi_ft_*.py"
       - name: Skanowanie i rozliczanie dubli FT
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
