@@ -47,8 +47,11 @@ def _erase_text(image, box, mode):
         mask = (gray > 190).astype(np.uint8) * 255
     else:
         mask = (gray < 80).astype(np.uint8) * 255
-    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
-    image[y1:y2, x1:x2] = cv2.inpaint(region, mask, 4, cv2.INPAINT_TELEA)
+    # The previous 3x3 mask left anti-aliased edges of the original letters
+    # visible underneath the replacement text. Expand the mask enough to remove
+    # the complete glyphs, but only inside the dedicated variable-text panels.
+    mask = cv2.dilate(mask, np.ones((9, 9), np.uint8), iterations=2)
+    image[y1:y2, x1:x2] = cv2.inpaint(region, mask, 8, cv2.INPAINT_TELEA)
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
