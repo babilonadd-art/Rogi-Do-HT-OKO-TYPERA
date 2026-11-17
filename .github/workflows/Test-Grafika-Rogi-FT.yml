@@ -2,6 +2,10 @@ name: TEST — grafika ROGI FT na Telegram
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/rogift_test_graphic.py'
+      - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
   contents: read
