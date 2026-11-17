@@ -6,12 +6,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from RogiFTDuble import publication_proof
-from rogift_graphic import (
-    WATERMARK_BOTTOM,
-    WATERMARK_SIDE,
-    WATERMARK_TOP,
-    apply_watermark,
-)
+from rogift_graphic import TEMPLATE, render_coupon_image
 
 
 class PublicationSecurityTests(unittest.TestCase):
@@ -51,32 +46,20 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertNotEqual(signature1, changed_signature)
         self.assertEqual(payload1["legs"][0]["market"], "OVER_CORNERS_FT")
 
-    def test_qr_frame_does_not_change_or_cover_the_original_pick(self):
-        original = Image.new("RGBA", (360, 240), (31, 62, 93, 255))
-        for x in range(360):
-            for y in range(240):
-                original.putpixel((x, y), (x % 256, y % 256, (x + y) % 256, 255))
-        source = BytesIO()
-        original.save(source, format="PNG")
+    def test_render_uses_the_exact_original_poster_canvas(self):
+        self.assertTrue(TEMPLATE.is_file())
+        rendered = render_coupon_image(self.legs, 3.7245, 50.0)
+        with Image.open(rendered) as image:
+            self.assertEqual(image.size, (1024, 1536))
+            self.assertEqual(image.format, "PNG")
 
-        framed = apply_watermark(
-            source.getvalue(),
-            watermark_id="OT-TEST-123456",
-            signature="ABCDEF0123456789ABCDEF01",
-            verification_url="https://t.me/official_channel/123",
-        )
-        with Image.open(BytesIO(framed)) as image:
-            self.assertEqual(
-                image.size,
-                (360 + 2 * WATERMARK_SIDE, 240 + WATERMARK_TOP + WATERMARK_BOTTOM),
-            )
-            inside = image.crop((
-                WATERMARK_SIDE,
-                WATERMARK_TOP,
-                WATERMARK_SIDE + 360,
-                WATERMARK_TOP + 240,
-            ))
-            self.assertEqual(inside.tobytes(), original.tobytes())
+    def test_static_branding_and_signature_area_remain_unchanged(self):
+        rendered = render_coupon_image(self.legs, 3.7245, 50.0)
+        with Image.open(rendered) as output, Image.open(TEMPLATE) as original:
+            self.assertEqual(output.crop((0, 0, 1024, 380)).tobytes(),
+                             original.crop((0, 0, 1024, 380)).tobytes())
+            self.assertEqual(output.crop((0, 1180, 1024, 1536)).tobytes(),
+                             original.crop((0, 1180, 1024, 1536)).tobytes())
 
 
 if __name__ == "__main__":
