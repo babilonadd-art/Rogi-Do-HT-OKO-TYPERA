@@ -6,10 +6,10 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
+TEMPLATE = Path(__file__).with_name("Plakat bukmacherski: Dubel rożnych FT.png")
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# Coordinates are measured on the real 720x1640 source screenshot.
+# Coordinates must be recalculated for the clean 1024x1536 poster before enabling publication.
 # Each rectangle covers only the existing fixture-name line, not the market,
 # odds, cards, icons, background, totals, or any other part of the poster.
 NAME_BOXES = (
