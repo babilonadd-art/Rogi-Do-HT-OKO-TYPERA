@@ -127,24 +127,22 @@ def telegram_message_link(token, chat_id, message_id):
 
 def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None):
     """Send the exact original PNG to Telegram, without caption or modifications."""
-    from pathlib import Path
-
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    image_path = Path(__file__).resolve().parent / "Screenshot_20261117-110724.png"
-    if not image_path.is_file():
-        logging.error("Brak oryginalnej grafiki: %s", image_path)
-        return None
-
     proof_payload, signature = publication_proof(legs, total_odds, coupon_id)
+    # Build every coupon from its actual selections. A fixed screenshot hides
+    # the fixture names and can therefore publish a graphic unrelated to the picks.
+    graphic = render_coupon_image(
+        legs, total_odds, STAKE, coupon_no=coupon_no,
+        watermark_id=publication_code(coupon_id),
+    )
     try:
-        with image_path.open("rb") as photo:
-            response = requests.post(
-                f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id},
-                files={"photo": (image_path.name, photo, "image/png")},
-                timeout=45,
-            )
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id},
+            files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
+            timeout=45,
+        )
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
