@@ -76,7 +76,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
 
     # Scale the reference layout to the exact dimensions of the repository image.
     for row_y in (400, 558):
-        _erase_text(image, scaled_box((225, row_y, 765, row_y + 115)), "light")
+        # The supplied template has a second, lower placeholder line ("Drużyna A")
+        # beneath the team-name line. Clear the entire variable-text panel height,
+        # not only the first line, before writing the real fixture.
+        _erase_text(image, scaled_box((225, row_y, 765, row_y + 145)), "light")
         # Clear the full old odds, including their top edge, but preserve "Kurs".
         _erase_text(image, scaled_box((795, row_y + 28, 985, row_y + 115)), "light")
     for value_y in (700, 778, 845, 915):
