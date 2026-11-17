@@ -1,4 +1,4 @@
-name: REPOST PENDING ROGI FT
+name: RESET TODAY AND SEND FRESH ROGI FT
 
 on:
   workflow_dispatch:
@@ -28,11 +28,11 @@ jobs:
         run: pip install -r requirements.txt
       - name: Kontrola składni
         run: python -m py_compile Main.py RogiFTDuble.py
-      - name: Ponowna publikacja zapisanych, nierozliczonych dubli
+      - name: Reset dzisiejszych nierozliczonych dubli i wysyłka nowych
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_MODE: repost-pending
+          BOT_MODE: reset-today-and-scan
         run: python RogiFTDuble.py
       - name: Zapis zabezpieczenia przed ponownym wysłaniem
         run: |
