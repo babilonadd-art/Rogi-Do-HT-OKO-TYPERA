@@ -56,10 +56,6 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
         away = str(leg["away"]).strip()
         if not home or not away:
             raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
-        if home.lower() in {"mecz a", "mecz b", "mecz c", "mecz d", "drużyna a", "drużyna b"}:
-            raise ValueError(f"Nieprawidłowa nazwa gospodarza: {home}")
-        if away.lower() in {"mecz a", "mecz b", "mecz c", "mecz d", "drużyna a", "drużyna b"}:
-            raise ValueError(f"Nieprawidłowa nazwa gościa: {away}")
         match = f"{home} – {away}"
         draw.text((x, y), match, font=_font_for(draw, match), fill=NAME_COLOR)
 
