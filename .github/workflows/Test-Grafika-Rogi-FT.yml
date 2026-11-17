@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install "requests>=2.31,<3" "Pillow>=10,<13" "qrcode>=7.4,<9"
-      - name: Wyślij testową grafikę ze znakiem wodnym
+      - name: Wyślij testową grafikę z podpisem i QR
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
