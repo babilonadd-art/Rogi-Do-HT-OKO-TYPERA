@@ -17,6 +17,9 @@ Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzut
 - Każda publikacja otrzymuje unikalny identyfikator `OT-...`, zapisany razem z kuponem w bazie i powtarzany w ramce grafiki oraz podpisie Telegrama.
 - Ramka ochronna znajduje się poza oryginalną grafiką — nie zasłania nazw drużyn, linii ani typów; test sprawdza zgodność pikseli oryginału.
 - Zdjęcia i wiadomości są wysyłane z `protect_content=True`; ogranicza to natywne przekazywanie i zapisywanie w Telegramie, ale nie blokuje zrzutów ekranu ani fotografowania ekranu.
+- Każdy dubel otrzymuje podpis HMAC-SHA256 obejmujący identyfikator kuponu, ligę, drużyny, godzinę meczu, rynek, linię, kursy i stawkę; zmiana danych powoduje inną sygnaturę.
+- W ramce znajduje się kod QR prowadzący do dokładnego oryginalnego posta w oficjalnym kanale, a podpis i link są również w opisie Telegrama. Przy ponownej publikacji zachowywany jest identyfikator, podpis i odnośnik do pierwszego oryginału.
+- Klucz podpisu pobierany jest z `PUBLICATION_SIGNING_SECRET`; jeśli ten sekret nie jest ustawiony, bot bezpiecznie używa tokena Telegrama jako klucza zastępczego. Nie umieszczaj żadnego z tych kluczy w kodzie ani publicznym repozytorium.
 - Automatyczne rozliczanie po meczu i dzienne podsumowanie zysku/straty.
 
 ## Źródła i ograniczenia
