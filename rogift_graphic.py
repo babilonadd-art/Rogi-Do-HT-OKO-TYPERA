@@ -13,12 +13,12 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 # Each rectangle covers only the existing fixture-name line, not the market,
 # odds, cards, icons, background, totals, or any other part of the poster.
 NAME_BOXES = (
-    (168, 596, 548, 641),
-    (168, 718, 548, 763),
+    (168, 596, 535, 641),
+    (168, 718, 535, 763),
 )
 NAME_ORIGINS = ((174, 600), (174, 722))
 NAME_COLOR = (8, 18, 35)
-MAX_NAME_WIDTH = 355
+MAX_NAME_WIDTH = 350
 
 
 def _font_for(draw, text):
