@@ -2,3 +2,4 @@ requests>=2.31,<3
 beautifulsoup4>=4.12,<5
 Pillow>=10,<13
 qrcode>=7.4,<9
+opencv-python-headless>=4.9,<5
