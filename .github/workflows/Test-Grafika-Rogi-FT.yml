@@ -7,6 +7,7 @@ on:
       - 'Screenshot_20261117-110724.png'
       - 'scripts/rogift_test_graphic.py'
       - 'rogift_graphic.py'
+      - 'tests/test_rogi_ft_security.py'
       - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
@@ -27,4 +28,5 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUBLICATION_SIGNING_SECRET: ${{ secrets.PUBLICATION_SIGNING_SECRET }}
         run: python scripts/rogift_test_graphic.py
