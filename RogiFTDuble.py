@@ -49,18 +49,33 @@ def send(text):
 
 
 def send_coupon_graphic(legs, total_odds, coupon_no):
-    """Send the dynamic coupon poster to the configured Telegram channel."""
+    """Send the exact original repository PNG, unchanged; put changing pick data in caption."""
+    from pathlib import Path
+
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    image = render_coupon_image(legs, total_odds, STAKE, coupon_no=coupon_no)
-    caption = f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze | kurs łączny {total_odds:.2f}"
+    image_path = Path(__file__).resolve().parent / "Screenshot_20261117-110724.png"
+    if not image_path.is_file():
+        logging.error("Brak oryginalnej grafiki: %s", image_path)
+        return None
+
+    caption_lines = [
+        f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze",
+        *[
+            f"{i}. {leg['home']} – {leg['away']} | OVER {float(leg['line']):.1f} rożnych FT | kurs {float(leg['odds']):.2f}"
+            for i, leg in enumerate(legs[:2], 1)
+        ],
+        f"💹 KURS ŁĄCZNY: {float(total_odds):.2f}",
+        f"💰 STAWKA: {STAKE:.2f} zł",
+    ]
     try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{token}/sendPhoto",
-            data={"chat_id": chat_id, "caption": caption},
-            files={"photo": ("rogi-ft-dubel.png", image, "image/png")},
-            timeout=45,
-        )
+        with image_path.open("rb") as photo:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": chat_id, "caption": "\\n".join(caption_lines)},
+                files={"photo": (image_path.name, photo, "image/png")},
+                timeout=45,
+            )
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
@@ -68,7 +83,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
             return None
         return payload["result"]["message_id"]
     except Exception:
-        logging.exception("Nie udało się wysłać grafiki dubla FT")
+        logging.exception("Nie udało się wysłać oryginalnej grafiki dubla FT")
         return None
 
 
