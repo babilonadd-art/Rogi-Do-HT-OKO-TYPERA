@@ -44,3 +44,5 @@ jobs:
           name: preview-rogi-ft
           path: preview-rogi-ft.png
           if-no-files-found: error
+
+# Re-run preview after renderer adjustment 626010a2
