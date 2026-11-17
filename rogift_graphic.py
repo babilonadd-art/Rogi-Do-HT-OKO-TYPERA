@@ -1,152 +1,114 @@
-"""Render dynamic picks on the user's exact original FT-corners poster."""
+"""Fresh, clean FT-corners double graphic. No inherited placeholder text."""
 from io import BytesIO
-from pathlib import Path
-
-import cv2
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
-INK = (8, 20, 42)
-BLUE = (0, 105, 205)
-RED = (190, 20, 20)
-NAVY_BGR = (53, 24, 5)
+W, H = 1024, 1536
+BG = (8, 18, 38)
+PANEL = (17, 34, 62)
+WHITE = (247, 250, 255)
+MUTED = (164, 183, 207)
+BLUE = (50, 157, 255)
+GREEN = (46, 210, 160)
+RED = (255, 105, 105)
 
 
-def _font(size, italic=False):
-    paths = (
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"]
-        if italic else
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-    )
-    paths += ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+def _font(size, bold=False, italic=False):
+    if italic:
+        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"]
+    elif bold:
+        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+    else:
+        paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
     for path in paths:
         try:
-            return ImageFont.truetype(path, size=size)
+            return ImageFont.truetype(path, size)
         except OSError:
             pass
     return ImageFont.load_default()
 
 
-def _fit(draw, text, max_width, size, italic=False):
-    font = _font(size, italic)
-    while size > 18 and draw.textbbox((0, 0), text, font=font)[2] > max_width:
+def _fit(draw, text, max_width, size, bold=True):
+    while size > 18:
+        font = _font(size, bold=bold)
+        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+            return font
         size -= 2
-        font = _font(size, italic)
-    return font
+    return _font(size, bold=bold)
 
 
-def _erase_text(image, box, mode):
-    """Inpaint only the old variable lettering, retaining the poster texture."""
-    x1, y1, x2, y2 = box
-    region = image[y1:y2, x1:x2]
-    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-    if mode == "light":
-        mask = (gray < 155).astype(np.uint8) * 255
-    elif mode == "white":
-        mask = (gray > 190).astype(np.uint8) * 255
-    else:
-        mask = (gray < 80).astype(np.uint8) * 255
-    # The previous 3x3 mask left anti-aliased edges of the original letters
-    # visible underneath the replacement text. Expand the mask enough to remove
-    # the complete glyphs, but only inside the dedicated variable-text panels.
-    mask = cv2.dilate(mask, np.ones((9, 9), np.uint8), iterations=2)
-    image[y1:y2, x1:x2] = cv2.inpaint(region, mask, 8, cv2.INPAINT_TELEA)
+def _center(draw, xy, text, font, fill):
+    x, y = xy
+    box = draw.textbbox((0, 0), text, font=font)
+    draw.text((x - (box[2] - box[0]) / 2, y), text, font=font, fill=fill)
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
                         watermark_id=None):
-    """Use the original poster unchanged except for its variable betting data."""
-    if not TEMPLATE.is_file():
-        raise FileNotFoundError(f"Brak oryginalnego wzoru grafiki: {TEMPLATE}")
+    """Render a fresh poster from a blank canvas; no old placeholder can remain."""
     if len(legs) < 2:
-        raise ValueError("Grafika dubla wymaga dokładnie dwóch zdarzeń")
+        raise ValueError("Grafika dubla wymaga dwóch zdarzeń")
 
-    source = cv2.imread(str(TEMPLATE), cv2.IMREAD_COLOR)
-    if source is None:
-        raise ValueError("Nie można odczytać oryginalnego wzoru grafiki")
-    height, width = source.shape[:2]
-    sx, sy = width / 1024.0, height / 1536.0
-    def scaled_box(box):
-        return tuple(round(value * (sx if index % 2 == 0 else sy))
-                     for index, value in enumerate(box))
-    def scaled_font(size, italic=False):
-        return max(12, round(size * sy))
-    image = source.copy()
+    im = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(im)
 
-    # Scale the reference layout to the exact dimensions of the repository image.
-    for row_y in (400, 558):
-        # The supplied template has a second, lower placeholder line ("Drużyna A")
-        # beneath the team-name line. Clear the entire variable-text panel height,
-        # not only the first line, before writing the real fixture.
-        _erase_text(image, scaled_box((225, row_y, 765, row_y + 145)), "light")
-        # Clear the full old odds, including their top edge, but preserve "Kurs".
-        _erase_text(image, scaled_box((795, row_y + 28, 985, row_y + 115)), "light")
-    for value_y in (700, 778, 845, 915):
-        _erase_text(image, scaled_box((735, value_y, 984, value_y + 63)), "light")
-    _erase_text(image, scaled_box((205, 1075, 550, 1160)), "white")
-    _erase_text(image, scaled_box((585, 1075, 940, 1160)), "dark")
+    # Subtle vertical background bands and decorative accents.
+    for y in range(H):
+        t = y / H
+        c = (int(8 + 5*t), int(18 + 8*t), int(38 + 12*t))
+        d.line((0, y, W, y), fill=c)
+    d.rounded_rectangle((34, 34, 990, 1502), radius=38,
+                        outline=(38, 75, 112), width=3)
 
-    poster = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(poster)
+    _center(d, (W//2, 105), "ROGI FT", _font(76, bold=True), WHITE)
+    _center(d, (W//2, 205), "DUBLE • RZUTY ROŻNE", _font(30, bold=True), BLUE)
+    d.line((100, 275, 924, 275), fill=(46, 91, 135), width=3)
 
-    # Two fixture panels: same positions and colors as the supplied artwork.
-    for index, leg in enumerate(legs[:2]):
-        y = round((400 + index * 158) * sy)
+    for i, leg in enumerate(legs[:2]):
+        top = 330 + i * 300
+        d.rounded_rectangle((78, top, 946, top+250), radius=28,
+                            fill=PANEL, outline=(39, 80, 120), width=3)
+        d.rounded_rectangle((78, top, 94, top+250), radius=7, fill=BLUE)
         home = str(leg["home"]).strip()
         away = str(leg["away"]).strip()
-        match = f"{home} – {away}"
-        draw.text((round(238 * sx), y), match,
-                  font=_fit(draw, match, round(515 * sx), scaled_font(38)), fill=INK)
+        match = f"{home}  –  {away}"
+        match_font = _fit(d, match, 790, 43)
+        _center(d, (512, top+42), match, match_font, WHITE)
 
         line = float(leg["line"])
-        # Add vertical separation so tall team names cannot touch the market line.
-        line_y = y + round(66 * sy)
-        over_font = _font(scaled_font(34, italic=True), italic=True)
-        number_font = _font(scaled_font(36))
-        x = round(238 * sx)
-        draw.text((x, line_y), "Over", font=over_font, fill=INK)
-        x += draw.textbbox((0, 0), "Over", font=over_font)[2] + round(10 * sx)
-        number_text = f"{line:.1f}"
-        draw.text((x, line_y), number_text, font=number_font, fill=BLUE)
-        x += draw.textbbox((0, 0), number_text, font=number_font)[2] + round(12 * sx)
-        suffix = "rożnych FT"
-        suffix_font = _fit(draw, suffix, round(765 * sx) - x,
-                           scaled_font(34), italic=True)
-        draw.text((x, line_y), suffix, font=suffix_font, fill=INK)
+        market = f"OVER {line:.1f} RZUTÓW ROŻNYCH FT"
+        _center(d, (512, top+122), market, _font(27, bold=True), MUTED)
 
-        odds = f"{float(leg['odds']):.2f}"
-        draw.text((round(802 * sx), y + round(44 * sy)), odds,
-                  font=_fit(draw, odds, round(180 * sx), scaled_font(67)), fill=BLUE)
+        odds = f"KURS  {float(leg['odds']):.2f}"
+        d.rounded_rectangle((350, top+174, 674, top+230), radius=18, fill=(14, 74, 125))
+        _center(d, (512, top+183), odds, _font(31, bold=True), WHITE)
 
-    # Financial figures follow the arithmetic and labels in the original poster.
+    d.line((100, 990, 924, 990), fill=(46, 91, 135), width=3)
+    _center(d, (512, 1030), "PODSUMOWANIE KUPONU", _font(30, bold=True), BLUE)
+
     tax = round(float(stake) * float(tax_rate), 2)
     playing = round(float(stake) - tax, 2)
     payout = round(playing * float(total_odds), 2)
     profit = round(payout - float(stake), 2)
 
-    values = [
-        (f"{float(stake):,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), INK, 708),
-        (f"{tax:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), RED, 786),
-        (f"{playing:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " "), INK, 863),
-        (f"{float(total_odds):.2f}", BLUE, 940),
+    rows = [
+        ("STAWKA", f"{float(stake):.2f} zł", WHITE),
+        ("PODATEK", f"{tax:.2f} zł", RED),
+        ("STAWKA PO PODATKU", f"{playing:.2f} zł", WHITE),
+        ("KURS ŁĄCZNY", f"{float(total_odds):.2f}", BLUE),
     ]
-    for value, color, y in values:
-        font = _fit(draw, value, round(245 * sx), scaled_font(48))
-        text_width = draw.textbbox((0, 0), value, font=font)[2]
-        draw.text((round(970 * sx) - text_width, round(y * sy)),
-                  value, font=font, fill=color)
+    y = 1100
+    for label, value, color in rows:
+        d.text((130, y), label, font=_font(25, bold=True), fill=MUTED)
+        value_font = _fit(d, value, 330, 32)
+        d.text((890-d.textbbox((0,0), value, font=value_font)[2],
+                y-5), value, font=value_font, fill=color)
+        y += 76
 
-    payout_text = f"{payout:,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
-    profit_text = f"{profit:+,.2f} zł".replace(",", "X").replace(".", ",").replace("X", " ")
-    draw.text((round(220 * sx), round(1083 * sy)), payout_text,
-              font=_fit(draw, payout_text, round(300 * sx), scaled_font(55), italic=True),
-              fill=(255, 255, 255))
-    draw.text((round(600 * sx), round(1083 * sy)), profit_text,
-              font=_fit(draw, profit_text, round(330 * sx), scaled_font(55)),
-              fill=(0, 0, 0))
+    d.rounded_rectangle((92, 1420, 932, 1480), radius=18, fill=(13, 73, 82))
+    payout_label = f"MOŻLIWA WYGRANA: {payout:.2f} zł   |   ZYSK: {profit:+.2f} zł"
+    _center(d, (512, 1434), payout_label, _fit(d, payout_label, 790, 25), GREEN)
 
     output = BytesIO()
-    poster.save(output, format="PNG", optimize=True)
+    im.save(output, format="PNG", optimize=True)
     output.seek(0)
     return output
