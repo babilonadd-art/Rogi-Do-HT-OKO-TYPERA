@@ -1,0 +1,46 @@
+name: REPOST PENDING ROGI FT
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/Repost-Pending-Rogi-FT.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rogi-ft-repost
+  cancel-in-progress: false
+
+jobs:
+  repost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalacja zależności
+        run: pip install -r requirements.txt
+      - name: Kontrola składni
+        run: python -m py_compile Main.py RogiFTDuble.py
+      - name: Ponowna publikacja zapisanych, nierozliczonych dubli
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BOT_MODE: repost-pending
+        run: python RogiFTDuble.py
+      - name: Zapis zabezpieczenia przed ponownym wysłaniem
+        run: |
+          if [ -f rogift_duble.db ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add rogift_duble.db
+            git diff --cached --quiet || git commit -m "Record reposted FT doubles"
+            git pull --rebase --autostash origin main
+            git push
+          fi
