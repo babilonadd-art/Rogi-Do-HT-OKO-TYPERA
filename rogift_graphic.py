@@ -19,7 +19,7 @@ def _font(size, bold=False, italic=False):
 
 
 def _fit(draw, text, width, size, bold=True, italic=False):
-    while size > 17 and draw.textbbox((0, 0), text, font=_font(size, bold, italic))[2] > width:
+    while size > 11 and draw.textbbox((0, 0), text, font=_font(size, bold, italic))[2] > width:
         size -= 2
     return _font(size, bold, italic)
 
