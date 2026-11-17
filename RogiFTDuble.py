@@ -2,6 +2,8 @@
 """Prematch FT corner Over doubles. No team-history/statistical filters."""
 import os
 import hashlib
+import hmac
+import json
 import sqlite3
 import logging
 import requests
@@ -42,6 +44,12 @@ def db_open():
     c.execute("""CREATE TABLE IF NOT EXISTS ft_double_reposts(
         coupon_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, message_id INTEGER,
         FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ft_publication_proofs(
+        coupon_id TEXT PRIMARY KEY, publication_code TEXT NOT NULL,
+        signature TEXT NOT NULL, payload_json TEXT NOT NULL,
+        verification_url TEXT, telegram_message_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
     c.commit()
     return c
 
@@ -55,8 +63,70 @@ def publication_code(coupon_id):
     return f"OT-{digest}"
 
 
-def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id):
-    """Send a framed, uniquely identified copy; preserve the original poster unchanged."""
+def publication_proof(legs, total_odds, coupon_id):
+    """Create a stable HMAC-SHA256 signature over the complete pick, not just its ID."""
+    payload = {
+        "version": 1,
+        "brand": "OKO TYPERA",
+        "coupon_id": str(coupon_id),
+        "stake_pln": round(float(STAKE), 2),
+        "total_odds": round(float(total_odds), 3),
+        "legs": [
+            {
+                "event_id": int(leg["event_id"]),
+                "league": str(leg["league"]),
+                "home": str(leg["home"]),
+                "away": str(leg["away"]),
+                "kickoff_utc": int(leg["start_ts"]),
+                "market": "OVER_CORNERS_FT",
+                "line": round(float(leg["line"]), 2),
+                "odds": round(float(leg["odds"]), 3),
+            }
+            for leg in legs[:LEGS_PER_DOUBLE]
+        ],
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    # Prefer a dedicated key; the Telegram bot token is a secure fallback so setup
+    # remains automatic and no extra GitHub Secret is required.
+    secret = os.getenv("PUBLICATION_SIGNING_SECRET") or os.getenv("TELEGRAM_BOT_TOKEN")
+    if not secret:
+        raise RuntimeError("Brak klucza do podpisu publikacji")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        b"OKO-TYPERA-ROGI-FT-V1\\0" + canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:24].upper()
+    return payload, signature
+
+
+def telegram_message_link(token, chat_id, message_id):
+    """Resolve a permalink to the exact post in the official Telegram channel."""
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/getChat",
+            data={"chat_id": chat_id},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            logging.warning("Telegram getChat nie zwrócił danych kanału: %s", payload)
+            return None
+        chat = payload.get("result") or {}
+        username = chat.get("username")
+        if username:
+            return f"https://t.me/{username}/{int(message_id)}"
+        chat_value = str(chat_id)
+        if chat_value.startswith("-100"):
+            return f"https://t.me/c/{chat_value[4:]}/{int(message_id)}"
+        logging.warning("Nie można utworzyć linku do posta dla chat_id=%s", chat_value)
+    except Exception:
+        logging.exception("Nie udało się ustalić linku do oryginalnego posta Telegram")
+    return None
+
+
+def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None):
+    """Publish a signed graphic, then add a QR linking to that exact official post."""
     from pathlib import Path
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -67,9 +137,14 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id):
         return None
 
     post_code = publication_code(coupon_id)
+    proof_payload, generated_signature = publication_proof(legs, total_odds, coupon_id)
+    signature = (existing_proof or {}).get("signature") or generated_signature
+    verification_url = (existing_proof or {}).get("verification_url")
+
     caption_lines = [
         f"🚩 ROGI FT — DUBEL {coupon_no} | 2 mecze",
         f"🔐 ID ORYGINALNEJ PUBLIKACJI: {post_code}",
+        f"🛡 PODPIS CYFROWY: {signature}",
         *[
             f"{i}. {leg['home']} – {leg['away']} | OVER {float(leg['line']):.1f} rożnych FT | kurs {float(leg['odds']):.2f}"
             for i, leg in enumerate(legs[:2], 1)
@@ -80,25 +155,109 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id):
         "🔒 OCHRONA TREŚCI: NIE KOPIOWAĆ",
         "Grafika i autorskie opisy Oko Typera są materiałami chronionymi. Nie podszywaj się pod oficjalne publikacje.",
     ]
+
     try:
-        # The unique ID is placed in an outer frame; no part of the original pick is covered.
-        photo_bytes = apply_watermark(image_path.read_bytes(), watermark_id=post_code)
-        with BytesIO(photo_bytes) as photo:
-            response = requests.post(
-                f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id, "protect_content": True, "caption": "\n".join(caption_lines)},
-                files={"photo": (f"{post_code}_OKO_TYPERA_ROGI_FT.png", photo, "image/png")},
-                timeout=45,
-            )
+        source_bytes = image_path.read_bytes()
+        first_copy = apply_watermark(
+            source_bytes, watermark_id=post_code, signature=signature
+        )
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={
+                "chat_id": chat_id,
+                "protect_content": True,
+                "caption": "\\n".join(caption_lines),
+            },
+            files={"photo": (f"{post_code}_OKO_TYPERA_ROGI_FT.png", BytesIO(first_copy), "image/png")},
+            timeout=45,
+        )
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
             logging.error("Telegram sendPhoto: %s", payload)
             return None
-        return payload["result"]["message_id"]
+        message_id = int(payload["result"]["message_id"])
+
+        # For a first publication, point QR to this exact Telegram message.
+        # A repost reuses the first publication's permanent verification link.
+        if not verification_url:
+            verification_url = telegram_message_link(token, chat_id, message_id)
+
+        if verification_url:
+            final_copy = apply_watermark(
+                source_bytes,
+                watermark_id=post_code,
+                signature=signature,
+                verification_url=verification_url,
+            )
+            final_caption = "\\n".join(
+                caption_lines + [f"🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"]
+            )
+            media = {
+                "type": "photo",
+                "media": "attach://photo",
+                "caption": final_caption,
+            }
+            try:
+                edited = requests.post(
+                    f"https://api.telegram.org/bot{token}/editMessageMedia",
+                    data={
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "media": json.dumps(media, ensure_ascii=False),
+                    },
+                    files={
+                        "photo": (
+                            f"{post_code}_SIGNED_QR.png",
+                            BytesIO(final_copy),
+                            "image/png",
+                        )
+                    },
+                    timeout=45,
+                )
+                edited.raise_for_status()
+                edit_payload = edited.json()
+                if not edit_payload.get("ok"):
+                    logging.error("Telegram editMessageMedia: %s", edit_payload)
+                    verification_url = None
+                else:
+                    logging.info("Dodano QR do dokładnego posta Telegram: %s", verification_url)
+            except Exception:
+                logging.exception("Post wysłany, ale nie udało się dodać QR/linku w edycji")
+                verification_url = None
+        else:
+            logging.warning("Post wysłany z podpisem, ale bez QR — brak linku do posta")
+
+        return {
+            "message_id": message_id,
+            "publication_code": post_code,
+            "signature": signature,
+            "payload_json": json.dumps(proof_payload, ensure_ascii=False, sort_keys=True),
+            "verification_url": verification_url,
+            "created_at": datetime.now(TZ).isoformat(),
+        }
     except Exception:
-        logging.exception("Nie udało się wysłać oryginalnej grafiki dubla FT")
+        logging.exception("Nie udało się wysłać podpisanej grafiki dubla FT")
         return None
+
+
+def save_publication_proof(c, coupon_id, proof):
+    if not proof:
+        return
+    c.execute(
+        """INSERT OR IGNORE INTO ft_publication_proofs
+        (coupon_id,publication_code,signature,payload_json,verification_url,
+         telegram_message_id,created_at) VALUES(?,?,?,?,?,?,?)""",
+        (
+            coupon_id,
+            proof["publication_code"],
+            proof["signature"],
+            proof["payload_json"],
+            proof.get("verification_url"),
+            int(proof["message_id"]),
+            proof["created_at"],
+        ),
+    )
 
 
 def fetch_candidates(now):
