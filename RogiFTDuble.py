@@ -166,7 +166,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
             data={
                 "chat_id": chat_id,
                 "protect_content": True,
-                "caption": "\\n".join(caption_lines),
+                "caption": "\n".join(caption_lines),
             },
             files={"photo": (f"{post_code}_OKO_TYPERA_ROGI_FT.png", BytesIO(first_copy), "image/png")},
             timeout=45,
@@ -190,7 +190,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                 signature=signature,
                 verification_url=verification_url,
             )
-            final_caption = "\\n".join(
+            final_caption = "\n".join(
                 caption_lines + [f"🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"]
             )
             media = {
