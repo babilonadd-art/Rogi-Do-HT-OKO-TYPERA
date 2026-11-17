@@ -72,7 +72,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
         with image_path.open("rb") as photo:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id, "caption": "\\n".join(caption_lines)},
+                data={"chat_id": chat_id},
                 files={"photo": (image_path.name, photo, "image/png")},
                 timeout=45,
             )
