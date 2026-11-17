@@ -115,7 +115,7 @@ def main():
                 signature=signature,
                 verification_url=verification_url,
             )
-            final_caption = caption + f"\\n🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"
+            final_caption = caption + f"\n🔎 SPRAWDŹ ORYGINAŁ: {verification_url}"
             media = {
                 "type": "photo",
                 "media": "attach://photo",
