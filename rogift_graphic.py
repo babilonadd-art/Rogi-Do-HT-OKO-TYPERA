@@ -59,16 +59,21 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
 
     tax = round(float(stake) * float(tax_rate), 2)
     playing = round(float(stake) - tax, 2)
-    payout = round(playing * float(total_odds), 2)
+    # Wypłata musi używać dokładnie tego kursu, który pokazujemy na plakacie.
+    displayed_odds = round(float(total_odds), 2)
+    payout = round(playing * displayed_odds, 2)
     profit = round(payout - float(stake), 2)
+
+    def pl_number(value):
+        return f"{float(value):.2f}".replace(".", ",")
 
     # Ustalona kolejność: kurs łączny, podatek, stawka, kwota grająca.
     d.rectangle((194, 704, 970, 990), fill=CREAM)
     rows = [
-        ("Kurs łączny:", f"{float(total_odds):.2f}", BLUE),
-        ("Podatek 12%:", f"{tax:.2f} zł", RED),
-        ("Stawka:", f"{float(stake):.2f} zł", INK),
-        ("Kwota grająca:", f"{playing:.2f} zł", INK),
+        ("Kurs łączny:", pl_number(displayed_odds), BLUE),
+        ("Podatek 12%:", f"{pl_number(tax)} zł", RED),
+        ("Stawka:", f"{pl_number(stake)} zł", INK),
+        ("Kwota grająca:", f"{pl_number(playing)} zł", INK),
     ]
     for y, (label, value, color) in zip((713, 785, 857, 929), rows):
         d.text((202, y), label, font=_font(39, True), fill=INK)
@@ -79,10 +84,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     d.rectangle((205, 1018, 553, 1167), fill=(7, 27, 58))
     d.rectangle((572, 1018, 971, 1167), fill=(110, 255, 0))
     d.text((239, 1027), "Wypłata:", font=_font(42, True), fill=(255, 255, 255))
-    payout_text = f"{payout:.2f} zł"
+    payout_text = f"{pl_number(payout)} zł"
     d.text((224, 1080), payout_text, font=_fit(d, payout_text, 310, 55), fill=(255, 255, 255))
     _center(d, 770, 1027, "Zysk netto:", _font(38, True, True), (0, 0, 0))
-    profit_text = f"{profit:+.2f} zł"
+    profit_text = f"{profit:+.2f}".replace(".", ",") + " zł"
     _center(d, 770, 1080, profit_text, _fit(d, profit_text, 360, 58, True, True), (0, 0, 0))
 
     overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
