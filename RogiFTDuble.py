@@ -4,8 +4,9 @@ import os
 import sqlite3
 import logging
 import requests
+from io import BytesIO
 
-from rogift_graphic import render_coupon_image
+from rogift_graphic import apply_watermark, render_coupon_image
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -49,7 +50,7 @@ def send(text):
 
 
 def send_coupon_graphic(legs, total_odds, coupon_no):
-    """Send the exact original repository PNG, unchanged; put changing pick data in caption."""
+    """Send a watermarked copy of the repository poster; keep the original file untouched."""
     from pathlib import Path
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -72,11 +73,13 @@ def send_coupon_graphic(legs, total_odds, coupon_no):
         "Wszystkie prawa do typów i grafik zastrzeżone. Zakaz kopiowania, rozpowszechniania i publikowania bez zgody Oko Typera.",
     ]
     try:
-        with image_path.open("rb") as photo:
+        # Watermark only the in-memory copy; the source PNG in the repository stays untouched.
+        photo_bytes = apply_watermark(image_path.read_bytes())
+        with BytesIO(photo_bytes) as photo:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
                 data={"chat_id": chat_id, "protect_content": True, "caption": "\n".join(caption_lines)},
-                files={"photo": (image_path.name, photo, "image/png")},
+                files={"photo": ("OKO_TYPERA_ROGI_FT.png", photo, "image/png")},
                 timeout=45,
             )
         response.raise_for_status()
