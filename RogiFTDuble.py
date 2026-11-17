@@ -245,9 +245,17 @@ def save_publication_proof(c, coupon_id, proof):
     if not proof:
         return
     c.execute(
-        """INSERT OR IGNORE INTO ft_publication_proofs
+        """INSERT INTO ft_publication_proofs
         (coupon_id,publication_code,signature,payload_json,verification_url,
-         telegram_message_id,created_at) VALUES(?,?,?,?,?,?,?)""",
+         telegram_message_id,created_at) VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(coupon_id) DO UPDATE SET
+          verification_url=COALESCE(ft_publication_proofs.verification_url, excluded.verification_url),
+          telegram_message_id=CASE
+            WHEN ft_publication_proofs.verification_url IS NULL
+                 AND excluded.verification_url IS NOT NULL
+            THEN excluded.telegram_message_id
+            ELSE ft_publication_proofs.telegram_message_id
+          END""",
         (
             coupon_id,
             proof["publication_code"],
