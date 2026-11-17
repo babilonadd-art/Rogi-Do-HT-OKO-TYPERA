@@ -60,39 +60,50 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         raise ValueError("Grafika dubla wymaga dokładnie dwóch zdarzeń")
 
     source = cv2.imread(str(TEMPLATE), cv2.IMREAD_COLOR)
-    if source is None or source.shape[:2] != (1536, 1024):
-        raise ValueError("Oryginalny wzór grafiki ma nieprawidłowy format")
+    if source is None:
+        raise ValueError("Nie można odczytać oryginalnego wzoru grafiki")
+    height, width = source.shape[:2]
+    sx, sy = width / 1024.0, height / 1536.0
+    def scaled_box(box):
+        return tuple(round(value * (sx if index % 2 == 0 else sy))
+                     for index, value in enumerate(box))
+    def scaled_font(size, italic=False):
+        return max(12, round(size * sy))
     image = source.copy()
 
-    # Remove only old variable text; the logo, background, panels, icons,
-    # labels, footballs, brush strokes and signature remain the original pixels.
+    # Scale the reference layout to the exact dimensions of the repository image.
     for row_y in (400, 558):
-        _erase_text(image, (225, row_y, 765, row_y + 115), "light")
-        _erase_text(image, (795, row_y + 40, 985, row_y + 115), "light")
+        _erase_text(image, scaled_box((225, row_y, 765, row_y + 115)), "light")
+        _erase_text(image, scaled_box((795, row_y + 40, 985, row_y + 115)), "light")
     for value_y in (700, 778, 845, 915):
-        _erase_text(image, (735, value_y, 984, value_y + 63), "light")
-    _erase_text(image, (205, 1075, 550, 1160), "white")
-    _erase_text(image, (585, 1075, 940, 1160), "dark")
+        _erase_text(image, scaled_box((735, value_y, 984, value_y + 63)), "light")
+    _erase_text(image, scaled_box((205, 1075, 550, 1160)), "white")
+    _erase_text(image, scaled_box((585, 1075, 940, 1160)), "dark")
 
     poster = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(poster)
 
     # Two fixture panels: same positions and colors as the supplied artwork.
     for index, leg in enumerate(legs[:2]):
-        y = 400 + index * 158
+        y = round((400 + index * 158) * sy)
         home = str(leg["home"]).strip()
         away = str(leg["away"]).strip()
         match = f"{home} – {away}"
-        draw.text((238, y), match, font=_fit(draw, match, 515, 45), fill=INK)
+        draw.text((round(238 * sx), y), match,
+                  font=_fit(draw, match, round(515 * sx), scaled_font(45)), fill=INK)
 
         line = float(leg["line"])
-        draw.text((238, y + 58), "Over", font=_font(40, italic=True), fill=INK)
-        draw.text((355, y + 58), f"{line:.1f}", font=_font(42), fill=BLUE)
-        draw.text((440, y + 58), "rożnych FT",
-                  font=_fit(draw, "rożnych FT", 310, 40, italic=True), fill=INK)
+        draw.text((round(238 * sx), y + round(58 * sy)), "Over",
+                  font=_font(scaled_font(40, italic=True), italic=True), fill=INK)
+        draw.text((round(355 * sx), y + round(58 * sy)), f"{line:.1f}",
+                  font=_font(scaled_font(42)), fill=BLUE)
+        draw.text((round(440 * sx), y + round(58 * sy)), "rożnych FT",
+                  font=_fit(draw, "rożnych FT", round(310 * sx),
+                            scaled_font(40), italic=True), fill=INK)
 
         odds = f"{float(leg['odds']):.2f}"
-        draw.text((802, y + 48), odds, font=_fit(draw, odds, 180, 67), fill=BLUE)
+        draw.text((round(802 * sx), y + round(48 * sy)), odds,
+                  font=_fit(draw, odds, round(180 * sx), scaled_font(67)), fill=BLUE)
 
     # Financial figures follow the arithmetic and labels in the original poster.
     tax = round(float(stake) * float(tax_rate), 2)
