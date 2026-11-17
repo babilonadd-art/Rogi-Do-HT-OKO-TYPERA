@@ -1,100 +1,69 @@
-"""Renderer uses the original OKO TYPERA poster stored in the repository."""
+"""Replace only the two fixture labels on the untouched original poster."""
 from io import BytesIO
 from pathlib import Path
+
+import cv2
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
-CREAM = (250, 248, 245)
-INK = (8, 24, 52)
-BLUE = (0, 105, 205)
-RED = (205, 22, 18)
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# Coordinates are measured on the real 720x1640 source screenshot.
+# Each rectangle covers only the existing fixture-name line, not the market,
+# odds, cards, icons, background, totals, or any other part of the poster.
+NAME_BOXES = (
+    (168, 596, 548, 641),
+    (168, 718, 548, 763),
+)
+NAME_ORIGINS = ((174, 600), (174, 722))
+NAME_COLOR = (8, 18, 35)
+MAX_NAME_WIDTH = 355
 
 
-def _font(size, bold=False, italic=False):
-    name = "DejaVuSans-BoldOblique.ttf" if italic else ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
-    try:
-        return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/" + name, size)
-    except OSError:
-        return ImageFont.load_default()
-
-
-def _fit(draw, text, width, size, bold=True, italic=False):
-    while size > 11 and draw.textbbox((0, 0), text, font=_font(size, bold, italic))[2] > width:
-        size -= 2
-    return _font(size, bold, italic)
-
-
-def _right(draw, x, y, text, font, fill):
-    box = draw.textbbox((0, 0), text, font=font)
-    draw.text((x - box[2], y), text, font=font, fill=fill)
-
-
-def _center(draw, x, y, text, font, fill):
-    box = draw.textbbox((0, 0), text, font=font)
-    draw.text((x - box[2] / 2, y), text, font=font, fill=fill)
+def _font_for(draw, text):
+    for size in range(36, 17, -1):
+        font = ImageFont.truetype(FONT_PATH, size)
+        if draw.textbbox((0, 0), text, font=font)[2] <= MAX_NAME_WIDTH:
+            return font
+    raise ValueError(f"Nazwa drużyn jest za długa dla oryginalnego pola: {text}")
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
-    if len(legs) < 2:
-        raise ValueError("Grafika dubla wymaga dwóch prawdziwych meczów")
+    """Return the original screenshot with only its two team-name labels replaced."""
+    if len(legs) != 2:
+        raise ValueError("Grafika dubla wymaga dokładnie dwóch prawdziwych meczów")
     if not TEMPLATE.is_file():
         raise FileNotFoundError(f"Brak oryginalnego szablonu: {TEMPLATE}")
-    base = Image.open(TEMPLATE).copy()
-    overlay = Image.new("RGBA", (1024, 1536), (0, 0, 0, 0))
-    d = ImageDraw.Draw(overlay)
 
-    # Większy odstęp i mniejsze fonty: nazwa meczu oraz rynek nie mogą się stykać.
-    for i, leg in enumerate(legs[:2]):
-        top = 386 + i * 155
-        d.rectangle((225, top, 765, top + 143), fill=CREAM)
-        d.rectangle((775, top, 975, top + 143), fill=CREAM)
-        match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
-        d.text((235, top + 17), match, font=_fit(d, match, 525, 34), fill=INK)
-        market = f"Over {float(leg['line']):.1f} rożnych FT"
-        d.text((235, top + 86), market, font=_fit(d, market, 525, 28, False, True), fill=INK)
-        d.text((801, top + 20), "Kurs", font=_font(23, True, True), fill=INK)
-        odds = f"{float(leg['odds']):.2f}"
-        d.text((801, top + 57), odds, font=_fit(d, odds, 160, 49), fill=BLUE)
+    original = Image.open(TEMPLATE).convert("RGB")
+    if original.size != (720, 1640):
+        raise ValueError(f"Nieoczekiwany rozmiar oryginalnego szablonu: {original.size}")
 
-    tax = round(float(stake) * float(tax_rate), 2)
-    playing = round(float(stake) - tax, 2)
-    displayed_odds = round(float(total_odds), 2)
-    payout = round(playing * displayed_odds, 2)
-    profit = round(payout - float(stake), 2)
+    # Remove only the old text areas with local inpainting. Everything outside
+    # these two narrow rectangles remains byte-for-byte visually untouched.
+    rgb = np.asarray(original)
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
+    for x1, y1, x2, y2 in NAME_BOXES:
+        mask[y1:y2, x1:x2] = 255
+    repaired = cv2.inpaint(bgr, mask, 9, cv2.INPAINT_TELEA)
+    image = Image.fromarray(cv2.cvtColor(repaired, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(image)
 
-    def pl_number(value):
-        return f"{float(value):.2f}".replace(".", ",")
+    for leg, (x, y) in zip(legs, NAME_ORIGINS):
+        home = str(leg["home"]).strip()
+        away = str(leg["away"]).strip()
+        if not home or not away:
+            raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
+        if home.lower() in {"mecz a", "mecz b", "mecz c", "mecz d", "drużyna a", "drużyna b"}:
+            raise ValueError(f"Nieprawidłowa nazwa gospodarza: {home}")
+        if away.lower() in {"mecz a", "mecz b", "mecz c", "mecz d", "drużyna a", "drużyna b"}:
+            raise ValueError(f"Nieprawidłowa nazwa gościa: {away}")
+        match = f"{home} – {away}"
+        draw.text((x, y), match, font=_font_for(draw, match), fill=NAME_COLOR)
 
-    # Nie zamalowujemy lewej kolumny — zostawiamy oryginalne tło i ikonę piłki.
-
-    # Kolejność zgodnie z prośbą: kurs, stawka, podatek, kwota grająca.
-    # Osobne kolumny i mniejsze fonty zabezpieczają przed nachodzeniem tekstu.
-    d.rectangle((194, 680, 970, 990), fill=CREAM)
-    rows = [
-        ("Kurs łączny:", pl_number(displayed_odds), BLUE),
-        ("Stawka:", f"{pl_number(stake)} zł", INK),
-        ("Podatek 12%:", f"{pl_number(tax)} zł", RED),
-        ("Kwota grająca:", f"{pl_number(playing)} zł", INK),
-    ]
-    for y, (label, value, color) in zip((713, 785, 857, 929), rows):
-        d.text((202, y), label, font=_font(34, True), fill=INK)
-        _right(d, 952, y, value, _fit(d, value, 240, 37), color)
-    for y in (774, 846, 918, 990):
-        d.line((61, y, 950, y), fill=(120, 126, 133), width=2)
-
-    # Wygrana na końcu: wypłata i zysk netto w dolnych polach.
-    d.rectangle((205, 1018, 553, 1167), fill=(7, 27, 58))
-    d.rectangle((572, 1018, 971, 1167), fill=(110, 255, 0))
-    d.text((239, 1027), "Wygrana / wypłata:", font=_fit(d, "Wygrana / wypłata:", 300, 34), fill=(255, 255, 255))
-    payout_text = f"{pl_number(payout)} zł"
-    d.text((224, 1080), payout_text, font=_fit(d, payout_text, 310, 48), fill=(255, 255, 255))
-    _center(d, 770, 1027, "Zysk netto:", _font(34, True, True), (0, 0, 0))
-    profit_text = f"{profit:+.2f}".replace(".", ",") + " zł"
-    _center(d, 770, 1080, profit_text, _fit(d, profit_text, 360, 48, True, True), (0, 0, 0))
-
-    overlay = overlay.resize(base.size, Image.Resampling.LANCZOS)
-    im = Image.alpha_composite(base.convert("RGBA"), overlay).convert(base.mode)
-    out = BytesIO()
-    im.save(out, format="PNG", optimize=True)
-    out.seek(0)
-    return out
+    output = BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    output.seek(0)
+    return output
