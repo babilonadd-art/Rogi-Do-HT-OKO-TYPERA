@@ -2,6 +2,12 @@ name: TEST — próbka grafiki ROGI FT
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'rogift_graphic.py'
+      - 'scripts/send_graphic_sample.py'
+      - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
   contents: read
