@@ -195,9 +195,10 @@ def repost_pending_doubles(c, now):
         FROM ft_doubles WHERE status='PENDING' ORDER BY sent_at""").fetchall()
     sent = 0
     for coupon_id, day, total_odds in rows:
-        if c.execute("SELECT 1 FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,)).fetchone():
-            logging.info("Dubel %s był już ponownie opublikowany — pomijam", coupon_id)
-            continue
+        if not os.getenv("FORCE_REPOST", "").strip().lower() in ("1", "true", "yes"):
+            if c.execute("SELECT 1 FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,)).fetchone():
+                logging.info("Dubel %s był już ponownie opublikowany — pomijam", coupon_id)
+                continue
         legs = c.execute("""SELECT event_id,league,home,away,start_ts,line,odds
             FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
         if len(legs) != LEGS_PER_DOUBLE:
@@ -214,7 +215,7 @@ def repost_pending_doubles(c, now):
         if not message_id:
             logging.error("Nie udało się ponownie opublikować dubla %s — zatrzymuję", coupon_id)
             break
-        c.execute("INSERT INTO ft_double_reposts(coupon_id,sent_at,message_id) VALUES(?,?,?)",
+        c.execute("INSERT OR REPLACE INTO ft_double_reposts(coupon_id,sent_at,message_id) VALUES(?,?,?)",
                   (coupon_id, now.astimezone(TZ).isoformat(), int(message_id)))
         c.commit()
         sent += 1
