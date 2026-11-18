@@ -27,8 +27,8 @@ class PublicationSecurityTests(unittest.TestCase):
                 "home": "Drużyna C",
                 "away": "Drużyna D",
                 "start_ts": 1790003600,
-                "line": 10.5,
-                "odds": 1.95,
+                "line": 8.5,
+                "odds": 1.65,
             },
         ]
 
