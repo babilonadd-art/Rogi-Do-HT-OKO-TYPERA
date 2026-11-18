@@ -617,6 +617,62 @@ def reset_today_pending_and_scan(c, now):
     send_new_doubles(c, now)
 
 
+def send_coupon_reply(c, coupon_id, message):
+    """Reply directly under the original Telegram coupon photo."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    row = c.execute(
+        "SELECT telegram_message_id FROM ft_publication_proofs WHERE coupon_id=?",
+        (coupon_id,),
+    ).fetchone()
+    if not row or not row[0]:
+        logging.error("Brak oryginalnego message_id dla dubla %s — nie wysyłam luźnego rozliczenia", coupon_id)
+        return False
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={
+                "chat_id": chat_id,
+                "text": message,
+                "reply_to_message_id": int(row[0]),
+                "allow_sending_without_reply": "false",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            logging.error("Telegram nie przyjął odpowiedzi do dubla %s: %s", coupon_id, payload)
+            return False
+        logging.info("Rozliczenie dubla %s wysłane jako odpowiedź do message_id=%s",
+                     coupon_id, row[0])
+        return True
+    except Exception:
+        logging.exception("Nie udało się odpowiedzieć pod oryginalnym dublem %s", coupon_id)
+        return False
+
+
+def manual_user_confirmed_ft_result(home, away, start_ts):
+    """User-confirmed outcome for the four fixtures discussed on 18 Nov 2026.
+    Stores no invented corner count; it only records the user's confirmed leg outcome.
+    """
+    local_day = datetime.fromtimestamp(int(start_ts), TZ).date().isoformat()
+    if local_day != "2026-11-18":
+        return None
+    pairs = [
+        (("roan united", "chirundu united"), "WON"),
+        (("piacenza", "lucchese"), "WON"),
+        (("ancona", "ternana"), "LOST"),
+        (("virtus francavilla", "turris"), "WON"),
+    ]
+    h = str(home or "").casefold()
+    a = str(away or "").casefold()
+    for (first, second), result in pairs:
+        if ((first in h and second in a) or (second in h and first in a)):
+            return result
+    return None
+
+
 def settle_doubles(c, now):
     pending = c.execute("""SELECT event_id,coupon_id,league,home,away,start_ts,line,odds
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
@@ -624,17 +680,26 @@ def settle_doubles(c, now):
     for event_id, coupon_id, league, home, away, start_ts, line, odds in pending:
         if now_ts < int(start_ts) + 3 * 60 * 60:
             continue
-        total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
-        if total is None:
-            total = source.matchday_ft_corner_total(league, home, away, start_ts)
-        if total is None:
-            logging.info("Brak potwierdzonego wyniku rożnych FT: %s - %s", home, away)
-            continue
-        result = "WON" if int(total) > float(line) else "LOST"
+        # Najpierw respektuj wynik przekazany przez użytkownika dla tych konkretnych
+        # czterech spotkań. Nie dopisujemy fikcyjnej liczby rzutów rożnych.
+        result = manual_user_confirmed_ft_result(home, away, start_ts)
+        total = None
+        result_source = "potwierdzenie użytkownika"
+        if result is None:
+            total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
+            if total is None:
+                total = source.matchday_ft_corner_total(league, home, away, start_ts)
+            if total is None:
+                logging.info("Brak potwierdzonego wyniku rożnych FT: %s - %s", home, away)
+                continue
+            result = "WON" if int(total) > float(line) else "LOST"
+            result_source = "źródło statystyczne"
         c.execute("""UPDATE ft_double_legs SET status=?,ft_corners=? WHERE event_id=?""",
-                  (result, int(total), event_id))
+                  (result, int(total) if total is not None else None, event_id))
         c.commit()
-        logging.info("Rozliczono nogę %s - %s: %s (%s rożnych)", home, away, result, total)
+        logging.info("Rozliczono nogę %s - %s: %s | źródło: %s%s",
+                     home, away, result, result_source,
+                     f" | {total} rożnych" if total is not None else "")
 
     coupons = c.execute("""SELECT coupon_id,total_odds,stake FROM ft_doubles
         WHERE status='PENDING'""").fetchall()
@@ -660,7 +725,8 @@ def settle_doubles(c, now):
         leg_rows = c.execute("""SELECT league,home,away,start_ts,line,odds,ft_corners,status
             FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
         details = "\n".join(
-            f"• {home} – {away}: OVER {line:.1f}, rożne: {corners}, {status}"
+            f"• {home} – {away}: OVER {line:.1f}, "
+            f"{'rożne: ' + str(corners) if corners is not None else 'wynik potwierdzony ręcznie'}, {status}"
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         )
         message = (
@@ -674,8 +740,8 @@ def settle_doubles(c, now):
             {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
-        if not send(message):
-            logging.error("Nie udało się wysłać tekstowego rozliczenia dubla %s", coupon_id)
+        if not send_coupon_reply(c, coupon_id, message):
+            logging.error("Nie udało się wysłać rozliczenia jako odpowiedzi do dubla %s", coupon_id)
         send_settled_coupon_graphic(settled_legs, float(total_odds), coupon_id)
 
     days = [row[0] for row in c.execute(
