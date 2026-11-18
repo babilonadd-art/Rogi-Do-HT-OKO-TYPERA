@@ -18,20 +18,26 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install -r requirements.txt
-      - name: Render testu — wyłącznie podmiana nazw
+      - name: Render podglądu przed i po rozliczeniu
         run: |
           python - <<'PY'
           from pathlib import Path
           from rogift_graphic import render_coupon_image
           legs = [
-              {"home": "America de Cali", "away": "Internacional de Bogota", "line": 10.5, "odds": 2.00},
-              {"home": "Meksyk", "away": "Jamajka", "line": 9.5, "odds": 2.12},
+              {"home": "America de Cali", "away": "Internacional de Bogota", "line": 10.5, "odds": 1.77},
+              {"home": "Meksyk", "away": "Jamajka", "line": 9.5, "odds": 1.90},
           ]
-          image = render_coupon_image(legs, 4.24, 50.0)
-          Path("preview-rogi-ft.png").write_bytes(image.getvalue())
+          for filename, settled in [
+              ("preview-rogi-ft.png", False),
+              ("preview-rogi-ft-settled.png", True),
+          ]:
+              image = render_coupon_image(legs, 3.363, 50.0, settled=settled)
+              Path(filename).write_bytes(image.getvalue())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: preview-rogi-ft
-          path: preview-rogi-ft.png
+          name: preview-rogi-ft-clean
+          path: |
+            preview-rogi-ft.png
+            preview-rogi-ft-settled.png
           if-no-files-found: error
