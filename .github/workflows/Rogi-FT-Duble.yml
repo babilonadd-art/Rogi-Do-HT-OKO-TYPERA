@@ -21,8 +21,6 @@ on:
       - "requirements.txt"
       - "tests/test_rogi_ft_duble.py"
       - ".github/workflows/Rogi-FT-Duble.yml"
-  schedule:
-    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
@@ -53,7 +51,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PUBLICATION_SIGNING_SECRET: ${{ secrets.PUBLICATION_SIGNING_SECRET }}
-          BOT_MODE: ${{ github.event.inputs.mode || (github.event_name == 'push' && github.event.head_commit.message == 'RESET_ROGI_FT_QUOTA_NOW' && 'reset-limit') || 'scan' }}
+          BOT_MODE: ${{ github.event.inputs.mode || (github.event_name == 'push' && 'dry-run') || 'scan' }}
         run: python RogiFTDuble.py
       - name: Zapis historii dubli
         run: |
@@ -66,4 +64,4 @@ jobs:
             git push
           fi
 
-# Manual quota reset is triggered only by the dedicated commit message.
+# Automatic schedule is paused during graphic QA. Pushes run dry-run only; re-enable schedule after visual approval.
