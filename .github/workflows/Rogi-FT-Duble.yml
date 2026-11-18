@@ -53,7 +53,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PUBLICATION_SIGNING_SECRET: ${{ secrets.PUBLICATION_SIGNING_SECRET }}
-          BOT_MODE: ${{ github.event.inputs.mode || 'scan' }}
+          BOT_MODE: ${{ github.event_name == 'push' && 'reset-today-and-scan' || github.event.inputs.mode || 'scan' }}
         run: python RogiFTDuble.py
       - name: Zapis historii dubli
         run: |
@@ -66,4 +66,4 @@ jobs:
             git push
           fi
 
-# Temporary live scan; restore push dry-run after this run.
+# Temporary one-off clean live scan; restore push dry-run after verification.
