@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-TEMPLATE = Path(__file__).with_name("Plakat bukmacherski: Dubel rożnych FT.png")
+TEMPLATE = Path(__file__).with_name("Screenshot_20261117-110724.png")
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 # Coordinates must be recalculated for the clean 1024x1536 poster before enabling publication.
@@ -96,7 +96,7 @@ def _draw_market_line(draw, box, line):
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
-    """Render every selection and amount from the saved coupon, never template sample data."""
+    """Use the repository screenshot and replace only the two fixture-name labels."""
     if len(legs) != 2:
         raise ValueError("Grafika dubla wymaga dokładnie dwóch prawdziwych meczów")
     if not TEMPLATE.is_file():
@@ -109,51 +109,23 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
         if not 1.70 <= float(leg.get("odds", 0)) <= 3.50:
             raise ValueError("Blokada publikacji: kurs pojedynczego typu poza zakresem 1.70–3.50")
 
-    original = Image.open(TEMPLATE).convert("RGB")
-    if original.size != (720, 1640):
-        raise ValueError(f"Nieoczekiwany rozmiar oryginalnego szablonu: {original.size}")
-    original = _reorder_summary_rows(original)
+    image = Image.open(TEMPLATE).convert("RGB")
+    if image.size != (720, 1640):
+        raise ValueError(f"Nieoczekiwany rozmiar oryginalnego szablonu: {image.size}")
 
-    stake = float(stake)
-    tax = round(stake * float(tax_rate), 2)
-    playing_amount = round(stake - tax, 2)
-    payout = round(playing_amount * float(total_odds), 2)
-    net_profit = round(payout - stake, 2)
-
-    # Erase all sample selections, prices and totals before writing live data.
-    rgb = np.asarray(original)
+    # Mask only the two placeholder name fields. All other pixels remain untouched.
+    rgb = np.asarray(image)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-    boxes = (NAME_BOXES + MARKET_BOXES + ODDS_BOXES + SUMMARY_VALUE_BOXES
-             + (PAYOUT_BOX, NET_PROFIT_BOX))
-    for x1, y1, x2, y2 in boxes:
+    for x1, y1, x2, y2 in NAME_BOXES:
         mask[y1:y2, x1:x2] = 255
     repaired = cv2.inpaint(bgr, mask, 9, cv2.INPAINT_TELEA)
     image = Image.fromarray(cv2.cvtColor(repaired, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(image)
 
-    for leg, (x, y), market_box, odds_box in zip(legs, NAME_ORIGINS, MARKET_BOXES, ODDS_BOXES):
-        home = str(leg["home"]).strip()
-        away = str(leg["away"]).strip()
-        match = f"{home} – {away}"
+    for leg, (x, y) in zip(legs, NAME_ORIGINS):
+        match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
         draw.text((x, y), match, font=_font_for(draw, match), fill=NAME_COLOR)
-        _draw_market_line(draw, market_box, leg["line"])
-        _right_text(draw, odds_box, f"{float(leg['odds']):.2f}", _font(55), BLUE, 8)
-
-    # After row reordering the order is: Kurs łączny, Stawka, Podatek, Kwota grająca.
-    summary = (
-        (f"{float(total_odds):.2f}", BLUE),
-        (f"{stake:.2f}".replace(".", ",") + " zł", NAVY),
-        (f"{tax:.2f}".replace(".", ",") + " zł", RED),
-        (f"{playing_amount:.2f}".replace(".", ",") + " zł", NAVY),
-    )
-    for box, (value, color) in zip(SUMMARY_VALUE_BOXES, summary):
-        _right_text(draw, box, value, _font(34), color, 8)
-
-    payout_text = f"{payout:.2f}".replace(".", ",") + " zł"
-    net_text = ("+" if net_profit >= 0 else "") + f"{net_profit:.2f}".replace(".", ",") + " zł"
-    _right_text(draw, PAYOUT_BOX, payout_text, _font(34), WHITE, 4)
-    _right_text(draw, NET_PROFIT_BOX, net_text, _font(34), GREEN_TEXT, 4)
 
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
