@@ -138,8 +138,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         if not home or not away or home.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"} or away.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"}:
             raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
         line, odds = float(leg.get("line", 0)), float(leg.get("odds", 0))
-        if line < 9.5:
-            raise ValueError("Blokada publikacji: rożne FT poniżej OVER 9.5")
+        if not 8.5 <= line <= 9.5:
+            raise ValueError("Blokada publikacji: dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
         if not 1.70 <= odds <= 3.50:
             raise ValueError("Blokada publikacji: kurs poza zakresem 1.70–3.50")
         normalized.append((home, away, line, odds))
