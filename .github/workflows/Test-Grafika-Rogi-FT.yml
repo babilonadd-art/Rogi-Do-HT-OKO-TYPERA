@@ -2,18 +2,12 @@ name: TEST — próbka grafiki ROGI FT
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'rogift_graphic.py'
-      - 'scripts/send_graphic_sample.py'
-      - '.github/workflows/Test-Grafika-Rogi-FT.yml'
 
 permissions:
   contents: read
 
 jobs:
-  send-test-graphic:
+  render-preview:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,8 +17,26 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install -r requirements.txt
-      - name: Wyślij próbkę oryginalnej grafiki z prawdziwymi meczami
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scripts/send_graphic_sample.py
+      - name: Wygeneruj próbkę grafiki bez wysyłania na Telegram
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from rogift_graphic import render_coupon_image
+          legs = [
+              {"home": "America de Cali", "away": "Internacional de Bogota", "line": 10.5, "odds": 1.77},
+              {"home": "Meksyk", "away": "Jamajka", "line": 9.5, "odds": 1.90},
+          ]
+          Path("preview-rogi-ft.png").write_bytes(
+              render_coupon_image(legs, 3.363, 50.0).getvalue()
+          )
+          Path("preview-rogi-ft-settled.png").write_bytes(
+              render_coupon_image(legs, 3.363, 50.0, settled=True).getvalue()
+          )
+          PY
+      - name: Zapisz podgląd
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-rogi-ft
+          path: |
+            preview-rogi-ft.png
+            preview-rogi-ft-settled.png
