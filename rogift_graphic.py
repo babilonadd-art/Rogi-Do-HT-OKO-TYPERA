@@ -97,7 +97,7 @@ def _draw_market_line(draw, box, line):
         x += draw.textbbox((0, 0), label, font=font)[2]
 
 
-def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None):
+def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, watermark_id=None, settled=False):
     """Use the repository screenshot and replace only the two fixture-name labels."""
     if len(legs) != 2:
         raise ValueError("Grafika dubla wymaga dokładnie dwóch prawdziwych meczów")
@@ -126,8 +126,14 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     image = _reorder_summary_rows(image)
     draw = ImageDraw.Draw(image)
 
-    # Prematch publication must not claim the coupon is already settled.
-    draw.text(HEADER_ORIGIN, "DUBEL", font=_font(43, oblique=True), fill=NAVY)
+    # Prematch: only "ROGI FT" remains. After both legs are settled,
+    # add the settlement status in the second header line.
+    if settled:
+        label = "DUBEL ROZLICZONY"
+        font = _font(35, oblique=True)
+        bounds = draw.textbbox((0, 0), label, font=font)
+        x = HEADER_BOX[0] + (HEADER_BOX[2] - HEADER_BOX[0] - (bounds[2] - bounds[0])) // 2
+        draw.text((x, HEADER_ORIGIN[1]), label, font=font, fill=NAVY)
 
     tax = round(float(stake) * float(tax_rate), 2)
     played_stake = round(float(stake) - tax, 2)
