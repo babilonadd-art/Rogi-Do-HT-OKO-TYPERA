@@ -1,69 +1,21 @@
-"""Professional FT-corners double poster rendered on the original Oko Typera artwork."""
+"""Render FT-corners doubles on a freshly drawn Oko Typera poster.
+
+No screenshot/template containing old text is loaded or reused. Every pixel,
+including the background and all text panels, is generated for each coupon.
+"""
 from io import BytesIO
-from pathlib import Path
-from functools import lru_cache
-
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+import math
 
-BASE_IMAGE = Path(__file__).resolve().with_name("Screenshot_20261117-110724.png")
 W, H = 1024, 1536
-NAVY = (8, 24, 52)
-BLUE = (0, 105, 205)
-RED = (190, 20, 20)
+NAVY = (5, 19, 43)
+NAVY2 = (10, 43, 91)
+BLUE = (0, 126, 232)
+PALE = (244, 248, 253)
 WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-
-
-@lru_cache(maxsize=1)
-def _clean_master():
-    """Build a clean, textured data layer from the supplied original poster."""
-    if not BASE_IMAGE.is_file():
-        raise FileNotFoundError(f"Brak oryginalnej grafiki: {BASE_IMAGE}")
-    image = Image.open(BASE_IMAGE).convert("RGB")
-    if image.size != (W, H):
-        image = image.resize((W, H), Image.Resampling.LANCZOS)
-    rng = np.random.default_rng(21)
-
-    def paper(width, height, strength=3.0):
-        coarse = rng.normal(0, 1, (max(2, height // 24), max(2, width // 24))).astype("float32")
-        coarse_image = Image.fromarray(np.uint8(np.clip(127.5 + coarse * 24, 0, 255))).resize(
-            (width, height), Image.Resampling.BICUBIC
-        )
-        low = (np.asarray(coarse_image).astype("float32") - 127.5) / 127.5 * 1.5
-        grain = rng.normal(0, strength, (height, width)).astype("float32") + low
-        pixels = np.empty((height, width, 3), dtype=np.uint8)
-        for channel, base in enumerate((249, 246, 238)):
-            pixels[:, :, channel] = np.clip(base + grain, 0, 255)
-        return Image.fromarray(pixels, "RGB")
-
-    for box in ((200, 386, 997, 529), (200, 542, 997, 689)):
-        x1, y1, x2, y2 = box
-        texture = paper(x2 - x1, y2 - y1, 3.2)
-        mask = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(mask).rounded_rectangle(box, radius=30, fill=255)
-        image.paste(texture, (x1, y1), mask.crop(box))
-
-    image.paste(paper(790, 286, 3.0), (185, 700))
-    draw = ImageDraw.Draw(image)
-    for y in (772, 844, 914):
-        draw.line((190, y, 970, y), fill=(90, 105, 120), width=2)
-    # Restore the original blue separators in both match cards.
-    for y1, y2 in ((401, 511), (557, 671)):
-        draw.rounded_rectangle((205, y1, 212, y2), radius=3, fill=BLUE)
-        draw.rounded_rectangle((770, y1, 777, y2), radius=3, fill=BLUE)
-
-    navy_noise = rng.normal(0, 2.0, (180, 360))
-    navy = np.empty((180, 360, 3), dtype=np.uint8)
-    for channel, base in enumerate((7, 28, 62)):
-        navy[:, :, channel] = np.clip(base + navy_noise, 0, 255)
-    image.paste(Image.fromarray(navy), (190, 1000))
-    green_noise = rng.normal(0, 3.0, (180, 410))
-    green = np.empty((180, 410, 3), dtype=np.uint8)
-    for channel, base in enumerate((126, 255, 0)):
-        green[:, :, channel] = np.clip(base + green_noise, 0, 255)
-    image.paste(Image.fromarray(green), (560, 1000))
-    return image
+GREEN = (143, 255, 0)
+DARK = (5, 22, 47)
+RED = (195, 36, 45)
 
 
 def _font(size):
@@ -78,43 +30,112 @@ def _font(size):
     return ImageFont.load_default()
 
 
-def _fit(draw, text, max_width, start=38, minimum=18):
+def _fit(draw, text, max_width, start=40, minimum=16):
     for size in range(start, minimum - 1, -1):
         font = _font(size)
         if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
             return font
-    font = _font(minimum)
-    if draw.textbbox((0, 0), text, font=font)[2] > max_width:
-        raise ValueError(f"Tekst nie mieści się w polu plakatu: {text!r}")
-    return font
+    raise ValueError(f"Tekst nie mieści się na grafice: {text!r}")
 
 
 def _center(draw, box, text, font, fill):
     x1, y1, x2, y2 = box
-    bounds = draw.textbbox((0, 0), text, font=font)
-    width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
-    if width > x2 - x1 or height > y2 - y1:
-        raise ValueError(f"Tekst wychodzi poza pole plakatu: {text!r}")
-    x = x1 + (x2 - x1 - width) / 2
-    y = y1 + (y2 - y1 - height) / 2 - bounds[1]
-    draw.text((round(x), round(y)), text, font=font, fill=fill)
+    b = draw.textbbox((0, 0), text, font=font)
+    tw, th = b[2] - b[0], b[3] - b[1]
+    if tw > x2 - x1 or th > y2 - y1:
+        raise ValueError(f"Tekst wychodzi poza pole grafiki: {text!r}")
+    draw.text((round(x1 + (x2-x1-tw)/2), round(y1 + (y2-y1-th)/2-b[1])),
+              text, font=font, fill=fill)
 
 
 def _money(value):
     return f"{float(value):.2f}".replace(".", ",") + " zł"
 
 
+def _ball(draw, cx, cy, radius):
+    draw.ellipse((cx-radius, cy-radius, cx+radius, cy+radius),
+                 fill=(247, 249, 252), outline=BLUE, width=4)
+    draw.ellipse((cx-radius*.24, cy-radius*.24, cx+radius*.24, cy+radius*.24),
+                 fill=NAVY)
+    for angle in (0, 72, 144, 216, 288):
+        a = math.radians(angle)
+        x, y = cx + math.cos(a)*radius*.62, cy + math.sin(a)*radius*.62
+        draw.polygon([(x, y-radius*.16), (x+radius*.15, y-radius*.05),
+                      (x+radius*.09, y+radius*.14), (x-radius*.09, y+radius*.14),
+                      (x-radius*.15, y-radius*.05)], fill=NAVY)
+
+
+def _fresh_canvas():
+    image = Image.new("RGB", (W, H), NAVY)
+    px = image.load()
+    # Smooth vertical navy-to-blue background, generated from scratch.
+    for y in range(H):
+        t = y / (H - 1)
+        c = tuple(round(NAVY[i] * (1-t) + NAVY2[i] * t) for i in range(3))
+        for x in range(W):
+            px[x, y] = c
+    d = ImageDraw.Draw(image)
+    # Subtle diagonal stadium-light accents.
+    for x in range(-H, W, 90):
+        d.line((x, 0, x + H, H), fill=(13, 54, 105), width=2)
+    # Header panel and original-brand-inspired crown/eye mark, all drawn anew.
+    d.rounded_rectangle((48, 38, 976, 238), radius=34, fill=(3, 15, 36),
+                        outline=(31, 126, 218), width=4)
+    # Crown
+    d.polygon([(112, 130), (126, 75), (157, 111), (185, 63),
+               (213, 111), (244, 75), (257, 130)], fill=GREEN,
+              outline=WHITE)
+    d.rectangle((119, 132, 250, 148), fill=GREEN)
+    # Eye mark
+    d.arc((130, 153, 246, 218), 195, 345, fill=WHITE, width=5)
+    d.arc((130, 153, 246, 218), 15, 165, fill=WHITE, width=5)
+    d.ellipse((178, 170, 198, 190), fill=GREEN)
+    d.text((292, 66), "OKO TYPERA", font=_font(66), fill=WHITE)
+    d.text((296, 145), "ROGI FT  •  DUBEL", font=_font(36), fill=GREEN)
+    _ball(d, 870, 136, 58)
+    # Main title band
+    d.rounded_rectangle((82, 270, 942, 350), radius=24, fill=BLUE)
+    _center(d, (100, 278, 924, 340), "DWA MECZE  •  OVER RZUTÓW ROŻNYCH",
+            _fit(d, "DWA MECZE  •  OVER RZUTÓW ROŻNYCH", 790, 36, 22), WHITE)
+    # Empty match cards: no baked-in labels or text.
+    for y1, y2 in ((382, 555), (575, 748)):
+        d.rounded_rectangle((74, y1, 950, y2), radius=28,
+                            fill=PALE, outline=(116, 190, 255), width=4)
+        d.rounded_rectangle((92, y1+18, 103, y2-18), radius=5, fill=BLUE)
+        d.line((735, y1+22, 735, y2-22), fill=(172, 190, 211), width=3)
+        _ball(d, 154, (y1+y2)//2, 32)
+    # Financial table
+    d.rounded_rectangle((74, 778, 950, 1080), radius=28,
+                        fill=PALE, outline=(116, 190, 255), width=4)
+    for y in (853, 928, 1003):
+        d.line((110, y, 914, y), fill=(184, 198, 215), width=2)
+    # payout/profit panels
+    d.rounded_rectangle((74, 1110, 486, 1302), radius=28,
+                        fill=(4, 31, 72), outline=BLUE, width=4)
+    d.rounded_rectangle((510, 1110, 950, 1302), radius=28,
+                        fill=GREEN, outline=(211, 255, 164), width=4)
+    # Footer pitch motif
+    d.rounded_rectangle((74, 1330, 950, 1494), radius=24,
+                        fill=(5, 39, 56), outline=(32, 151, 118), width=3)
+    d.rectangle((110, 1355, 914, 1468), outline=(65, 160, 131), width=3)
+    d.line((512, 1355, 512, 1468), fill=(65, 160, 131), width=3)
+    d.ellipse((457, 1382, 567, 1442), outline=(65, 160, 131), width=3)
+    d.rectangle((110, 1380, 220, 1442), outline=(65, 160, 131), width=3)
+    d.rectangle((804, 1380, 914, 1442), outline=(65, 160, 131), width=3)
+    _center(d, (120, 1460, 904, 1490), "ANALIZA KURSÓW  •  ROŻNE FT",
+            _font(20), (195, 220, 242))
+    return image
+
+
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
                         watermark_id=None, settled=False):
-    """Render two real selections and all coupon calculations on a clean master."""
+    """Draw the entire poster from scratch using only the current coupon data."""
     if len(legs) != 2:
         raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
-
     normalized = []
     for leg in legs:
-        home = str(leg.get("home") or "").strip()
-        away = str(leg.get("away") or "").strip()
-        if not home or not away:
+        home, away = str(leg.get("home") or "").strip(), str(leg.get("away") or "").strip()
+        if not home or not away or home.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"} or away.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"}:
             raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
         line, odds = float(leg.get("line", 0)), float(leg.get("odds", 0))
         if line < 9.5:
@@ -122,55 +143,46 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         if not 1.70 <= odds <= 3.50:
             raise ValueError("Blokada publikacji: kurs poza zakresem 1.70–3.50")
         normalized.append((home, away, line, odds))
-
     stake, total_odds, tax_rate = float(stake), float(total_odds), float(tax_rate)
     if stake <= 0 or total_odds <= 0 or not 0 <= tax_rate < 1:
         raise ValueError("Nieprawidłowa stawka, kurs łączny lub podatek")
-    calculated_odds = normalized[0][3] * normalized[1][3]
-    if abs(calculated_odds - total_odds) > 0.02:
+    if abs(normalized[0][3] * normalized[1][3] - total_odds) > 0.02:
         raise ValueError("Kurs łączny nie zgadza się z kursami obu meczów")
 
-    image = _clean_master().copy()
-    draw = ImageDraw.Draw(image)
-    card_boxes = ((389, 526), (545, 686))
-    for (home, away, line, odds), (top, bottom) in zip(normalized, card_boxes):
-        fixture = f"{home} – {away}"
-        _center(draw, (225, top + 7, 758, top + 66), fixture,
-                _fit(draw, fixture, 515, 38, 14), NAVY)
-        market = f"Over {line:.1f} rożnych FT"
-        _center(draw, (225, top + 69, 758, bottom - 6), market,
-                _fit(draw, market, 515, 36, 20), NAVY)
-        _center(draw, (782, top + 7, 990, top + 58), "Kurs", _font(27), NAVY)
-        odds_text = f"{odds:.2f}"
-        _center(draw, (782, top + 55, 990, bottom - 6), odds_text,
-                _fit(draw, odds_text, 195, 60, 38), BLUE)
+    image = _fresh_canvas()
+    d = ImageDraw.Draw(image)
+    for (home, away, line, odds), (top, bottom) in zip(normalized, ((382, 555), (575, 748))):
+        fixture = f"{home}  –  {away}"
+        _center(d, (190, top+20, 715, top+92), fixture,
+                _fit(d, fixture, 505, 35, 17), DARK)
+        market = f"OVER {line:.1f} rożnych FT"
+        _center(d, (190, top+99, 715, top+155), market,
+                _fit(d, market, 505, 31, 20), BLUE)
+        _center(d, (750, top+24, 930, top+75), "KURS", _font(24), DARK)
+        _center(d, (750, top+77, 930, top+145), f"{odds:.2f}",
+                _font(54), BLUE)
 
-    tax_amount = round(stake * tax_rate, 2)
-    playable_stake = round(stake - tax_amount, 2)
-    payout = round(playable_stake * total_odds, 2)
-    net_profit = round(payout - stake, 2)
+    tax = round(stake * tax_rate, 2)
+    playable = round(stake-tax, 2)
+    payout = round(playable*total_odds, 2)
+    profit = round(payout-stake, 2)
     rows = (
-        ("Stawka:", _money(stake), NAVY),
-        (f"Podatek {tax_rate * 100:.0f}%:", _money(tax_amount), RED),
-        ("Kwota grająca:", _money(playable_stake), NAVY),
-        ("Kurs łączny:", f"{total_odds:.2f}", BLUE),
+        ("STAWKA", _money(stake), DARK),
+        (f"PODATEK {tax_rate*100:.0f}%", _money(tax), RED),
+        ("KWOTA GRAJĄCA", _money(playable), DARK),
+        ("KURS ŁĄCZNY", f"{total_odds:.2f}", BLUE),
     )
-    for index, (label, value, color) in enumerate(rows):
-        y = 704 + index * 72
-        _center(draw, (190, y, 650, y + 67), label,
-                _fit(draw, label, 440, 39, 26), NAVY)
-        _center(draw, (660, y, 970, y + 67), value,
-                _fit(draw, value, 300, 43, 26), color)
-
-    _center(draw, (205, 1008, 545, 1075), "Wypłata:", _font(39), WHITE)
-    payout_text = _money(payout)
-    _center(draw, (205, 1070, 545, 1172), payout_text,
-            _fit(draw, payout_text, 330, 48, 27), WHITE)
-    _center(draw, (575, 1008, 965, 1075), "Zysk netto:", _font(39), BLACK)
-    profit_text = ("+" if net_profit >= 0 else "") + _money(net_profit)
-    _center(draw, (575, 1070, 965, 1172), profit_text,
-            _fit(draw, profit_text, 380, 48, 25), BLACK)
-
+    for i, (label, value, color) in enumerate(rows):
+        y = 790 + i*73
+        _center(d, (112, y, 560, y+65), label, _font(29), DARK)
+        _center(d, (580, y, 910, y+65), value, _font(34), color)
+    _center(d, (96, 1125, 464, 1185), "WYPŁATA", _font(34), WHITE)
+    _center(d, (96, 1190, 464, 1278), _money(payout),
+            _fit(d, _money(payout), 340, 47, 27), WHITE)
+    _center(d, (532, 1125, 928, 1185), "ZYSK NETTO", _font(34), DARK)
+    profit_text = ("+" if profit >= 0 else "") + _money(profit)
+    _center(d, (532, 1190, 928, 1278), profit_text,
+            _fit(d, profit_text, 370, 47, 25), DARK)
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
     output.seek(0)
