@@ -664,10 +664,10 @@ def recent_team_ht_corner_history(team,rows,fixture_date):
     _matchday_history_cache[cache_key]=result
     return result
 
-def recent_team_ft_corner_history(team,rows,fixture_date):
-    """Recent full-time corner totals for a team, excluding the fixture date and later."""
+def recent_team_ft_corner_history(team,rows,fixture_date,venue=None):
+    """Recent FT corner totals; venue='home' or 'away' restricts the team's venue."""
     matched=[]
-    for row in rows:
+    for row in rows or []:
         match_date=str(row.get("date") or "")
         if not match_date or match_date>=fixture_date:
             continue
@@ -679,11 +679,45 @@ def recent_team_ft_corner_history(team,rows,fixture_date):
         hsim=team_similarity(team,row.get("home",""))
         assim=team_similarity(team,row.get("away",""))
         if hsim>=0.74 and hsim>assim+0.05:
+            if venue=="away":
+                continue
             matched.append((match_date,home_c,away_c,home_c+away_c))
         elif assim>=0.74 and assim>hsim+0.05:
+            if venue=="home":
+                continue
             matched.append((match_date,away_c,home_c,home_c+away_c))
     matched.sort(key=lambda item:item[0],reverse=True)
     return matched[:FT_HISTORY]
+
+
+def recent_ft_head_to_head(home,away,rows,fixture_date,limit=10):
+    """Recent direct meetings between the two named teams."""
+    matched=[]
+    for row in rows or []:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            hc=int(float(row["home_corners"]))
+            ac=int(float(row["away_corners"]))
+        except (KeyError,TypeError,ValueError):
+            continue
+        hs=team_similarity(home,row.get("home",""))
+        aa=team_similarity(away,row.get("away",""))
+        hr=team_similarity(home,row.get("away",""))
+        ar=team_similarity(away,row.get("home",""))
+        if (hs>=0.74 and aa>=0.74) or (hr>=0.74 and ar>=0.74):
+            matched.append((match_date,hc+ac))
+    matched.sort(key=lambda item:item[0],reverse=True)
+    return matched[:limit]
+
+
+def _ft_hit_rate(values,line):
+    return (sum(value>line for value in values)/len(values)) if values else None
+
+
+def _ft_pct(value):
+    return "brak" if value is None else f"{value*100:.0f}%"
 
 
 def evaluate_ft_matchday_quality(league,home,away,start_ts):
@@ -729,44 +763,73 @@ def league_ft_corner_profile(rows,fixture_date,limit=80):
 
 
 def ft_matchday_candidate_profile(league,home,away,start_ts):
-    """Strictly qualify fixtures using each team's recent FT corner history."""
+    """Build a corner-analysis profile and reject weak or incomplete team samples."""
     rows=load_matchday_results(league)
     if rows is None:
         return None,"brak danych Open Matchday FT"
     fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
     hh=recent_team_ft_corner_history(home,rows,fixture_date)
     ah=recent_team_ft_corner_history(away,rows,fixture_date)
+    home_home=recent_team_ft_corner_history(home,rows,fixture_date,venue="home")
+    away_away=recent_team_ft_corner_history(away,rows,fixture_date,venue="away")
     league_avg,league_hit,league_n=league_ft_corner_profile(rows,fixture_date)
-    # Bez historii obu konkretnych drużyn nie ma kwalifikacji.
-    # Sam dobry profil ligi nie może zastąpić danych zespołów.
     if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
         return None,f"za mała próba drużyn FT ({len(hh)}+{len(ah)}), wymagane min. {FT_MIN_SAMPLE} na zespół"
+    if len(home_home)<3 or len(away_away)<3:
+        return None,f"brak wystarczających danych dom/wyjazd ({len(home_home)}+{len(away_away)}; min. 3)"
     home_avg=sum(x[1] for x in hh)/len(hh)
     away_avg=sum(x[1] for x in ah)/len(ah)
+    home_venue_avg=sum(x[1] for x in home_home)/len(home_home)
+    away_venue_avg=sum(x[1] for x in away_away)/len(away_away)
     totals=[x[3] for x in hh]+[x[3] for x in ah]
+    venue_totals=[x[3] for x in home_home]+[x[3] for x in away_away]
     combined_avg=sum(totals)/len(totals)
-    hit_rate=sum(1 for total in totals if total>=9)/len(totals)
+    venue_avg=sum(venue_totals)/len(venue_totals)
+    over_rates={line:_ft_hit_rate(totals,line) for line in (8,9,10)}
     recent_totals=[x[3] for x in hh[:5]]+[x[3] for x in ah[:5]]
-    recent_hit=sum(1 for total in recent_totals if total>=9)/len(recent_totals)
+    recent_hit=_ft_hit_rate(recent_totals,8)
+    h2h=recent_ft_head_to_head(home,away,rows,fixture_date)
+    h2h_avg=(sum(value for _,value in h2h)/len(h2h)) if h2h else None
+    league_rows=[]
+    for row in rows:
+        match_date=str(row.get("date") or "")
+        if not match_date or match_date>=fixture_date:
+            continue
+        try:
+            total=int(float(row["home_corners"]))+int(float(row["away_corners"]))
+        except (KeyError,TypeError,ValueError):
+            continue
+        league_rows.append((match_date,total))
+    league_rows.sort(key=lambda item:item[0],reverse=True)
+    league_sample=[value for _,value in league_rows[:80]]
+    league_rates={line:_ft_hit_rate(league_sample,line) for line in (8,9,10)}
+    distribution={}
+    for label,low,high in (("0-6",0,6),("7-8",7,8),("9-10",9,10),("11-12",11,12),("13-14",13,14),("15+",15,10**6)):
+        distribution[label]=sum(low<=value<=high for value in totals)/len(totals)
     if min(home_avg,away_avg)<FT_MIN_TEAM_AVG:
         return None,f"za mało rożnych własnych: {home_avg:.2f}/{away_avg:.2f}"
-    if combined_avg<FT_MIN_COMBINED_AVG:
-        return None,f"średnia łączna tylko {combined_avg:.2f}"
-    if hit_rate<FT_MIN_HIT_RATE:
-        return None,f"Over 8.5 historycznie tylko {hit_rate*100:.0f}%"
-    if recent_hit<0.30:
-        return None,f"ostatnie 5: Over 8.5 tylko {recent_hit*100:.0f}%"
-    # Dynamiczna premia za ligi, w których ostatnie wyniki pokazują dużo rożnych.
-    # Bez sztywnej białej listy — liczą się aktualne dane ligowe i forma obu drużyn.
-    league_bonus=0.0 if league_avg is None else (league_avg*5)+(league_hit*40)
-    score=(hit_rate*100)+(recent_hit*35)+(combined_avg*4)+(min(home_avg,away_avg)*5)+league_bonus
-    league_detail=(f", liga ostatnie {league_n}: śr. {league_avg:.2f}, O8.5 {league_hit*100:.0f}%"
-                   if league_avg is not None else ", brak pełnej próbki ligowej")
-    detail=(f"próba {len(hh)}+{len(ah)}, rożne własne {home_avg:.2f}/{away_avg:.2f}, "
-            f"średnia łączna {combined_avg:.2f}, Over 8.5: {hit_rate*100:.0f}% "
-            f"(ostatnie 5: {recent_hit*100:.0f}%){league_detail}")
+    if min(home_venue_avg,away_venue_avg)<3.0:
+        return None,f"słabe dane dom/wyjazd: {home_venue_avg:.2f}/{away_venue_avg:.2f}"
+    if combined_avg<FT_MIN_COMBINED_AVG or venue_avg<9.0:
+        return None,f"średnia łączna {combined_avg:.2f}, dom/wyjazd {venue_avg:.2f}"
+    if (over_rates[8] or 0)<FT_MIN_HIT_RATE or (recent_hit or 0)<0.40:
+        return None,f"Over 8.5 { _ft_pct(over_rates[8]) }, ostatnie 5 { _ft_pct(recent_hit) }"
+    if league_avg is None or league_n<10 or league_avg<8.5 or (league_hit or 0)<0.45:
+        return None,f"słaby profil ligi: próba {league_n}, średnia {league_avg}, Over 8.5 {_ft_pct(league_hit)}"
+    # Transparent estimate: mean of both teams' recent totals and venue-specific totals.
+    predicted=(combined_avg*0.60)+(venue_avg*0.40)
+    model_over={line:_ft_hit_rate(totals,line) for line in (8,9,10)}
+    league_bonus=(league_avg*5)+(league_hit*40)
+    score=(over_rates[8]*100)+(recent_hit*35)+(venue_avg*4)+(min(home_avg,away_avg)*5)+league_bonus
+    dist_text=", ".join(f"{key}:{value*100:.0f}%" for key,value in distribution.items())
+    h2h_text=(f"{h2h_avg:.1f} ({len(h2h)} meczów)" if h2h_avg is not None else "brak próbki")
+    detail=(f"ostatnie {len(hh)}/{len(ah)}: śr. własne {home_avg:.1f}/{away_avg:.1f}; "
+            f"dom/wyjazd {len(home_home)}/{len(away_away)}: {home_venue_avg:.1f}/{away_venue_avg:.1f}; "
+            f"Over 8.5/9.5/10.5 {_ft_pct(over_rates[8])}/{_ft_pct(over_rates[9])}/{_ft_pct(over_rates[10])}; "
+            f"liga {league_n}: śr. {league_avg:.1f}, O8.5/O9.5/O10.5 "
+            f"{_ft_pct(league_rates[8])}/{_ft_pct(league_rates[9])}/{_ft_pct(league_rates[10])}; "
+            f"H2H {h2h_text}; prognoza {predicted:.1f}; rozkład {dist_text}")
     return score,detail
-
 
 def evaluate_matchday_quality(league,home,away,start_ts):
     rows=load_matchday_results(league)
