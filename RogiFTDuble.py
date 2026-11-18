@@ -145,7 +145,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
     # Telegram photos cannot contain clickable regions. Native URL buttons
     # are attached immediately below the image, one for each fixture.
     keyboard = []
-    for leg in legs[:LEGS_PER_DOUBLE]:
+    for index, leg in enumerate(legs[:LEGS_PER_DOUBLE], 1):
         market_url = source.superbet_match_url(
             int(leg["event_id"]), leg["home"], leg["away"], int(leg["start_ts"])
         )
@@ -154,7 +154,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                           leg.get("home"), leg.get("away"))
             return None
         keyboard.append([{
-            "text": f"ROŻNE FT • {leg['home']} – {leg['away']}",
+            "text": f"SUPERBET — ROŻNE FT • MECZ {index}",
             "url": market_url,
         }])
     reply_markup = json.dumps({"inline_keyboard": keyboard}, ensure_ascii=False)
