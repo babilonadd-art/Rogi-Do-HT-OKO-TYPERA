@@ -18,8 +18,8 @@ import Main as source
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.70
-MAX_LEG_ODDS = 3.50
+MIN_LEG_ODDS = 1.60
+MAX_LEG_ODDS = 2.20
 MAX_DOUBLES_PER_DAY = 2
 GRAPHIC_VERSION = "oko-typera-original-poster-v3"
 LEGS_PER_DOUBLE = 2
