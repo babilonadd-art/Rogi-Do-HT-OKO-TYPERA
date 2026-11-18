@@ -134,7 +134,7 @@ def telegram_message_link(token, chat_id, message_id):
     return None
 
 
-def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None):
+def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None, existing_message_id=None):
     """Send the exact original PNG to Telegram, without caption or modifications."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -146,19 +146,31 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         watermark_id=publication_code(coupon_id),
     )
     try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{token}/sendPhoto",
-            data={"chat_id": chat_id},
-            files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
-            timeout=45,
-        )
+        if existing_message_id:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/editMessageMedia",
+                data={
+                    "chat_id": chat_id,
+                    "message_id": int(existing_message_id),
+                    "media": json.dumps({"type": "photo", "media": "attach://photo"}),
+                },
+                files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
+                timeout=45,
+            )
+        else:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": chat_id},
+                files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
+                timeout=45,
+            )
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
             logging.error("Telegram sendPhoto: %s", payload)
             return None
         message_id = int(payload["result"]["message_id"])
-        logging.info("Wysłano oryginalną grafikę bez opisu, Telegram message_id=%s", message_id)
+        logging.info("%s, Telegram message_id=%s", "Zastąpiono grafikę w istniejącym poście" if existing_message_id else "Wysłano oryginalną grafikę bez opisu", message_id)
         return {
             "message_id": message_id,
             "publication_code": publication_code(coupon_id),
@@ -467,16 +479,18 @@ def repost_pending_doubles(c, now):
         coupon_no = c.execute("SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at<=?",
                               (day, now.isoformat())).fetchone()[0]
         stored = c.execute(
-            "SELECT signature,verification_url FROM ft_publication_proofs WHERE coupon_id=?",
+            "SELECT signature,verification_url,telegram_message_id FROM ft_publication_proofs WHERE coupon_id=?",
             (coupon_id,),
         ).fetchone()
         existing_proof = (
             {"signature": stored[0], "verification_url": stored[1]}
             if stored else None
         )
+        original_message_id = int(stored[2]) if stored and stored[2] else None
         proof = send_coupon_graphic(
             graphic_legs, float(total_odds), max(1, coupon_no), coupon_id,
             existing_proof=existing_proof,
+            existing_message_id=original_message_id,
         )
         if not proof:
             logging.error("Nie udało się ponownie opublikować podpisanego dubla %s — zatrzymuję", coupon_id)
