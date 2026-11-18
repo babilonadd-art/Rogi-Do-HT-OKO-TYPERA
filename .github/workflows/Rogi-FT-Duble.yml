@@ -15,6 +15,7 @@ on:
           - repost-pending
           - reset-limit
           - reset-today-and-scan
+          - replace-graphics
   push:
     paths:
       - "Main.py"
