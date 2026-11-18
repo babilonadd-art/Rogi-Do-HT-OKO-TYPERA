@@ -413,8 +413,15 @@ def refresh_saved_fixture_names(rows, now):
 
 def repost_pending_doubles(c, now):
     """Re-publish saved pending coupons without changing their settlement records."""
-    rows = c.execute("""SELECT coupon_id,day,total_odds
-        FROM ft_doubles WHERE status='PENDING' ORDER BY sent_at""").fetchall()
+    # Recover only pending coupons that have no Telegram publication proof.
+    # Older bot versions could save picks to SQLite before attempting sendPhoto;
+    # those rows otherwise consume the daily quota forever and are never published.
+    rows = c.execute("""SELECT d.coupon_id,d.day,d.total_odds
+        FROM ft_doubles d
+        LEFT JOIN ft_publication_proofs p ON p.coupon_id=d.coupon_id
+        WHERE d.status='PENDING' AND p.coupon_id IS NULL
+        ORDER BY d.sent_at""").fetchall()
+    logging.info("Niewysłane duble oczekujące na publikację: %s", len(rows))
     sent = 0
     saved_legs = c.execute("""SELECT event_id FROM ft_double_legs
         WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE status='PENDING')""").fetchall()
@@ -605,6 +612,11 @@ def main():
                              item["league"], item["home"], item["away"], item["line"],
                              item["odds"], kickoff.isoformat())
         else:
+            # First recover picks persisted by older runs without a confirmed
+            # Telegram sendPhoto response. The proof row is written only after
+            # Telegram confirms delivery, so this does not repost published picks.
+            if mode != "settle":
+                repost_pending_doubles(c, now)
             settle_doubles(c, now)
             if mode != "settle":
                 send_new_doubles(c, now)
