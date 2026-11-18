@@ -674,6 +674,8 @@ def settle_doubles(c, now):
             {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
+        if not send(message):
+            logging.error("Nie udało się wysłać tekstowego rozliczenia dubla %s", coupon_id)
         send_settled_coupon_graphic(settled_legs, float(total_odds), coupon_id)
 
     days = [row[0] for row in c.execute(
