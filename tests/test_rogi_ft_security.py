@@ -6,7 +6,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from RogiFTDuble import publication_proof
-from rogift_graphic import TEMPLATE, render_coupon_image
+from rogift_graphic import W, H, render_coupon_image
 
 
 class PublicationSecurityTests(unittest.TestCase):
@@ -46,24 +46,17 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertNotEqual(signature1, changed_signature)
         self.assertEqual(payload1["legs"][0]["market"], "OVER_CORNERS_FT")
 
-    def test_render_uses_the_exact_original_poster_canvas(self):
-        self.assertTrue(TEMPLATE.is_file())
+    def test_render_uses_new_clean_poster_canvas(self):
         rendered = render_coupon_image(self.legs, 3.7245, 50.0)
         with Image.open(rendered) as image:
-            with Image.open(TEMPLATE) as original:
-                self.assertEqual(image.size, original.size)
+            self.assertEqual(image.size, (W, H))
+            self.assertEqual(image.size, (720, 1280))
             self.assertEqual(image.format, "PNG")
 
-    def test_static_branding_and_signature_area_remain_unchanged(self):
-        rendered = render_coupon_image(self.legs, 3.7245, 50.0)
-        with Image.open(rendered) as output, Image.open(TEMPLATE) as original:
-            width, height = original.size
-            top = round(height * 380 / 1536)
-            bottom = round(height * 1180 / 1536)
-            self.assertEqual(output.crop((0, 0, width, top)).tobytes(),
-                             original.crop((0, 0, width, top)).tobytes())
-            self.assertEqual(output.crop((0, bottom, width, height)).tobytes(),
-                             original.crop((0, bottom, width, height)).tobytes())
+    def test_settlement_graphic_is_distinct_from_prematch(self):
+        prematch = render_coupon_image(self.legs, 3.7245, 50.0).getvalue()
+        settled = render_coupon_image(self.legs, 3.7245, 50.0, settled=True).getvalue()
+        self.assertNotEqual(prematch, settled)
 
 
 if __name__ == "__main__":
