@@ -93,57 +93,57 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         image = image.resize((W, H), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
 
-    # Dwa jasne pola meczowe: zachowujemy logo piłek, obramowanie i niebieskie
-    # separatory z oryginału, wymieniamy tylko tekst meczów i kursy.
-    row_boxes = ((394, 518), (548, 674))
-    for (home, away, line, odds), (top, bottom) in zip(normalized, row_boxes):
-        draw.rectangle((222, top, 768, bottom), fill=CREAM)
-        draw.rectangle((782, top, 982, bottom), fill=CREAM)
+    # Wyczyść CAŁE obszary zmiennych napisów. Nie nakładamy nowych liczb
+    # na stare napisy z szablonu — to powodowało efekt podwójnego tekstu.
+    row_boxes = ((390, 529), (540, 688))
+    for (index, ((home, away, line, odds), (top, bottom))) in enumerate(zip(normalized, row_boxes)):
+        # Pole meczu od prawego separatora do prawej krawędzi karty.
+        draw.rectangle((220, top, 995, bottom), fill=CREAM)
+        # Odtworzenie pionowego separatora i separatora kursu.
+        draw.rectangle((207, top + 13, 212, bottom - 13), fill=BLUE)
+        draw.rectangle((770, top + 13, 775, bottom - 13), fill=BLUE)
 
         fixture = f"{home} – {away}"
-        draw.text((237, top + 13), fixture,
-                  font=_fit(draw, fixture, 515, 34, 19), fill=NAVY)
+        fixture_font = _fit(draw, fixture, 520, 43, 22)
+        _center(draw, (230, top + 8, 758, top + 73), fixture, fixture_font, NAVY)
 
-        y_market = top + 69
-        market_font = _font(31)
-        number_font = _font(33)
-        draw.text((237, y_market), "Over", font=market_font, fill=NAVY)
-        x = 237 + draw.textbbox((0, 0), "Over ", font=market_font)[2]
-        line_text = f"{line:.1f}"
-        draw.text((x, y_market), line_text, font=number_font, fill=BLUE)
-        x += draw.textbbox((0, 0), line_text, font=number_font)[2]
-        draw.text((x, y_market), " rożnych FT", font=market_font, fill=NAVY)
+        market = f"Over {line:.1f} rożnych FT"
+        market_font = _fit(draw, market, 520, 38, 23)
+        _center(draw, (230, top + 72, 758, bottom - 5), market, market_font, NAVY)
 
-        _center(draw, (788, top + 8, 975, top + 48), "Kurs", _font(27), NAVY)
-        _center(draw, (788, top + 45, 975, bottom - 8),
-                f"{odds:.2f}", _font(56), BLUE)
+        _center(draw, (782, top + 7, 990, top + 57), "Kurs", _font(29), NAVY)
+        _center(draw, (782, top + 53, 990, bottom - 5),
+                f"{odds:.2f}", _fit(draw, f"{odds:.2f}", 195, 66, 42), BLUE)
 
-    # Podsumowanie kuponu według układu z oryginalnego plakatu.
+    # Pełne odtworzenie czterech wierszy finansowych — czyścimy także stare
+    # etykiety i wartości, aby żaden fragment poprzedniego tekstu nie prześwitywał.
     tax_amount = stake * tax_rate
     playable_stake = stake - tax_amount
     payout = playable_stake * total_odds
     net_profit = payout - stake
 
+    draw.rectangle((190, 697, 978, 985), fill=CREAM)
     financial_rows = (
-        (705, 768, _money(stake), NAVY),
-        (775, 840, _money(tax_amount), RED),
-        (850, 910, _money(playable_stake), NAVY),
-        (916, 981, f"{total_odds:.2f}", BLUE),
+        (699, 771, "Stawka:", _money(stake), NAVY),
+        (772, 843, f"Podatek {tax_rate * 100:.0f}%:", _money(tax_amount), RED),
+        (844, 914, "Kwota grająca:", _money(playable_stake), NAVY),
+        (915, 984, "Kurs łączny:", f"{total_odds:.2f}", BLUE),
     )
-    for top, bottom, value, color in financial_rows:
-        draw.rectangle((735, top, 970, bottom), fill=CREAM)
-        font = _fit(draw, value, 225, 47, 30)
-        bounds = draw.textbbox((0, 0), value, font=font)
-        draw.text((966 - (bounds[2] - bounds[0]), top + 2),
-                  value, font=font, fill=color)
+    for top, bottom, label, value, color in financial_rows:
+        _center(draw, (195, top, 650, bottom), label, _fit(draw, label, 440, 43, 30), NAVY)
+        _center(draw, (660, top, 972, bottom), value, _fit(draw, value, 300, 49, 30), color)
 
-    # Nadpisujemy wyłącznie liczby w polach wypłaty i zysku netto.
-    draw.rectangle((205, 1072, 545, 1159), fill=(7, 28, 62))
-    _center(draw, (208, 1072, 540, 1159), _money(payout), _font(52), WHITE)
-    draw.rectangle((565, 1072, 970, 1159), fill=GREEN)
-    _center(draw, (570, 1072, 968, 1159),
-            "+" + _money(net_profit), _fit(draw, "+" + _money(net_profit), 390, 51, 30),
-            (0, 0, 0))
+    # Odtwórz oba pola wyniku w oryginalnych panelach. Zostawiamy puchar
+    # i zieloną strzałkę z oryginalnej grafiki; czyścimy całe obszary tekstu.
+    draw.rectangle((195, 1000, 552, 1170), fill=(7, 28, 62))
+    draw.rectangle((565, 1000, 972, 1170), fill=GREEN)
+    _center(draw, (205, 1003, 545, 1072), "Wypłata:", _font(43), WHITE)
+    _center(draw, (205, 1070, 545, 1165), _money(payout),
+            _fit(draw, _money(payout), 335, 55, 34), WHITE)
+    _center(draw, (575, 1003, 965, 1072), "Zysk netto:", _font(43), (0, 0, 0))
+    profit_text = ("+" if net_profit >= 0 else "") + _money(net_profit)
+    _center(draw, (575, 1070, 965, 1165), profit_text,
+            _fit(draw, profit_text, 375, 55, 30), (0, 0, 0))
 
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
