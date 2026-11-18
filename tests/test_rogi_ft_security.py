@@ -34,11 +34,11 @@ class PublicationSecurityTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "test-only-secret"}, clear=False)
     def test_signature_is_stable_and_binds_match_data(self):
-        payload1, signature1 = publication_proof(self.legs, 3.7245, "coupon-123")
-        payload2, signature2 = publication_proof(self.legs, 3.7245, "coupon-123")
+        payload1, signature1 = publication_proof(self.legs, 3.1515, "coupon-123")
+        payload2, signature2 = publication_proof(self.legs, 3.1515, "coupon-123")
         changed = [dict(leg) for leg in self.legs]
         changed[0]["home"] = "Podmieniona drużyna"
-        _, changed_signature = publication_proof(changed, 3.7245, "coupon-123")
+        _, changed_signature = publication_proof(changed, 3.1515, "coupon-123")
 
         self.assertEqual(payload1, payload2)
         self.assertEqual(signature1, signature2)
@@ -47,22 +47,22 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertEqual(payload1["legs"][0]["market"], "OVER_CORNERS_FT")
 
     def test_render_uses_compact_two_match_graphic(self):
-        rendered = render_coupon_image(self.legs, 3.7245, 50.0)
+        rendered = render_coupon_image(self.legs, 3.1515, 50.0)
         with Image.open(rendered) as image:
             self.assertEqual(image.size, (W, H))
             self.assertEqual(image.size, (1024, 1536))
             self.assertEqual(image.format, "PNG")
 
     def test_settlement_flag_does_not_change_match_identity_or_layout(self):
-        prematch = render_coupon_image(self.legs, 3.7245, 50.0).getvalue()
-        settled = render_coupon_image(self.legs, 3.7245, 50.0, settled=True).getvalue()
+        prematch = render_coupon_image(self.legs, 3.1515, 50.0).getvalue()
+        settled = render_coupon_image(self.legs, 3.1515, 50.0, settled=True).getvalue()
         self.assertEqual(prematch, settled)
 
     def test_renderer_rejects_missing_real_team_names(self):
         invalid = [dict(leg) for leg in self.legs]
         invalid[0]["home"] = ""
         with self.assertRaisesRegex(ValueError, "Brak prawdziwej nazwy"):
-            render_coupon_image(invalid, 3.7245, 50.0)
+            render_coupon_image(invalid, 3.1515, 50.0)
 
 
 if __name__ == "__main__":
