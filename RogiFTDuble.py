@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prematch FT corner Over doubles. No team-history/statistical filters."""
+"""Prematch FT corner doubles. Uses public Cornerflick stats when available; no API key."""
 import os
 import hashlib
 import hmac
@@ -339,35 +339,27 @@ def fetch_candidates(now):
                          league, home, away)
             continue
 
-        # Odrzuć całe ligi o niskiej skuteczności overów rożnych FT.
-        # Brak wiarygodnej historii w Open Matchday również oznacza odrzucenie,
-        # zamiast dobierania meczu w ciemno.
-        league_rows = source.load_matchday_results(league)
-        if not league_rows:
-            logging.info("ODRZUCAM LIGĘ %s: brak historii rożnych FT w Open Matchday", league)
-            continue
+        # Statystyki FT pobieramy z Cornerflick (publiczne dane JSON, bez klucza API).
+        # Gdy liga/drużyna nie występuje w bazie Cornerflick, nie blokujemy meczu:
+        # nadal wymagamy prawdziwych nazw, aktywnego rynku Superbet i kursu w widełkach.
         fixture_date = datetime.fromtimestamp(kickoff, timezone.utc).date().isoformat()
-        league_avg, league_hit, league_n = source.league_ft_corner_profile(league_rows, fixture_date)
-        if league_avg is None or league_n < 10:
-            logging.info("ODRZUCAM LIGĘ %s: za mała próba danych (%s meczów)", league, league_n)
-            continue
-        if league_avg < 8.5 or league_hit < 0.45:
+        home_history = source.cornerflick_team_ft_corner_history(home, league, fixture_date)
+        away_history = source.cornerflick_team_ft_corner_history(away, league, fixture_date)
+        quality_score = 0.0
+        if home_history and away_history:
+            all_totals = [float(row[2]) for row in home_history + away_history]
+            average = sum(all_totals) / len(all_totals)
+            hit_rate = sum(value >= 9.5 for value in all_totals) / len(all_totals)
+            quality_score = average + hit_rate * 4.0
             logging.info(
-                "ODRZUCAM UNDEROWĄ LIGĘ %s: średnia %.2f rożnych, Over 8.5 %.0f%% (%s meczów)",
-                league, league_avg, league_hit * 100, league_n
+                "CORNERFLICK %s - %s (%s): próba %s+%s, średnia %.2f, Over 9.5 %.0f%%",
+                home, away, league, len(home_history), len(away_history), average, hit_rate * 100
             )
-            continue
-
-        # Po przejściu filtra ligi sprawdź również ostatnią historię obu drużyn.
-        quality_score, quality_detail = source.ft_matchday_candidate_profile(
-            league, home, away, kickoff
-        )
-        if quality_score is None:
-            logging.info("ODRZUCAM MECZ %s - %s (%s): %s",
-                         home, away, league, quality_detail)
-            continue
-        logging.info("KWALIFIKUJE %s - %s (%s): %s",
-                     home, away, league, quality_detail)
+        else:
+            logging.info(
+                "CORNERFLICK: brak historii dla %s - %s (%s); mecz pozostaje w skanowaniu po kursach Superbet",
+                home, away, league
+            )
 
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
