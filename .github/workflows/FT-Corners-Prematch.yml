@@ -5,8 +5,12 @@ on:
   push:
     paths:
       - "Main.py"
-      - "tests/test_ft_corners_prematch.py"
+      - "RogiFTDuble.py"
+      - "rogift_graphic.py"
+      - "tests/test_rogi_ft_duble.py"
+      - "tests/test_rogi_ft_security.py"
       - ".github/workflows/FT-Corners-Prematch.yml"
+      - ".github/workflows/Rogi-FT-Duble.yml"
   schedule:
     - cron: "0 */3 * * *"
 
@@ -14,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ft-corners-db
+  group: rogi-ft-duble
   cancel-in-progress: false
 
 jobs:
@@ -31,23 +35,22 @@ jobs:
       - name: Instalacja bibliotek
         run: pip install -r requirements.txt
       - name: Kontrola składni
-        run: python -m py_compile Main.py
+        run: python -m py_compile Main.py RogiFTDuble.py rogift_graphic.py
       - name: Testy strategii rożnych FT
-        run: python -m unittest discover -s tests -p "test_ft_corners_prematch.py"
-      - name: Skan przedmeczowych rożnych FT
+        run: python -m unittest discover -s tests -p "test_rogi_ft_*.py"
+      - name: Skan dubli FT i wysyłka oryginalnej grafiki
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
           BOT_MODE: scan
-        run: python Main.py
+        run: python RogiFTDuble.py
       - name: Zapis historii wysłanych typów
         run: |
-          if [ -f okotypera_ht.db ]; then
+          if [ -f rogift_duble.db ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add okotypera_ht.db
-            git diff --cached --quiet || git commit -m "Persist prematch FT corner picks"
+            git add rogift_duble.db
+            git diff --cached --quiet || git commit -m "Persist FT graphic doubles"
             git pull --rebase --autostash origin main
             git push
           fi
