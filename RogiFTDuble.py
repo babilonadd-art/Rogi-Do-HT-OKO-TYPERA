@@ -413,15 +413,14 @@ def refresh_saved_fixture_names(rows, now):
 
 def repost_pending_doubles(c, now):
     """Re-publish saved pending coupons without changing their settlement records."""
-    # Recover only pending coupons that have no Telegram publication proof.
-    # Older bot versions could save picks to SQLite before attempting sendPhoto;
-    # those rows otherwise consume the daily quota forever and are never published.
-    rows = c.execute("""SELECT d.coupon_id,d.day,d.total_odds
-        FROM ft_doubles d
-        LEFT JOIN ft_publication_proofs p ON p.coupon_id=d.coupon_id
-        WHERE d.status='PENDING' AND p.coupon_id IS NULL
-        ORDER BY d.sent_at""").fetchall()
-    logging.info("Niewysłane duble oczekujące na publikację: %s", len(rows))
+    # One-time recovery/repost of today's pending coupons. This also covers
+    # legacy rows whose proof exists but whose post needs to be shown again.
+    # ft_double_reposts prevents a second recovery post on the next 5-minute scan.
+    day = now.date().isoformat()
+    rows = c.execute("""SELECT coupon_id,day,total_odds
+        FROM ft_doubles WHERE status='PENDING' AND day=? ORDER BY sent_at""",
+        (day,)).fetchall()
+    logging.info("Dzisiejsze pending duble do jednorazowego ponowienia: %s", len(rows))
     sent = 0
     saved_legs = c.execute("""SELECT event_id FROM ft_double_legs
         WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE status='PENDING')""").fetchall()
