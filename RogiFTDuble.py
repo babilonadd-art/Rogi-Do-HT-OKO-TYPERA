@@ -21,7 +21,7 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.60
 MAX_LEG_ODDS = 2.20
 MAX_DOUBLES_PER_DAY = 2
-GRAPHIC_VERSION = "oko-typera-original-poster-v5-kickoff-above-pick"
+GRAPHIC_VERSION = "oko-typera-original-poster-v6-superbet-market-buttons"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
@@ -135,12 +135,28 @@ def telegram_message_link(token, chat_id, message_id):
 
 
 def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None, existing_message_id=None):
-    """Send the exact original PNG to Telegram, without caption or modifications."""
+    """Send the original PNG with event-specific Superbet corner-market buttons."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     proof_payload, signature = publication_proof(legs, total_odds, coupon_id)
-    # Build every coupon from its actual selections. A fixed screenshot hides
-    # the fixture names and can therefore publish a graphic unrelated to the picks.
+
+    # Telegram photos cannot contain clickable regions. Native URL buttons
+    # are attached immediately below the image, one for each fixture.
+    keyboard = []
+    for leg in legs[:LEGS_PER_DOUBLE]:
+        market_url = source.superbet_match_url(
+            int(leg["event_id"]), leg["home"], leg["away"], int(leg["start_ts"])
+        )
+        if not isinstance(market_url, str) or not market_url.startswith("https://") or "superbet" not in market_url.lower():
+            logging.error("Brak prawidłowego linku Superbet do meczu %s - %s; pomijam publikację",
+                          leg.get("home"), leg.get("away"))
+            return None
+        keyboard.append([{
+            "text": f"ROŻNE FT • {leg['home']} – {leg['away']}",
+            "url": market_url,
+        }])
+    reply_markup = json.dumps({"inline_keyboard": keyboard}, ensure_ascii=False)
+
     graphic = render_coupon_image(
         legs, total_odds, STAKE, coupon_no=coupon_no,
         watermark_id=publication_code(coupon_id),
@@ -153,6 +169,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                     "chat_id": chat_id,
                     "message_id": int(existing_message_id),
                     "media": json.dumps({"type": "photo", "media": "attach://photo"}),
+                    "reply_markup": reply_markup,
                 },
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
                 timeout=45,
@@ -160,7 +177,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         else:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id},
+                data={"chat_id": chat_id, "reply_markup": reply_markup},
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
                 timeout=45,
             )
@@ -170,7 +187,9 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
             logging.error("Telegram sendPhoto: %s", payload)
             return None
         message_id = int(payload["result"]["message_id"])
-        logging.info("%s, Telegram message_id=%s", "Zastąpiono grafikę w istniejącym poście" if existing_message_id else "Wysłano oryginalną grafikę bez opisu", message_id)
+        logging.info("%s, Telegram message_id=%s, dodano %s linki Superbet FT",
+                     "Zastąpiono grafikę w istniejącym poście" if existing_message_id else "Wysłano oryginalną grafikę bez opisu",
+                     message_id, len(keyboard))
         return {
             "message_id": message_id,
             "publication_code": publication_code(coupon_id),
@@ -180,9 +199,8 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
             "created_at": datetime.now(TZ).isoformat(),
         }
     except Exception:
-        logging.exception("Nie udało się wysłać oryginalnej grafiki dubla FT")
+        logging.exception("Nie udało się wysłać grafiki dubla FT z linkami Superbet")
         return None
-
 
 def send_settled_coupon_graphic(legs, total_odds, coupon_id):
     """Send the same coupon poster with the settlement label, only after settlement."""
