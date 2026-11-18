@@ -25,8 +25,9 @@ GRAPHIC_VERSION = "oko-typera-original-poster-v3"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
-MIN_FT_CORNERS_LINE = 9.5
-FT_LINES = (9.5, 10.5, 11.5, 12.5, 13.5, 14.5)
+MIN_FT_CORNERS_LINE = 8.5
+MAX_FT_CORNERS_LINE = 9.5
+FT_LINES = (8.5, 9.5)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
