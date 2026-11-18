@@ -183,6 +183,8 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
                 timeout=45,
             )
+        if not response.ok:
+            logging.error("Telegram odrzucił edit/send photo: HTTP %s | %s", response.status_code, response.text[:2000])
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
