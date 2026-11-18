@@ -1,37 +1,49 @@
-"""Minimalny obraz dubla rożnych FT: tylko dwa mecze, rynek i kursy."""
+"""Renderer dubla FT oparty na oryginalnym plakacie Oko Typera.
+
+Tło (Screenshot_20261117-110724.png) pozostaje oryginalne. Nadpisywane są
+wyłącznie dane zmienne: dwa mecze, kursy, stawka i wyliczenia kuponu.
+"""
 from io import BytesIO
+from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 900, 430
-NAVY = (7, 24, 53)
-PANEL = (242, 247, 253)
-BLUE = (28, 125, 225)
-WHITE = (250, 252, 255)
-MUTED = (92, 112, 140)
+BASE_IMAGE = Path(__file__).resolve().with_name("Screenshot_20261117-110724.png")
+W, H = 1024, 1536
+NAVY = (8, 24, 52)
+BLUE = (0, 105, 205)
+RED = (190, 20, 20)
+CREAM = (250, 247, 240)
+GREEN = (126, 255, 0)
+WHITE = (255, 255, 255)
 
 
-def _font(size, bold=False):
-    paths = (
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-         "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"]
-        if bold else
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-         "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"]
+def _font(size, bold=True):
+    candidates = (
+        [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        ]
+        if bold
+        else [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        ]
     )
-    for path in paths:
+    for path in candidates:
         try:
             return ImageFont.truetype(path, size)
         except OSError:
-            pass
+            continue
     return ImageFont.load_default()
 
 
-def _fit(draw, text, max_width, start=32, minimum=15, bold=True):
+def _fit(draw, text, max_width, start=36, minimum=18):
     for size in range(start, minimum - 1, -1):
-        font = _font(size, bold)
+        font = _font(size)
         if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
             return font
-    return _font(minimum, bold)
+    return _font(minimum)
 
 
 def _center(draw, box, text, font, fill):
@@ -44,11 +56,17 @@ def _center(draw, box, text, font, fill):
     draw.text((x, y), text, font=font, fill=fill)
 
 
+def _money(value):
+    return f"{float(value):.2f}".replace(".", ",") + " zł"
+
+
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
                         watermark_id=None, settled=False):
-    """Zwraca małą grafikę z dwoma prawdziwymi meczami; bez plakatu i logo."""
+    """Renderuje dubel na oryginalnej grafice, z łącznym kursem i stawką."""
     if len(legs) != 2:
         raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
+    if not BASE_IMAGE.is_file():
+        raise FileNotFoundError(f"Brak oryginalnej grafiki: {BASE_IMAGE}")
 
     normalized = []
     for leg in legs:
@@ -64,27 +82,69 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
             raise ValueError("Blokada publikacji: kurs poza zakresem 1.70–3.50")
         normalized.append((home, away, line, odds))
 
-    image = Image.new("RGB", (W, H), NAVY)
+    stake = float(stake)
+    total_odds = float(total_odds)
+    tax_rate = float(tax_rate)
+    if stake <= 0 or total_odds <= 0 or not 0 <= tax_rate < 1:
+        raise ValueError("Nieprawidłowa stawka, kurs łączny lub podatek")
+
+    image = Image.open(BASE_IMAGE).convert("RGB")
+    if image.size != (W, H):
+        image = image.resize((W, H), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(image)
-    _center(draw, (24, 12, W-24, 66), "DUBEL • ROŻNE FT",
-            _font(34, True), WHITE)
 
-    for index, (home, away, line, odds) in enumerate(normalized):
-        top = 82 + index * 164
-        bottom = top + 145
-        draw.rounded_rectangle((22, top, W-22, bottom), radius=18,
-                               fill=PANEL, outline=BLUE, width=3)
-        draw.text((46, top+13), f"MECZ {index+1}", font=_font(15, True), fill=BLUE)
-        draw.text((46, top+40), home, font=_fit(draw, home, 585, 31, 17), fill=NAVY)
-        draw.text((46, top+78), away, font=_fit(draw, away, 585, 31, 17), fill=NAVY)
-        draw.line((665, top+18, 665, bottom-18), fill=(150, 174, 205), width=2)
-        _center(draw, (680, top+22, W-38, top+58), f"OVER {line:.1f}",
-                _font(19, True), MUTED)
-        _center(draw, (680, top+59, W-38, bottom-14), f"{odds:.2f}",
-                _font(43, True), BLUE)
+    # Dwa jasne pola meczowe: zachowujemy logo piłek, obramowanie i niebieskie
+    # separatory z oryginału, wymieniamy tylko tekst meczów i kursy.
+    row_boxes = ((394, 518), (548, 674))
+    for (home, away, line, odds), (top, bottom) in zip(normalized, row_boxes):
+        draw.rectangle((222, top, 768, bottom), fill=CREAM)
+        draw.rectangle((782, top, 982, bottom), fill=CREAM)
 
-    _center(draw, (24, 408, W-24, 428), "DWA MECZE  •  PEŁNY CZAS (FT)",
-            _font(13, True), (177, 202, 235))
+        fixture = f"{home} – {away}"
+        draw.text((237, top + 13), fixture,
+                  font=_fit(draw, fixture, 515, 34, 19), fill=NAVY)
+
+        y_market = top + 69
+        market_font = _font(31)
+        number_font = _font(33)
+        draw.text((237, y_market), "Over", font=market_font, fill=NAVY)
+        x = 237 + draw.textbbox((0, 0), "Over ", font=market_font)[2]
+        line_text = f"{line:.1f}"
+        draw.text((x, y_market), line_text, font=number_font, fill=BLUE)
+        x += draw.textbbox((0, 0), line_text, font=number_font)[2]
+        draw.text((x, y_market), " rożnych FT", font=market_font, fill=NAVY)
+
+        _center(draw, (788, top + 8, 975, top + 48), "Kurs", _font(27), NAVY)
+        _center(draw, (788, top + 45, 975, bottom - 8),
+                f"{odds:.2f}", _font(56), BLUE)
+
+    # Podsumowanie kuponu według układu z oryginalnego plakatu.
+    tax_amount = stake * tax_rate
+    playable_stake = stake - tax_amount
+    payout = playable_stake * total_odds
+    net_profit = payout - stake
+
+    financial_rows = (
+        (705, 768, _money(stake), NAVY),
+        (775, 840, _money(tax_amount), RED),
+        (850, 910, _money(playable_stake), NAVY),
+        (916, 981, f"{total_odds:.2f}", BLUE),
+    )
+    for top, bottom, value, color in financial_rows:
+        draw.rectangle((735, top, 970, bottom), fill=CREAM)
+        font = _fit(draw, value, 225, 47, 30)
+        bounds = draw.textbbox((0, 0), value, font=font)
+        draw.text((966 - (bounds[2] - bounds[0]), top + 2),
+                  value, font=font, fill=color)
+
+    # Nadpisujemy wyłącznie liczby w polach wypłaty i zysku netto.
+    draw.rectangle((205, 1072, 545, 1159), fill=(7, 28, 62))
+    _center(draw, (208, 1072, 540, 1159), _money(payout), _font(52), WHITE)
+    draw.rectangle((565, 1072, 970, 1159), fill=GREEN)
+    _center(draw, (570, 1072, 968, 1159),
+            "+" + _money(net_profit), _fit(draw, "+" + _money(net_profit), 390, 51, 30),
+            (0, 0, 0))
+
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
     output.seek(0)
