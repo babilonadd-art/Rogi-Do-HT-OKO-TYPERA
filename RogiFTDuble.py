@@ -21,7 +21,7 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.70
 MAX_LEG_ODDS = 3.50
 MAX_DOUBLES_PER_DAY = 2
-GRAPHIC_VERSION = "oko-typera-original-poster-v1"
+GRAPHIC_VERSION = "oko-typera-original-poster-v2"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
