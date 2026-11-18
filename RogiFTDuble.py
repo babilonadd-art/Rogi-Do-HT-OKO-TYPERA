@@ -167,6 +167,34 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         return None
 
 
+def send_settled_coupon_graphic(legs, total_odds, coupon_id):
+    """Send the same coupon poster with the settlement label, only after settlement."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    graphic = render_coupon_image(
+        legs, total_odds, STAKE, coupon_no=1,
+        watermark_id=publication_code(coupon_id), settled=True,
+    )
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendPhoto",
+            data={"chat_id": chat_id},
+            files={"photo": ("rogi-ft-dubel-rozliczony.png", graphic, "image/png")},
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            logging.error("Telegram sendPhoto rozliczonego dubla: %s", payload)
+            return False
+        logging.info("Wysłano grafikę rozliczonego dubla FT, message_id=%s",
+                     payload["result"]["message_id"])
+        return True
+    except Exception:
+        logging.exception("Nie udało się wysłać grafiki rozliczonego dubla FT")
+        return False
+
+
 def save_publication_proof(c, coupon_id, proof):
     if not proof:
         return
@@ -517,7 +545,11 @@ def settle_doubles(c, now):
             f"{'🟢 DUBEL WYGRANY' if final == 'WON' else '🔴 DUBEL PRZEGRANY'}\n"
             f"🏦 Wynik: {profit:+.2f} zł"
         )
-        send(message)
+        settled_legs = [
+            {"home": home, "away": away, "line": float(line), "odds": float(odds)}
+            for league, home, away, line, odds, corners, status in leg_rows
+        ]
+        send_settled_coupon_graphic(settled_legs, float(total_odds), coupon_id)
 
     days = [row[0] for row in c.execute(
         "SELECT DISTINCT day FROM ft_doubles ORDER BY day"
