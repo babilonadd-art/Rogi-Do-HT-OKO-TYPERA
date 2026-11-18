@@ -514,13 +514,13 @@ def replace_today_pending_graphics(c, now):
     """Edit existing Telegram photo posts in place to add local kickoff times."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    day = now.date().isoformat()
     rows = c.execute("""SELECT d.coupon_id,d.total_odds,p.telegram_message_id
         FROM ft_doubles d
         JOIN ft_publication_proofs p ON p.coupon_id=d.coupon_id
-        WHERE d.day=? AND d.status='PENDING'
-        ORDER BY d.sent_at""", (day,)).fetchall()
-    logging.info("Grafiki do podmiany w miejscu: %s", len(rows))
+        WHERE d.status='PENDING'
+        ORDER BY d.sent_at DESC LIMIT 2""").fetchall()
+    rows.reverse()
+    logging.info("Ostatnie nierozliczone grafiki do podmiany w miejscu: %s", len(rows))
     replaced = 0
     for index, (coupon_id, total_odds, message_id) in enumerate(rows, 1):
         legs = c.execute("""SELECT event_id,league,home,away,start_ts,line,odds
