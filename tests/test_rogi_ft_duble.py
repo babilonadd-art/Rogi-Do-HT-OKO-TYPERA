@@ -11,7 +11,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(MAX_LEG_ODDS, 3.50)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
-        self.assertTrue(all(line >= 9.5 for line in FT_LINES))
+        self.assertEqual(FT_LINES, (8.5, 9.5))
 
     def test_placeholder_team_names_are_rejected(self):
         for name in ("A", "B", "Team A", "Team B", "Drużyna A", "Drużyna B", "Unknown", "TBD"):
