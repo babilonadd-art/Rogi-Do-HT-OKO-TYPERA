@@ -304,6 +304,38 @@ def fetch_candidates(now):
             logging.warning("Pomijam zdarzenie %s: brak prawdziwych nazw drużyn (%r - %r)",
                             event_id, home, away)
             continue
+        league = source.extract_league_name(event) or "Liga niepodana"
+
+        # Odrzuć całe ligi o niskiej skuteczności overów rożnych FT.
+        # Brak wiarygodnej historii w Open Matchday również oznacza odrzucenie,
+        # zamiast dobierania meczu w ciemno.
+        league_rows = source.load_matchday_results(league)
+        if not league_rows:
+            logging.info("ODRZUCAM LIGĘ %s: brak historii rożnych FT w Open Matchday", league)
+            continue
+        fixture_date = datetime.fromtimestamp(kickoff, timezone.utc).date().isoformat()
+        league_avg, league_hit, league_n = source.league_ft_corner_profile(league_rows, fixture_date)
+        if league_avg is None or league_n < 10:
+            logging.info("ODRZUCAM LIGĘ %s: za mała próba danych (%s meczów)", league, league_n)
+            continue
+        if league_avg < 8.5 or league_hit < 0.45:
+            logging.info(
+                "ODRZUCAM UNDEROWĄ LIGĘ %s: średnia %.2f rożnych, Over 8.5 %.0f%% (%s meczów)",
+                league, league_avg, league_hit * 100, league_n
+            )
+            continue
+
+        # Po przejściu filtra ligi sprawdź również ostatnią historię obu drużyn.
+        quality_score, quality_detail = source.ft_matchday_candidate_profile(
+            league, home, away, kickoff
+        )
+        if quality_score is None:
+            logging.info("ODRZUCAM MECZ %s - %s (%s): %s",
+                         home, away, league, quality_detail)
+            continue
+        logging.info("KWALIFIKUJE %s - %s (%s): %s",
+                     home, away, league, quality_detail)
+
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
         )
@@ -321,11 +353,13 @@ def fetch_candidates(now):
             continue
         candidates.append({
             "event_id": int(event_id),
-            "league": source.extract_league_name(event) or "Liga niepodana",
+            "league": league,
             "home": home, "away": away, "start_ts": kickoff,
             "line": chosen[0], "odds": chosen[1],
+            "quality_score": float(quality_score),
         })
-    candidates.sort(key=lambda x: (x["start_ts"], x["line"], abs(x["odds"] - MIN_LEG_ODDS)))
+    # Najpierw najlepszy profil statystyczny, a nie po prostu najwcześniejszy mecz.
+    candidates.sort(key=lambda x: (-x["quality_score"], x["start_ts"], x["line"]))
     logging.info("ROGI FT: kandydaci spełniający kurs >= %.2f: %s", MIN_LEG_ODDS, len(candidates))
     return candidates
 
