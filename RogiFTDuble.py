@@ -509,6 +509,59 @@ def repost_pending_doubles(c, now):
     logging.info("Ponownie opublikowane istniejące duble: %s", sent)
 
 
+
+def replace_today_pending_graphics(c, now):
+    """Edit existing Telegram photo posts in place to add local kickoff times."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    day = now.date().isoformat()
+    rows = c.execute("""SELECT d.coupon_id,d.total_odds,p.telegram_message_id
+        FROM ft_doubles d
+        JOIN ft_publication_proofs p ON p.coupon_id=d.coupon_id
+        WHERE d.day=? AND d.status='PENDING'
+        ORDER BY d.sent_at""", (day,)).fetchall()
+    logging.info("Grafiki do podmiany w miejscu: %s", len(rows))
+    replaced = 0
+    for index, (coupon_id, total_odds, message_id) in enumerate(rows, 1):
+        legs = c.execute("""SELECT event_id,league,home,away,start_ts,line,odds
+            FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""",
+            (coupon_id,)).fetchall()
+        if len(legs) != LEGS_PER_DOUBLE:
+            logging.error("Nie podmieniam %s: nieprawidłowa liczba spotkań", coupon_id)
+            continue
+        graphic_legs = [
+            {"event_id": event_id, "league": league, "home": home, "away": away,
+             "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
+            for event_id, league, home, away, start_ts, line, odds in legs
+        ]
+        graphic = render_coupon_image(
+            graphic_legs, float(total_odds), STAKE, coupon_no=index,
+            watermark_id=publication_code(coupon_id),
+        )
+        media = json.dumps({"type": "photo", "media": "attach://photo"})
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/editMessageMedia",
+                data={"chat_id": chat_id, "message_id": int(message_id), "media": media},
+                files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
+                timeout=45,
+            )
+            response.raise_for_status()
+            result = response.json()
+            if not result.get("ok"):
+                logging.error("Telegram editMessageMedia dla %s: %s", coupon_id, result)
+                continue
+            c.execute("""INSERT OR REPLACE INTO ft_double_reposts
+                (coupon_id,sent_at,message_id,graphic_version) VALUES(?,?,?,?)""",
+                (coupon_id, now.astimezone(TZ).isoformat(), int(message_id), GRAPHIC_VERSION))
+            c.commit()
+            replaced += 1
+            logging.info("Zastąpiono grafikę w istniejącym poście: coupon=%s message_id=%s",
+                         coupon_id, message_id)
+        except Exception:
+            logging.exception("Nie udało się podmienić grafiki dubla %s", coupon_id)
+    logging.info("Podmienione istniejące grafiki: %s/%s", replaced, len(rows))
+
 def reset_today_pending_and_scan(c, now):
     """Remove today's unsettled coupons only, then build fresh picks."""
     day = now.date().isoformat()
@@ -624,6 +677,8 @@ def main():
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
         if mode == "repost-pending":
             repost_pending_doubles(c, now)
+        elif mode == "replace-graphics":
+            replace_today_pending_graphics(c, now)
         elif mode == "reset-limit":
             reset_daily_quota(c, now)
         elif mode == "reset-today-and-scan":
