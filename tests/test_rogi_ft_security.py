@@ -46,17 +46,23 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertNotEqual(signature1, changed_signature)
         self.assertEqual(payload1["legs"][0]["market"], "OVER_CORNERS_FT")
 
-    def test_render_uses_new_clean_poster_canvas(self):
+    def test_render_uses_compact_two_match_graphic(self):
         rendered = render_coupon_image(self.legs, 3.7245, 50.0)
         with Image.open(rendered) as image:
             self.assertEqual(image.size, (W, H))
-            self.assertEqual(image.size, (720, 1280))
+            self.assertEqual(image.size, (900, 430))
             self.assertEqual(image.format, "PNG")
 
-    def test_settlement_graphic_is_distinct_from_prematch(self):
+    def test_settlement_flag_does_not_change_match_identity_or_layout(self):
         prematch = render_coupon_image(self.legs, 3.7245, 50.0).getvalue()
         settled = render_coupon_image(self.legs, 3.7245, 50.0, settled=True).getvalue()
-        self.assertNotEqual(prematch, settled)
+        self.assertEqual(prematch, settled)
+
+    def test_renderer_rejects_missing_real_team_names(self):
+        invalid = [dict(leg) for leg in self.legs]
+        invalid[0]["home"] = ""
+        with self.assertRaisesRegex(ValueError, "Brak prawdziwej nazwy"):
+            render_coupon_image(invalid, 3.7245, 50.0)
 
 
 if __name__ == "__main__":
