@@ -1,6 +1,8 @@
 name: ROGI FT — DUBLE PREMATCH
 
 on:
+  schedule:
+    - cron: "0 6 * * *" # 07:00 czasu polskiego zimą
   workflow_dispatch:
     inputs:
       mode:
@@ -64,4 +66,4 @@ jobs:
             git push
           fi
 
-# Automatic schedule is paused during graphic QA. Pushes run dry-run only; re-enable schedule after visual approval.
+# Daily scan at 07:00 Poland time (06:00 UTC in winter). Pushes remain dry-run only.
