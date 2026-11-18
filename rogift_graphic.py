@@ -162,11 +162,13 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         fixture = f"{home}  –  {away}"
         _center(d, (190, top+12, 715, top+76), fixture,
                 _fit(d, fixture, 505, 32, 17), DARK)
-        start_label = f"START MECZU: {kickoff}"
-        _center(d, (190, top+77, 715, top+119), start_label,
-                _fit(d, start_label, 505, 23, 17), DARK)
+        # Highly visible kickoff strip, directly above the OVER selection.
+        d.rounded_rectangle((190, top+77, 715, top+120), radius=12, fill=NAVY2)
+        start_label = f"GODZINA ROZPOCZĘCIA: {kickoff}"
+        _center(d, (198, top+78, 707, top+119), start_label,
+                _fit(d, start_label, 495, 30, 20), WHITE)
         market = f"OVER {line:.1f} rożnych FT"
-        _center(d, (190, top+120, 715, top+168), market,
+        _center(d, (190, top+121, 715, top+168), market,
                 _fit(d, market, 505, 27, 19), BLUE)
         _center(d, (750, top+24, 930, top+75), "KURS", _font(24), DARK)
         _center(d, (750, top+77, 930, top+145), f"{odds:.2f}",
