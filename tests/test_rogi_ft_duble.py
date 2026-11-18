@@ -64,12 +64,12 @@ class StrategyRulesTests(unittest.TestCase):
                 "name": "Liczba rzutów rożnych",
                 "status": 1,
                 "odds": [
-                    {"name": "Powyżej 9.5", "price": 1.55, "status": 1,
+                    {"name": "Powyżej 8.5", "price": 1.55, "status": 1,
+                     "display": True, "metadata": {"special_bet_value": "8.5", "offer_state_id": 1}},
+                    {"name": "Powyżej 9.5", "price": 1.90, "status": 1,
                      "display": True, "metadata": {"special_bet_value": "9.5", "offer_state_id": 1}},
-                    {"name": "Powyżej 10.5", "price": 1.90, "status": 1,
+                    {"name": "Powyżej 10.5", "price": 2.20, "status": 1,
                      "display": True, "metadata": {"special_bet_value": "10.5", "offer_state_id": 1}},
-                    {"name": "Powyżej 11.5", "price": 2.20, "status": 1,
-                     "display": True, "metadata": {"special_bet_value": "11.5", "offer_state_id": 1}},
                 ],
             }, {
                 "name": "Coritiba - liczba rzutów rożnych",
@@ -80,8 +80,8 @@ class StrategyRulesTests(unittest.TestCase):
                 }],
             }],
         }]}
-        result = Main.superbet_ft_corners_over_prices(123, lines=FT_LINES, min_odds=1.80)
-        self.assertEqual(result, {10.5: 1.90, 11.5: 2.20})
+        result = Main.superbet_ft_corners_over_prices(123, lines=FT_LINES, min_odds=1.60)
+        self.assertEqual(result, {9.5: 1.90})
         api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
 
 
