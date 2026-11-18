@@ -21,7 +21,7 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.60
 MAX_LEG_ODDS = 2.20
 MAX_DOUBLES_PER_DAY = 2
-GRAPHIC_VERSION = "oko-typera-original-poster-v3"
+GRAPHIC_VERSION = "oko-typera-original-poster-v4-kickoff"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
@@ -548,11 +548,11 @@ def settle_doubles(c, now):
             WHERE coupon_id=? AND status='PENDING'""",
             (final, now.astimezone(TZ).isoformat(), profit, coupon_id))
         c.commit()
-        leg_rows = c.execute("""SELECT league,home,away,line,odds,ft_corners,status
+        leg_rows = c.execute("""SELECT league,home,away,start_ts,line,odds,ft_corners,status
             FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
         details = "\n".join(
             f"• {home} – {away}: OVER {line:.1f}, rożne: {corners}, {status}"
-            for league, home, away, line, odds, corners, status in leg_rows
+            for league, home, away, start_ts, line, odds, corners, status in leg_rows
         )
         message = (
             "📊 ROZLICZENIE DUBLA — ROGI FT\n\n" + details +
@@ -562,8 +562,8 @@ def settle_doubles(c, now):
             f"🏦 Wynik: {profit:+.2f} zł"
         )
         settled_legs = [
-            {"home": home, "away": away, "line": float(line), "odds": float(odds)}
-            for league, home, away, line, odds, corners, status in leg_rows
+            {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
+            for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
         send_settled_coupon_graphic(settled_legs, float(total_odds), coupon_id)
 
