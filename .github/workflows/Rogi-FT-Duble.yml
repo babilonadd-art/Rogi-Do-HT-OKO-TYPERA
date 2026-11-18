@@ -65,3 +65,5 @@ jobs:
             git pull --rebase --autostash origin main
             git push
           fi
+
+# Manual quota reset is triggered only by the dedicated commit message.
