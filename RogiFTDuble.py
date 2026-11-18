@@ -21,6 +21,7 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.70
 MAX_LEG_ODDS = 3.50
 MAX_DOUBLES_PER_DAY = 2
+GRAPHIC_VERSION = "oko-typera-original-poster-v1"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
@@ -46,6 +47,9 @@ def db_open():
     c.execute("""CREATE TABLE IF NOT EXISTS ft_double_reposts(
         coupon_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, message_id INTEGER,
         FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
+    repost_columns = {row[1] for row in c.execute("PRAGMA table_info(ft_double_reposts)")}
+    if "graphic_version" not in repost_columns:
+        c.execute("ALTER TABLE ft_double_reposts ADD COLUMN graphic_version TEXT NOT NULL DEFAULT ''")
     c.execute("""CREATE TABLE IF NOT EXISTS ft_publication_proofs(
         coupon_id TEXT PRIMARY KEY, publication_code TEXT NOT NULL,
         signature TEXT NOT NULL, payload_json TEXT NOT NULL,
@@ -427,8 +431,12 @@ def repost_pending_doubles(c, now):
     fresh_names = refresh_saved_fixture_names(saved_legs, now)
     for coupon_id, day, total_odds in rows:
         if not os.getenv("FORCE_REPOST", "").strip().lower() in ("1", "true", "yes"):
-            if c.execute("SELECT 1 FROM ft_double_reposts WHERE coupon_id=?", (coupon_id,)).fetchone():
-                logging.info("Dubel %s był już ponownie opublikowany — pomijam", coupon_id)
+            previous = c.execute(
+                "SELECT graphic_version FROM ft_double_reposts WHERE coupon_id=?",
+                (coupon_id,),
+            ).fetchone()
+            if previous and previous[0] == GRAPHIC_VERSION:
+                logging.info("Dubel %s ma już grafikę %s — pomijam", coupon_id, GRAPHIC_VERSION)
                 continue
         legs = c.execute("""SELECT event_id,league,home,away,start_ts,line,odds
             FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
@@ -474,8 +482,9 @@ def repost_pending_doubles(c, now):
             break
         message_id = proof["message_id"]
         save_publication_proof(c, coupon_id, proof)
-        c.execute("INSERT OR REPLACE INTO ft_double_reposts(coupon_id,sent_at,message_id) VALUES(?,?,?)",
-                  (coupon_id, now.astimezone(TZ).isoformat(), int(message_id)))
+        c.execute("""INSERT OR REPLACE INTO ft_double_reposts
+            (coupon_id,sent_at,message_id,graphic_version) VALUES(?,?,?,?)""",
+            (coupon_id, now.astimezone(TZ).isoformat(), int(message_id), GRAPHIC_VERSION))
         c.commit()
         sent += 1
         logging.info("Ponownie opublikowano dubel %s, Telegram message_id=%s", coupon_id, message_id)
