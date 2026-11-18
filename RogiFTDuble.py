@@ -176,6 +176,25 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
                 timeout=45,
             )
+            if not response.ok:
+                try:
+                    error_payload = response.json()
+                except ValueError:
+                    error_payload = {}
+                description = str(error_payload.get("description") or "")
+                if error_payload.get("error_code") == 400 and (
+                    "MESSAGE_ID_INVALID" in description or "message to edit not found" in description.lower()
+                ):
+                    logging.warning(
+                        "Oryginalny post Telegram (message_id=%s) został usunięty; wysyłam grafikę ponownie jako nowy post.",
+                        existing_message_id,
+                    )
+                    response = requests.post(
+                        f"https://api.telegram.org/bot{token}/sendPhoto",
+                        data={"chat_id": chat_id, "reply_markup": reply_markup},
+                        files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
+                        timeout=45,
+                    )
         else:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
@@ -243,12 +262,8 @@ def save_publication_proof(c, coupon_id, proof):
          telegram_message_id,created_at) VALUES(?,?,?,?,?,?,?)
         ON CONFLICT(coupon_id) DO UPDATE SET
           verification_url=COALESCE(ft_publication_proofs.verification_url, excluded.verification_url),
-          telegram_message_id=CASE
-            WHEN ft_publication_proofs.verification_url IS NULL
-                 AND excluded.verification_url IS NOT NULL
-            THEN excluded.telegram_message_id
-            ELSE ft_publication_proofs.telegram_message_id
-          END""",
+          telegram_message_id=excluded.telegram_message_id,
+          created_at=excluded.created_at""",
         (
             coupon_id,
             proof["publication_code"],
