@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 720, 1280
 ROOT = Path(__file__).resolve().parent
-LOGO_SOURCE = ROOT / "Screenshot_20261117-110724.png"
+LOGO_SOURCE = ROOT / "assets" / "okotypera_logo.jpg"
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 ITALIC_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"
 WHITE = (248, 250, 255)
@@ -68,10 +68,8 @@ def _draw_original_logo(image):
     # The committed screenshot is the original Oko Typera poster; reuse its crown-and-blue-eye mark.
     if not LOGO_SOURCE.exists():
         raise FileNotFoundError("Brak oryginalnego pliku logo Screenshot_20261117-110724.png")
-    source = Image.open(LOGO_SOURCE).convert("RGB")
-    # Crop the top-left brand lockup, not the green/neon alternative logo.
-    logo = source.crop((12, 8, min(278, source.width), min(330, source.height)))
-    logo.thumbnail((168, 202), Image.Resampling.LANCZOS)
+    logo = Image.open(LOGO_SOURCE).convert("RGB")
+    logo = logo.resize((168, 202), Image.Resampling.LANCZOS)
     image.paste(logo, (26, 18))
 
 
