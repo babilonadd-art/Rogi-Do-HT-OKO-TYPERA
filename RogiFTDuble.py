@@ -21,7 +21,7 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.60
 MAX_LEG_ODDS = 2.20
 MAX_DOUBLES_PER_DAY = 2
-GRAPHIC_VERSION = "oko-typera-original-poster-v4-kickoff"
+GRAPHIC_VERSION = "oko-typera-original-poster-v5-kickoff-above-pick"
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
@@ -487,6 +487,9 @@ def repost_pending_doubles(c, now):
             if stored else None
         )
         original_message_id = int(stored[2]) if stored and stored[2] else None
+        if not original_message_id:
+            logging.error("Dubel %s: brak ID oryginalnego posta Telegram — nie wysyłam duplikatu", coupon_id)
+            continue
         proof = send_coupon_graphic(
             graphic_legs, float(total_odds), max(1, coupon_no), coupon_id,
             existing_proof=existing_proof,
