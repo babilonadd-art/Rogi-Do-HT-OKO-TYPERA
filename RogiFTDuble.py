@@ -28,6 +28,15 @@ MIN_HOURS_BEFORE_KICKOFF = 0
 MIN_FT_CORNERS_LINE = 8.5
 MAX_FT_CORNERS_LINE = 9.5
 FT_LINES = (8.5, 9.5)
+
+# Twarda blokada rozgrywek, które nie mają trafiać do kuponów.
+# Nazwy są normalizowane; dodatkowe ligi można dopisać przez zmienną
+# UNDER_CORNER_LEAGUES w GitHub Actions (nazwy oddzielone średnikiem).
+UNDER_CORNER_LEAGUE_BLOCKLIST = {
+    "u18", "u19", "u20", "u21", "u23",
+    "youth", "junior", "reserves", "reserve", "development league",
+    "club friendlies", "international friendlies",
+}
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
@@ -278,6 +287,26 @@ def save_publication_proof(c, coupon_id, proof):
     )
 
 
+def normalized_league_name(value):
+    import re
+    import unicodedata
+    value = unicodedata.normalize("NFKD", str(value or "").casefold())
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", value)
+
+
+def is_blocked_under_league(league):
+    name = normalized_league_name(league)
+    blocked = {normalized_league_name(x) for x in UNDER_CORNER_LEAGUE_BLOCKLIST}
+    extra = os.getenv("UNDER_CORNER_LEAGUES", "")
+    blocked.update(normalized_league_name(x) for x in extra.split(";") if x.strip())
+    # Odrzucamy młodzieżówki/rezerwy również wtedy, gdy nazwa ligi zawiera
+    # dopisek kraju lub sponsora.
+    blocked_tokens = ("u18", "u19", "u20", "u21", "u23", "youth", "junior",
+                      "reserve", "reserves", "development", "friendlies", "friendly")
+    return name in blocked or any(token in name for token in blocked_tokens)
+
+
 def fetch_candidates(now):
     start = now.astimezone(timezone.utc)
     # Look ahead 36 hours so late-night scans also see tomorrow's fixtures.
@@ -305,6 +334,10 @@ def fetch_candidates(now):
                             event_id, home, away)
             continue
         league = source.extract_league_name(event) or "Liga niepodana"
+        if is_blocked_under_league(league):
+            logging.info("ODRZUCAM Z CZARNEJ LISTY LIG: %s | %s - %s",
+                         league, home, away)
+            continue
 
         # Odrzuć całe ligi o niskiej skuteczności overów rożnych FT.
         # Brak wiarygodnej historii w Open Matchday również oznacza odrzucenie,
