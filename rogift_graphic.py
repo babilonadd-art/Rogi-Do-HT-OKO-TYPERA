@@ -1,4 +1,4 @@
-"""Replace fixture labels and reorder the summary on the original poster."""
+"""Replace fixture names and FT corner lines on the original screenshot."""
 from io import BytesIO
 from pathlib import Path
 
@@ -113,19 +113,20 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     if image.size != (720, 1640):
         raise ValueError(f"Nieoczekiwany rozmiar oryginalnego szablonu: {image.size}")
 
-    # Mask only the two placeholder name fields. All other pixels remain untouched.
+    # Mask only fixture-name and market-line fields; preserve the rest of the screenshot.
     rgb = np.asarray(image)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-    for x1, y1, x2, y2 in NAME_BOXES:
+    for x1, y1, x2, y2 in (NAME_BOXES + MARKET_BOXES):
         mask[y1:y2, x1:x2] = 255
     repaired = cv2.inpaint(bgr, mask, 9, cv2.INPAINT_TELEA)
     image = Image.fromarray(cv2.cvtColor(repaired, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(image)
 
-    for leg, (x, y) in zip(legs, NAME_ORIGINS):
+    for leg, (x, y), market_box in zip(legs, NAME_ORIGINS, MARKET_BOXES):
         match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
         draw.text((x, y), match, font=_font_for(draw, match), fill=NAME_COLOR)
+        _draw_market_line(draw, market_box, leg["line"])
 
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
