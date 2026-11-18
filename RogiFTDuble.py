@@ -116,6 +116,8 @@ def telegram_message_link(token, chat_id, message_id):
             data={"chat_id": chat_id},
             timeout=20,
         )
+        if not response.ok:
+            logging.error("Telegram API odrzuciło publikację: HTTP %s | %s", response.status_code, response.text[:2000])
         response.raise_for_status()
         payload = response.json()
         if not payload.get("ok"):
