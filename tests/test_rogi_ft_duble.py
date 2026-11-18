@@ -7,8 +7,8 @@ from Main import superbet_event_is_prematch
 
 class StrategyRulesTests(unittest.TestCase):
     def test_rules_are_ft_over_only_and_minimum_odds(self):
-        self.assertEqual(MIN_LEG_ODDS, 1.70)
-        self.assertEqual(MAX_LEG_ODDS, 3.50)
+        self.assertEqual(MIN_LEG_ODDS, 1.60)
+        self.assertEqual(MAX_LEG_ODDS, 2.20)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
         self.assertEqual(FT_LINES, (8.5, 9.5))
