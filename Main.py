@@ -497,8 +497,7 @@ def load_matchday_league_index():
         for line in response.text.splitlines():
             match=re.match(r"^\|\s*`([^`]+)`\s*\|\s*([^|]+)\|\s*([^|]+)\|",line)
             if not match:
-                continue
-            folder,display,country=(part.strip() for part in match.groups())
+                continue            folder,display,country=(part.strip() for part in match.groups())
             if folder and display and country and folder.lower()!="folder":
                 entries.append((folder,display,country))
         if not entries:
@@ -997,8 +996,7 @@ def _corner_pair_from_object(obj):
         return None
 
 def superbet_ht_corners(event):
-    """Return only an explicitly identified first-half corner score; never use match totals."""
-    roots=[]
+    """Return only an explicitly identified first-half corner score; never use match totals."""    roots=[]
     for key in ("inplay_stats","statistics","stats","event_stats","live_statistics"):
         value=event.get(key)
         if value is not None:
@@ -1497,8 +1495,7 @@ def settle_ft_picks(c):
             reverse=team_similarity(home,ra)+team_similarity(away,rh)
             if max(direct,reverse)<1.65:
                 continue
-            try:
-                hc=int(float(row.get("home_corners")))
+            try:                hc=int(float(row.get("home_corners")))
                 ac=int(float(row.get("away_corners")))
             except (TypeError,ValueError):
                 continue
@@ -1997,8 +1994,7 @@ def cornerflick_match_corners(payload):
             try:
                 home=int(float(stat.get("home")))
                 away=int(float(stat.get("away")))
-                return home,away
-            except (TypeError,ValueError):
+                return home,away            except (TypeError,ValueError):
                 return None
     return None
 
@@ -2070,8 +2066,10 @@ def select_ft_corner_scenario(combined_average,odds_by_line):
 def monitor_ft_corners(c):
     """Prematch FT corners: season team averages + dynamic Superbet O9.5/O10.5 price rules."""
     now=datetime.now(TZ)
-    start=now.replace(hour=0,minute=0,second=0,microsecond=0)
-    end=now.replace(hour=23,minute=59,second=59,microsecond=0)
+    # Skan kroczący: wszystkie mecze od teraz do kolejnych 24 godzin.
+    # Dzięki temu ręczne/późne uruchomienie nie ogranicza się do resztek dzisiejszego terminarza.
+    start=now
+    end=now+timedelta(hours=24)
     events=superbet_football_events(start,end)
     # Cornerflick jest źródłem głównym. Open Matchday pobieramy tylko jako zapas
     # dla lig lub drużyn, dla których Cornerflick nie ma wystarczającej próbki.
