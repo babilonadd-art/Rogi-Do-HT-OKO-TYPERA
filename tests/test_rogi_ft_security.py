@@ -50,7 +50,7 @@ class PublicationSecurityTests(unittest.TestCase):
         rendered = render_coupon_image(self.legs, 3.7245, 50.0)
         with Image.open(rendered) as image:
             self.assertEqual(image.size, (W, H))
-            self.assertEqual(image.size, (900, 430))
+            self.assertEqual(image.size, (1024, 1536))
             self.assertEqual(image.format, "PNG")
 
     def test_settlement_flag_does_not_change_match_identity_or_layout(self):
