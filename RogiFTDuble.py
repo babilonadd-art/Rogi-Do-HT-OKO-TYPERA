@@ -621,11 +621,8 @@ def main():
                              item["league"], item["home"], item["away"], item["line"],
                              item["odds"], kickoff.isoformat())
         else:
-            # First recover picks persisted by older runs without a confirmed
-            # Telegram sendPhoto response. The proof row is written only after
-            # Telegram confirms delivery, so this does not repost published picks.
-            if mode != "settle":
-                repost_pending_doubles(c, now)
+            # Normal scan must never repost old pending coupons. Recovery is
+            # available only through the explicit repost-pending mode.
             settle_doubles(c, now)
             if mode != "settle":
                 send_new_doubles(c, now)
