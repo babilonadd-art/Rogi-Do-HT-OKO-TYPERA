@@ -19,6 +19,8 @@ NAME_BOXES = (
 NAME_ORIGINS = ((174, 600), (174, 722))
 NAME_COLOR = (8, 18, 35)
 MAX_NAME_WIDTH = 350
+HEADER_BOX = (250, 495, 620, 560)
+HEADER_ORIGIN = (262, 503)
 
 # Dynamic fields on the 720x1640 Telegram screenshot. The template itself
 # contains sample values (including the obsolete 5.5 line), so all betting
@@ -117,11 +119,26 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12, wat
     rgb = np.asarray(image)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-    for x1, y1, x2, y2 in (NAME_BOXES + MARKET_BOXES):
+    for x1, y1, x2, y2 in (NAME_BOXES + MARKET_BOXES + (HEADER_BOX,) + SUMMARY_VALUE_BOXES):
         mask[y1:y2, x1:x2] = 255
     repaired = cv2.inpaint(bgr, mask, 9, cv2.INPAINT_TELEA)
     image = Image.fromarray(cv2.cvtColor(repaired, cv2.COLOR_BGR2RGB))
+    image = _reorder_summary_rows(image)
     draw = ImageDraw.Draw(image)
+
+    # Prematch publication must not claim the coupon is already settled.
+    draw.text(HEADER_ORIGIN, "DUBEL", font=_font(43, oblique=True), fill=NAVY)
+
+    tax = round(float(stake) * float(tax_rate), 2)
+    played_stake = round(float(stake) - tax, 2)
+    summary_values = (
+        (SUMMARY_VALUE_BOXES[0], f"{float(total_odds):.2f}", BLUE),
+        (SUMMARY_VALUE_BOXES[1], f"{float(stake):.2f} zł", NAVY),
+        (SUMMARY_VALUE_BOXES[2], f"{tax:.2f} zł", RED),
+        (SUMMARY_VALUE_BOXES[3], f"{played_stake:.2f} zł", NAVY),
+    )
+    for box, value, color in summary_values:
+        _right_text(draw, box, value, _font(37), color)
 
     for leg, (x, y), market_box in zip(legs, NAME_ORIGINS, MARKET_BOXES):
         match = f"{str(leg['home']).strip()} – {str(leg['away']).strip()}"
