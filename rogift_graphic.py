@@ -4,6 +4,8 @@ No screenshot/template containing old text is loaded or reused. Every pixel,
 including the background and all text panels, is generated for each coupon.
 """
 from io import BytesIO
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont
 import math
 
@@ -16,6 +18,7 @@ WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
 DARK = (5, 22, 47)
 RED = (195, 36, 45)
+LOCAL_TZ = ZoneInfo("Europe/Warsaw")
 
 
 def _font(size):
@@ -142,7 +145,11 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
             raise ValueError("Blokada publikacji: dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
         if not 1.60 <= odds <= 2.20:
             raise ValueError("Blokada publikacji: kurs poza zakresem 1.60–2.20")
-        normalized.append((home, away, line, odds))
+        start_ts = leg.get("start_ts")
+        if start_ts is None:
+            raise ValueError("Brak godziny rozpoczęcia meczu")
+        kickoff = datetime.fromtimestamp(int(start_ts), timezone.utc).astimezone(LOCAL_TZ)
+        normalized.append((home, away, line, odds, kickoff.strftime("%H:%M")))
     stake, total_odds, tax_rate = float(stake), float(total_odds), float(tax_rate)
     if stake <= 0 or total_odds <= 0 or not 0 <= tax_rate < 1:
         raise ValueError("Nieprawidłowa stawka, kurs łączny lub podatek")
@@ -151,13 +158,16 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
 
     image = _fresh_canvas()
     d = ImageDraw.Draw(image)
-    for (home, away, line, odds), (top, bottom) in zip(normalized, ((382, 555), (575, 748))):
+    for (home, away, line, odds, kickoff), (top, bottom) in zip(normalized, ((382, 555), (575, 748))):
         fixture = f"{home}  –  {away}"
-        _center(d, (190, top+20, 715, top+92), fixture,
-                _fit(d, fixture, 505, 35, 17), DARK)
+        _center(d, (190, top+12, 715, top+76), fixture,
+                _fit(d, fixture, 505, 32, 17), DARK)
         market = f"OVER {line:.1f} rożnych FT"
-        _center(d, (190, top+99, 715, top+155), market,
-                _fit(d, market, 505, 31, 20), BLUE)
+        _center(d, (190, top+77, 715, top+124), market,
+                _fit(d, market, 505, 27, 19), BLUE)
+        start_label = f"START MECZU: {kickoff}"
+        _center(d, (190, top+125, 715, top+168), start_label,
+                _fit(d, start_label, 505, 23, 17), DARK)
         _center(d, (750, top+24, 930, top+75), "KURS", _font(24), DARK)
         _center(d, (750, top+77, 930, top+145), f"{odds:.2f}",
                 _font(54), BLUE)
