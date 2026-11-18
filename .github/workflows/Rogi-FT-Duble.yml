@@ -71,3 +71,4 @@ jobs:
           fi
 
 # Pushes remain dry-run only. Use workflow_dispatch for explicit live scans.
+# Reset dziennego limitu uruchamiany wyłącznie przez commit [reset-today-ft].
