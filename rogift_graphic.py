@@ -140,8 +140,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         line, odds = float(leg.get("line", 0)), float(leg.get("odds", 0))
         if not 8.5 <= line <= 9.5:
             raise ValueError("Blokada publikacji: dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
-        if not 1.70 <= odds <= 3.50:
-            raise ValueError("Blokada publikacji: kurs poza zakresem 1.70–3.50")
+        if not 1.60 <= odds <= 2.20:
+            raise ValueError("Blokada publikacji: kurs poza zakresem 1.60–2.20")
         normalized.append((home, away, line, odds))
     stake, total_odds, tax_rate = float(stake), float(total_odds), float(tax_rate)
     if stake <= 0 or total_odds <= 0 or not 0 <= tax_rate < 1:
