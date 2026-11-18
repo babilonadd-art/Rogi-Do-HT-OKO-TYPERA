@@ -125,7 +125,7 @@ def _fresh_canvas():
     d.ellipse((457, 1382, 567, 1442), outline=(65, 160, 131), width=3)
     d.rectangle((110, 1380, 220, 1442), outline=(65, 160, 131), width=3)
     d.rectangle((804, 1380, 914, 1442), outline=(65, 160, 131), width=3)
-    _center(d, (120, 1460, 904, 1490), "ANALIZA KURSÓW  •  ROŻNE FT",
+    _center(d, (120, 1460, 904, 1490), "LINKI DO RYNKU ROŻNYCH FT POD GRAFIKĄ",
             _font(20), (195, 220, 242))
     return image
 
