@@ -167,10 +167,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
     payout = round(playable*total_odds, 2)
     profit = round(payout-stake, 2)
     rows = (
+        ("KURS ŁĄCZNY", f"{total_odds:.2f}", BLUE),
         ("STAWKA", _money(stake), DARK),
         (f"PODATEK {tax_rate*100:.0f}%", _money(tax), RED),
         ("KWOTA GRAJĄCA", _money(playable), DARK),
-        ("KURS ŁĄCZNY", f"{total_odds:.2f}", BLUE),
     )
     for i, (label, value, color) in enumerate(rows):
         y = 790 + i*73
