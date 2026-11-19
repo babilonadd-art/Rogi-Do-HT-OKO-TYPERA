@@ -69,133 +69,77 @@ def _ball(draw, cx, cy, radius):
 
 
 def _fresh_canvas():
-    image = Image.new("RGB", (W, H), NAVY)
+    image = Image.new("RGB", (W, H), (3, 8, 17))
     px = image.load()
-    # Smooth vertical navy-to-blue background, generated from scratch.
     for y in range(H):
-        t = y / (H - 1)
-        c = tuple(round(NAVY[i] * (1-t) + NAVY2[i] * t) for i in range(3))
+        t=y/(H-1); glow=max(0.0,1.0-abs(t-.55)*2)
+        base=(3+int(4*glow),8+int(20*glow),17+int(28*glow))
         for x in range(W):
-            px[x, y] = c
-    d = ImageDraw.Draw(image)
-    # Subtle diagonal stadium-light accents.
-    for x in range(-H, W, 90):
-        d.line((x, 0, x + H, H), fill=(13, 54, 105), width=2)
-    # Header panel and original-brand-inspired crown/eye mark, all drawn anew.
-    d.rounded_rectangle((48, 38, 976, 238), radius=34, fill=(3, 15, 36),
-                        outline=(31, 126, 218), width=4)
-    # Crown
-    d.polygon([(112, 130), (126, 75), (157, 111), (185, 63),
-               (213, 111), (244, 75), (257, 130)], fill=GREEN,
-              outline=WHITE)
-    d.rectangle((119, 132, 250, 148), fill=GREEN)
-    # Eye mark
-    d.arc((130, 153, 246, 218), 195, 345, fill=WHITE, width=5)
-    d.arc((130, 153, 246, 218), 15, 165, fill=WHITE, width=5)
-    d.ellipse((178, 170, 198, 190), fill=GREEN)
-    d.text((292, 66), "OKO TYPERA", font=_font(66), fill=WHITE)
-    d.text((296, 145), "ROGI FT  •  DUBEL", font=_font(36), fill=GREEN)
-    _ball(d, 870, 136, 58)
-    # Main title band
-    d.rounded_rectangle((82, 270, 942, 350), radius=24, fill=BLUE)
-    _center(d, (100, 278, 924, 340), "DWA MECZE  •  OVER RZUTÓW ROŻNYCH",
-            _fit(d, "DWA MECZE  •  OVER RZUTÓW ROŻNYCH", 790, 36, 22), WHITE)
-    # Empty match cards: no baked-in labels or text.
-    for y1, y2 in ((382, 555), (575, 748)):
-        d.rounded_rectangle((74, y1, 950, y2), radius=28,
-                            fill=PALE, outline=(116, 190, 255), width=4)
-        d.rounded_rectangle((92, y1+18, 103, y2-18), radius=5, fill=BLUE)
-        d.line((735, y1+22, 735, y2-22), fill=(172, 190, 211), width=3)
-        _ball(d, 154, (y1+y2)//2, 32)
-    # Financial table
-    d.rounded_rectangle((74, 778, 950, 1080), radius=28,
-                        fill=PALE, outline=(116, 190, 255), width=4)
-    for y in (853, 928, 1003):
-        d.line((110, y, 914, y), fill=(184, 198, 215), width=2)
-    # payout/profit panels
-    d.rounded_rectangle((74, 1110, 486, 1302), radius=28,
-                        fill=(4, 31, 72), outline=BLUE, width=4)
-    d.rounded_rectangle((510, 1110, 950, 1302), radius=28,
-                        fill=GREEN, outline=(211, 255, 164), width=4)
-    # Footer pitch motif
-    d.rounded_rectangle((74, 1330, 950, 1494), radius=24,
-                        fill=(5, 39, 56), outline=(32, 151, 118), width=3)
-    d.rectangle((110, 1355, 914, 1468), outline=(65, 160, 131), width=3)
-    d.line((512, 1355, 512, 1468), fill=(65, 160, 131), width=3)
-    d.ellipse((457, 1382, 567, 1442), outline=(65, 160, 131), width=3)
-    d.rectangle((110, 1380, 220, 1442), outline=(65, 160, 131), width=3)
-    d.rectangle((804, 1380, 914, 1442), outline=(65, 160, 131), width=3)
-    _center(d, (120, 1460, 904, 1490), "LINKI DO RYNKU ROŻNYCH FT POD GRAFIKĄ",
-            _font(20), (195, 220, 242))
+            side=max(0.0,1.0-abs(x-W/2)/(W/2))
+            px[x,y]=(base[0],base[1]+int(10*side*glow),base[2]+int(15*side*glow))
+    d=ImageDraw.Draw(image)
+    for x in range(-H,W,105): d.line((x,0,x+H,H),fill=(7,35,30),width=3)
+    d.rounded_rectangle((34,30,990,250),radius=38,fill=(2,9,15),outline=GREEN,width=6)
+    d.polygon([(76,135),(105,60),(145,110),(181,48),(218,110),(257,60),(284,135)],fill=GREEN,outline=WHITE)
+    d.rectangle((86,139,273,158),fill=GREEN)
+    d.arc((110,150,250,228),190,350,fill=WHITE,width=6); d.arc((110,150,250,228),10,170,fill=WHITE,width=6)
+    d.ellipse((172,174,194,196),fill=RED)
+    d.text((315,62),"ROGI DO HT",font=_font(54),fill=WHITE)
+    d.text((315,124),"OKO TYPERA",font=_font(66),fill=GREEN)
+    d.rounded_rectangle((315,195,720,232),radius=14,fill=GREEN)
+    _center(d,(325,195,710,230),"DUBEL ROGI FT",_font(27),(0,0,0)); _ball(d,866,140,68)
+    d.rounded_rectangle((55,278,969,360),radius=24,fill=GREEN,outline=(220,255,180),width=3)
+    _center(d,(75,286,949,350),"DWA MECZE  •  OVER RZUTÓW ROŻNYCH",_fit(d,"DWA MECZE  •  OVER RZUTÓW ROŻNYCH",840,35,22),(0,0,0))
+    for y1,y2 in ((390,570),(590,770)):
+        d.rounded_rectangle((48,y1,976,y2),radius=30,fill=(3,12,19),outline=GREEN,width=5)
+        d.rounded_rectangle((66,y1+18,78,y2-18),radius=5,fill=GREEN); _ball(d,145,(y1+y2)//2,34)
+        d.line((744,y1+20,744,y2-20),fill=GREEN,width=3)
+    d.rounded_rectangle((48,795,976,1100),radius=30,fill=(3,12,19),outline=GREEN,width=5)
+    for y in (870,945,1020): d.line((90,y,934,y),fill=(47,75,66),width=2)
+    d.rounded_rectangle((48,1120,490,1305),radius=28,fill=(3,12,19),outline=GREEN,width=4)
+    d.rounded_rectangle((510,1120,976,1305),radius=28,fill=GREEN,outline=(210,255,170),width=4)
+    d.rounded_rectangle((48,1325,976,1495),radius=26,fill=(2,18,23),outline=(25,190,100),width=3)
+    d.line((512,1350,512,1470),fill=(25,190,100),width=3)
+    _center(d,(70,1435,954,1485),"LINKI DO RYNKU ROŻNYCH FT POD GRAFIKĄ",_font(22),(195,235,215))
     return image
 
 
-def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
-                        watermark_id=None, settled=False):
-    """Draw the entire poster from scratch using only the current coupon data."""
-    if len(legs) != 2:
-        raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
-    normalized = []
+def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=0.12,watermark_id=None,settled=False):
+    if len(legs)!=2: raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
+    normalized=[]
     for leg in legs:
-        home, away = str(leg.get("home") or "").strip(), str(leg.get("away") or "").strip()
-        if not home or not away or home.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"} or away.lower() in {"a", "b", "mecz a", "mecz b", "team a", "team b"}:
-            raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
-        line, odds = float(leg.get("line", 0)), float(leg.get("odds", 0))
-        if not settled and not 8.5 <= line <= 9.5:
-            raise ValueError("Blokada publikacji: dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
-        if not settled and not 1.60 <= odds <= 2.20:
-            raise ValueError("Blokada publikacji: kurs poza zakresem 1.60–2.20")
-        start_ts = leg.get("start_ts")
-        if start_ts is None:
-            raise ValueError("Brak godziny rozpoczęcia meczu")
-        kickoff = datetime.fromtimestamp(int(start_ts), timezone.utc).astimezone(LOCAL_TZ)
-        normalized.append((home, away, line, odds, kickoff.strftime("%H:%M")))
-    stake, total_odds, tax_rate = float(stake), float(total_odds), float(tax_rate)
-    if stake <= 0 or total_odds <= 0 or not 0 <= tax_rate < 1:
-        raise ValueError("Nieprawidłowa stawka, kurs łączny lub podatek")
-    if abs(normalized[0][3] * normalized[1][3] - total_odds) > 0.02:
-        raise ValueError("Kurs łączny nie zgadza się z kursami obu meczów")
-
-    image = _fresh_canvas()
-    d = ImageDraw.Draw(image)
-    for (home, away, line, odds, kickoff), (top, bottom) in zip(normalized, ((382, 555), (575, 748))):
-        fixture = f"{home}  –  {away}"
-        _center(d, (190, top+12, 715, top+76), fixture,
-                _fit(d, fixture, 505, 32, 17), DARK)
-        # Highly visible kickoff strip, directly above the OVER selection.
-        d.rounded_rectangle((190, top+77, 715, top+120), radius=12, fill=NAVY2)
-        start_label = f"GODZINA ROZPOCZĘCIA: {kickoff}"
-        _center(d, (198, top+78, 707, top+119), start_label,
-                _fit(d, start_label, 495, 30, 20), WHITE)
-        market = f"OVER {line:.1f} rożnych FT"
-        _center(d, (190, top+121, 715, top+168), market,
-                _fit(d, market, 505, 27, 19), BLUE)
-        _center(d, (750, top+24, 930, top+75), "KURS", _font(24), DARK)
-        _center(d, (750, top+77, 930, top+145), f"{odds:.2f}",
-                _font(54), BLUE)
-
-    tax = round(stake * tax_rate, 2)
-    playable = round(stake-tax, 2)
-    payout = round(playable*total_odds, 2)
-    profit = round(payout-stake, 2)
-    rows = (
-        ("KURS ŁĄCZNY", f"{total_odds:.2f}", BLUE),
-        ("STAWKA", _money(stake), DARK),
-        (f"PODATEK {tax_rate*100:.0f}%", _money(tax), RED),
-        ("KWOTA GRAJĄCA", _money(playable), DARK),
-    )
-    for i, (label, value, color) in enumerate(rows):
-        y = 790 + i*73
-        _center(d, (112, y, 560, y+65), label, _font(29), DARK)
-        _center(d, (580, y, 910, y+65), value, _font(34), color)
-    _center(d, (96, 1125, 464, 1185), "WYPŁATA", _font(34), WHITE)
-    _center(d, (96, 1190, 464, 1278), _money(payout),
-            _fit(d, _money(payout), 340, 47, 27), WHITE)
-    _center(d, (532, 1125, 928, 1185), "ZYSK NETTO", _font(34), DARK)
-    profit_text = ("+" if profit >= 0 else "") + _money(profit)
-    _center(d, (532, 1190, 928, 1278), profit_text,
-            _fit(d, profit_text, 370, 47, 25), DARK)
-    output = BytesIO()
-    image.save(output, format="PNG", optimize=True)
-    output.seek(0)
-    return output
+        home,away=str(leg.get("home") or "").strip(),str(leg.get("away") or "").strip()
+        if not home or not away or home.lower() in {"a","b","mecz a","mecz b","team a","team b"} or away.lower() in {"a","b","mecz a","mecz b","team a","team b"}: raise ValueError("Brak prawdziwej nazwy jednej z drużyn")
+        line,odds=float(leg.get("line",0)),float(leg.get("odds",0))
+        if not settled and not 8.5<=line<=9.5: raise ValueError("Dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
+        if not settled and not 1.60<=odds<=2.20: raise ValueError("Kurs poza zakresem 1.60–2.20")
+        if leg.get("start_ts") is None: raise ValueError("Brak godziny rozpoczęcia meczu")
+        kickoff=datetime.fromtimestamp(int(leg["start_ts"]),timezone.utc).astimezone(LOCAL_TZ)
+        normalized.append((home,away,line,odds,kickoff.strftime("%H:%M")))
+    stake,total_odds,tax_rate=float(stake),float(total_odds),float(tax_rate)
+    if stake<=0 or total_odds<=0 or not 0<=tax_rate<1: raise ValueError("Nieprawidłowa stawka, kurs lub podatek")
+    if abs(normalized[0][3]*normalized[1][3]-total_odds)>0.02: raise ValueError("Kurs łączny nie zgadza się z kursami obu meczów")
+    image=_fresh_canvas(); d=ImageDraw.Draw(image)
+    for (home,away,line,odds,kickoff),(top,bottom) in zip(normalized,((390,570),(590,770))):
+        fixture=f"{home}  –  {away}"
+        _center(d,(180,top+14,725,top+78),fixture,_fit(d,fixture,525,34,17),WHITE)
+        d.rounded_rectangle((180,top+83,725,top+126),radius=12,fill=(13,40,35))
+        label=f"START MECZU: {kickoff}"; _center(d,(190,top+84,715,top+125),label,_fit(d,label,500,27,19),WHITE)
+        market=f"OVER {line:.1f} ROŻNYCH FT"; _center(d,(180,top+132,725,top+174),market,_fit(d,market,525,28,19),GREEN)
+        _center(d,(752,top+20,955,top+70),"KURS",_font(24),WHITE)
+        d.rounded_rectangle((760,top+78,955,top+150),radius=17,fill=GREEN)
+        _center(d,(765,top+80,950,top+148),f"{odds:.2f}",_font(54),(0,0,0))
+    tax=round(stake*tax_rate,2); playable=round(stake-tax,2); payout=round(playable*total_odds,2); profit=round(payout-stake,2)
+    rows=(("KURS ŁĄCZNY",f"{total_odds:.2f}",GREEN),("STAWKA",_money(stake),(255,45,55)),(f"PODATEK {tax_rate*100:.0f}%",_money(tax),(255,95,95)),("KWOTA GRAJĄCA",_money(playable),WHITE))
+    for i,(label,value,color) in enumerate(rows):
+        y=805+i*74; _center(d,(105,y,560,y+65),label,_font(29),WHITE)
+        _center(d,(580,y,920,y+65),value,_fit(d,value,320,39,24),color)
+    _center(d,(72,1135,466,1190),"POTENCJALNA WYPŁATA",_font(28),WHITE)
+    _center(d,(72,1200,466,1280),_money(payout),_fit(d,_money(payout),360,45,25),(255,220,40))
+    _center(d,(530,1135,956,1190),"POTENCJALNY ZYSK",_font(28),(0,0,0))
+    profit_text=("+" if profit>=0 else "")+_money(profit)
+    _center(d,(530,1200,956,1280),profit_text,_fit(d,profit_text,390,45,25),(0,0,0))
+    if settled:
+        d.rounded_rectangle((300,20,724,72),radius=18,fill=RED)
+        _center(d,(310,22,714,70),"KUPON ROZLICZONY",_font(27),WHITE)
+    output=BytesIO(); image.save(output,format="PNG",optimize=True); output.seek(0); return output
