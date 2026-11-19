@@ -737,11 +737,11 @@ def settle_doubles(c, now):
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
     now_ts = int(now.timestamp())
     for event_id, coupon_id, league, home, away, start_ts, line, odds in pending:
-        if now_ts < int(start_ts) + 2 * 60 * 60:
+        if now_ts < int(start_ts) + 100 * 60:
             continue
-        # Rozliczaj od ok. 2h po rozpoczęciu (90 min + przerwa/doliczony czas + krótki bufor).
-        # Harmonogram uruchamia kontrolę co 15 minut, więc typ zwykle zamknie się
-        # kilka-kilkanaście minut po końcu meczu, zamiast czekać dodatkową godzinę.
+        # Po ok. 100 minutach od rozpoczęcia odpytuj źródła przy każdej iteracji.
+        # Wynik zostanie zapisany natychmiast, gdy dostawca opublikuje końcową
+        # liczbę rożnych; nie czekamy dodatkowych 2–3 godzin.
         # Najpierw respektuj wynik przekazany przez użytkownika dla tych konkretnych
         # czterech spotkań. Nie dopisujemy fikcyjnej liczby rzutów rożnych.
         result = manual_user_confirmed_ft_result(home, away, start_ts)
