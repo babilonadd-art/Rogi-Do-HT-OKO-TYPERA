@@ -800,8 +800,12 @@ def retry_settled_notifications(c):
         ]
         flags = c.execute("""SELECT settlement_reply_sent,settlement_graphic_sent
             FROM ft_doubles WHERE coupon_id=?""", (coupon_id,)).fetchone()
+        # Rozliczenie publikujemy wyłącznie jako grafikę — bez tekstowej odpowiedzi
+        # (podpisu) pod oryginalnym typem. Oznaczamy pole reply jako pominięte,
+        # aby kolejka nie próbowała wysyłać podpisu przy każdym kolejnym skanie.
         if flags and not flags[0]:
-            send_coupon_reply(c, coupon_id, message)
+            c.execute("UPDATE ft_doubles SET settlement_reply_sent=1 WHERE coupon_id=?", (coupon_id,))
+            c.commit()
         if flags and not flags[1]:
             send_settled_coupon_graphic(c, settled_legs, float(total_odds), coupon_id)
 
@@ -890,8 +894,8 @@ def settle_doubles(c, now):
             {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
-        # Powiadomienia są ponawiane z trwałej kolejki w kolejnych uruchomieniach.
-        # Nie blokują zapisu rozliczenia, jeśli Telegram chwilowo nie odpowiada.
+        # Rozliczenie wysyłamy wyłącznie jako grafikę; bez tekstowego podpisu pod typem.
+        # Kolejka ponawia wysyłkę grafiki, jeśli Telegram chwilowo nie odpowiada.
 
     retry_settled_notifications(c)
 
