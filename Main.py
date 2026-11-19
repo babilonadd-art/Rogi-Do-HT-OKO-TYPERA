@@ -2523,6 +2523,10 @@ def settle_ft_corner_picks(c):
         total=cornerflick_ft_corner_total(league,home,away,start_ts)
         source="Cornerflick"
         if total is None:
+            total=sofascore_ft_corner_total(league,home,away,start_ts)
+            if total is not None:
+                source="SofaScore (globalny terminarz)"
+        if total is None:
             total=matchday_ft_corner_total(league,home,away,start_ts)
             if total is not None:
                 source="Open Matchday (awaryjnie)"
