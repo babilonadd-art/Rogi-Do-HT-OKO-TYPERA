@@ -669,6 +669,75 @@ def replace_today_pending_graphics(c, now):
             logging.exception("Nie udało się podmienić grafiki dubla %s", coupon_id)
     logging.info("Podmienione istniejące grafiki: %s/%s", replaced, len(rows))
 
+def clear_today_history_and_scan(c, now):
+    """Delete today's FT coupon posts, erase today's FT history and publish a fresh daily batch."""
+    day = now.date().isoformat()
+    coupon_ids = [row[0] for row in c.execute(
+        "SELECT coupon_id FROM ft_doubles WHERE day=?", (day,)
+    ).fetchall()]
+
+    # Collect both original coupon posts and any tracked reposts before deleting DB rows.
+    message_ids = set()
+    for coupon_id in coupon_ids:
+        proof = c.execute(
+            "SELECT telegram_message_id FROM ft_publication_proofs WHERE coupon_id=?",
+            (coupon_id,),
+        ).fetchone()
+        if proof and proof[0]:
+            message_ids.add(int(proof[0]))
+        repost = c.execute(
+            "SELECT message_id FROM ft_double_reposts WHERE coupon_id=?",
+            (coupon_id,),
+        ).fetchone()
+        if repost and repost[0]:
+            message_ids.add(int(repost[0]))
+
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    deleted = 0
+    for message_id in sorted(message_ids):
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/deleteMessage",
+            data={"chat_id": chat_id, "message_id": message_id},
+            timeout=20,
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        if response.ok and payload.get("ok"):
+            deleted += 1
+            continue
+        description = str(payload.get("description") or response.text or "")
+        # A post already manually removed is fine; other errors abort before DB history is erased.
+        if payload.get("error_code") == 400 and "message to delete not found" in description.lower():
+            logging.info("Post Telegram %s już nie istnieje — pomijam.", message_id)
+            continue
+        raise RuntimeError(
+            f"Nie udało się usunąć posta Telegram message_id={message_id}: "
+            f"HTTP {response.status_code} {description[:500]}"
+        )
+
+    # Remove today's FT records only. BTTS and all other dates are untouched.
+    c.execute("DELETE FROM ft_double_legs WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE day=?)", (day,))
+    c.execute("DELETE FROM ft_double_reposts WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE day=?)", (day,))
+    c.execute("DELETE FROM ft_publication_proofs WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE day=?)", (day,))
+    c.execute("DELETE FROM ft_doubles WHERE day=?", (day,))
+    c.execute("DELETE FROM ft_double_daily_reports WHERE day=?", (day,))
+    c.execute(
+        "INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?) "
+        "ON CONFLICT(day) DO UPDATE SET reset_at=excluded.reset_at",
+        (day, now.isoformat()),
+    )
+    c.commit()
+    logging.info(
+        "WYCZYSZCZONO ROGI FT za %s: usunięte posty Telegram=%s, rekordy kuponów=%s. "
+        "Historia innych dni i BTTS pozostaje bez zmian.",
+        day, deleted, len(coupon_ids),
+    )
+    send_new_doubles(c, now)
+
+
 def reset_today_pending_and_scan(c, now):
     """Remove today's unsettled coupons only, then build fresh picks."""
     day = now.date().isoformat()
@@ -984,6 +1053,8 @@ def main():
             reset_daily_quota(c, now)
         elif mode == "reset-today-and-scan":
             reset_today_pending_and_scan(c, now)
+        elif mode == "clear-today-and-scan":
+            clear_today_history_and_scan(c, now)
         elif mode == "dry-run":
             used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
             candidates = [x for x in fetch_candidates(now) if x["event_id"] not in used]
