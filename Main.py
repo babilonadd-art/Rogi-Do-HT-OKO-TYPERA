@@ -1956,6 +1956,9 @@ CORNERFLICK_COMPETITIONS={
 }
 _cornerflick_season_cache={}
 _cornerflick_match_cache={}
+_sofascore_events_cache={}
+_sofascore_stats_cache={}
+SOFASCORE_BASE="https://www.sofascore.com/api/v1"
 
 def cornerflick_competition_slug(league):
     key=normalized_team(league)
@@ -2370,6 +2373,111 @@ def cornerflick_ft_corner_total(league,home,away,start_ts):
         corners=cornerflick_match_corners(payload)
         return sum(corners) if corners is not None else None
     return None
+
+def sofascore_get_json(path):
+    """Publiczny fallback SofaScore: globalny terminarz + statystyki konkretnego meczu."""
+    url=SOFASCORE_BASE+path
+    try:
+        response=requests.get(url,headers={
+            "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+            "Accept":"application/json, text/plain, */*",
+            "Referer":"https://www.sofascore.com/",
+        },timeout=18)
+        response.raise_for_status()
+        payload=response.json()
+        return payload if isinstance(payload,dict) else None
+    except Exception as exc:
+        logging.info("SofaScore: niedostępne %s: %s",path,exc)
+        return None
+
+
+def sofascore_daily_events(day):
+    if day not in _sofascore_events_cache:
+        payload=sofascore_get_json(f"/sport/football/scheduled-events/{day}")
+        events=payload.get("events") if isinstance(payload,dict) else None
+        _sofascore_events_cache[day]=events if isinstance(events,list) else []
+        logging.info("SofaScore: globalny terminarz %s — %s meczów",day,len(_sofascore_events_cache[day]))
+    return _sofascore_events_cache[day]
+
+
+def sofascore_extract_corner_counts(payload):
+    """Return full-time home/away corner counts only; never infer missing values."""
+    if not isinstance(payload,dict):
+        return None
+    root=payload.get("statistics") if isinstance(payload.get("statistics"),dict) else payload
+    periods=root.get("periods") if isinstance(root,dict) else None
+    if isinstance(periods,list):
+        all_period=next((p for p in periods if str(p.get("period") or p.get("periodName") or "").upper() in ("ALL","ALL_PERIODS","FULL_TIME")),None)
+        if all_period is None:
+            return None
+        groups=all_period.get("groups") or []
+    else:
+        groups=root.get("groups") if isinstance(root,dict) else None
+        if not isinstance(groups,list):
+            groups=[]
+    for group in groups:
+        for stat in group.get("statistics") or []:
+            label=str(stat.get("name") or stat.get("key") or stat.get("title") or "").casefold()
+            if "corner" not in label and "roż" not in label:
+                continue
+            if any(term in label for term in ("first half","1st half","second half","2nd half","1 poł","2 poł")):
+                continue
+            try:
+                home=float(str(stat.get("home")).replace(",","." ))
+                away=float(str(stat.get("away")).replace(",","." ))
+                if home < 0 or away < 0 or not home.is_integer() or not away.is_integer():
+                    continue
+                return int(home),int(away)
+            except (TypeError,ValueError):
+                continue
+    return None
+
+
+def sofascore_ft_corner_total(league,home,away,start_ts):
+    """Search the worldwide daily football schedule and verify the exact finished match."""
+    day=datetime.fromtimestamp(int(start_ts),timezone.utc).date().isoformat()
+    target_ts=int(start_ts)
+    candidates=[]
+    for event in sofascore_daily_events(day):
+        if not isinstance(event,dict):
+            continue
+        status=event.get("status") or {}
+        if str(status.get("type") or "").casefold() not in ("finished","ended"):
+            continue
+        try:
+            event_ts=int(event.get("startTimestamp"))
+            event_id=int(event.get("id"))
+        except (TypeError,ValueError):
+            continue
+        if abs(event_ts-target_ts)>3*60*60:
+            continue
+        ht=str((event.get("homeTeam") or {}).get("name") or "")
+        at=str((event.get("awayTeam") or {}).get("name") or "")
+        direct=(team_similarity(home,ht),team_similarity(away,at))
+        reverse=(team_similarity(home,at),team_similarity(away,ht))
+        pair=max((direct,reverse),key=lambda x:x[0]+x[1])
+        if pair[0]<0.68 or pair[1]<0.68:
+            continue
+        candidates.append((pair[0]+pair[1],event_id,ht,at))
+    candidates.sort(reverse=True)
+    if not candidates:
+        logging.info("SofaScore: nie znaleziono zakończonego meczu %s - %s",home,away)
+        return None
+    if len(candidates)>1 and candidates[0][0]-candidates[1][0]<0.04:
+        logging.warning("SofaScore: niejednoznaczne dopasowanie %s - %s; pomijam",home,away)
+        return None
+    _,event_id,matched_home,matched_away=candidates[0]
+    if event_id not in _sofascore_stats_cache:
+        payload=sofascore_get_json(f"/event/{event_id}/statistics")
+        _sofascore_stats_cache[event_id]=sofascore_extract_corner_counts(payload)
+    counts=_sofascore_stats_cache[event_id]
+    if counts is None:
+        logging.info("SofaScore: brak pełnych statystyk rożnych dla %s - %s",matched_home,matched_away)
+        return None
+    total=sum(counts)
+    logging.info("SofaScore: potwierdzono %s - %s — %s rożnych FT",matched_home,matched_away,total)
+    return total
+
 
 def matchday_ft_corner_total(league,home,away,start_ts):
     """Return a confirmed FT corner total from Open Matchday, or None when absent."""
