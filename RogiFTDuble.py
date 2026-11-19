@@ -930,6 +930,42 @@ def settle_doubles(c, now):
             c.commit()
 
 
+def send_overall_report(c, now):
+    """Send a cumulative summary of all FT doubles and their yield."""
+    total, wins, losses, pending, profit, settled_stake = c.execute(
+        """SELECT COUNT(*),
+                  SUM(CASE WHEN status='WON' THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN status='LOST' THEN 1 ELSE 0 END),
+                  SUM(CASE WHEN status='PENDING' THEN 1 ELSE 0 END),
+                  COALESCE(SUM(CASE WHEN status IN ('WON','LOST') THEN profit ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN status IN ('WON','LOST') THEN stake ELSE 0 END),0)
+           FROM ft_doubles"""
+    ).fetchone()
+    legs = c.execute("SELECT COUNT(*) FROM ft_double_legs").fetchone()[0]
+    wins, losses, pending = int(wins or 0), int(losses or 0), int(pending or 0)
+    settled = wins + losses
+    profit = round(float(profit or 0), 2)
+    settled_stake = float(settled_stake or 0)
+    yield_pct = (profit / settled_stake * 100.0) if settled_stake else 0.0
+    report = (
+        "📊 PODSUMOWANIE ŁĄCZNE — ROGI FT\n"
+        f"🎟️ Wszystkie duble: {int(total or 0)}\n"
+        f"⚽ Łącznie typów meczowych: {int(legs or 0)}\n"
+        f"🟢 Wygrane duble: {wins}\n"
+        f"🔴 Przegrane duble: {losses}\n"
+        f"⏳ Oczekujące duble: {pending}\n"
+        f"📈 Rozliczone duble: {settled}\n"
+        f"💰 Stawka za dubel: {STAKE:.2f} zł\n"
+        f"🏦 ZYSK / STRATA: {profit:+.2f} zł\n"
+        f"📐 YIELD: {yield_pct:+.2f}%"
+    )
+    if send(report):
+        logging.info("Wysłano łączne podsumowanie FT: duble=%s, W=%s, L=%s, pending=%s, profit=%+.2f zł, yield=%+.2f%%",
+                     int(total or 0), wins, losses, pending, profit, yield_pct)
+        return True
+    logging.error("Nie udało się wysłać łącznego podsumowania FT")
+    return False
+
 def main():
     if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
         raise RuntimeError("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID w GitHub Secrets")
@@ -937,7 +973,10 @@ def main():
     try:
         now = datetime.now(TZ)
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
-        if mode == "repost-pending":
+        if mode == "summary":
+            settle_doubles(c, now)
+            send_overall_report(c, now)
+        elif mode == "repost-pending":
             repost_pending_doubles(c, now)
         elif mode == "replace-graphics":
             replace_today_pending_graphics(c, now)
