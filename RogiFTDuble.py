@@ -751,11 +751,21 @@ def settle_doubles(c, now):
         total = None
         result_source = "potwierdzenie użytkownika"
         if result is None:
+            # Szukamy w kilku niezależnych źródłach: baza ligowa, globalny
+            # terminarz/statystyki SofaScore, a na końcu otwarte CSV Open Matchday.
             total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
+            result_source = "Cornerflick"
+            if total is None:
+                total = source.sofascore_ft_corner_total(league, home, away, start_ts)
+                if total is not None:
+                    result_source = "SofaScore (globalny terminarz)"
             if total is None:
                 total = source.matchday_ft_corner_total(league, home, away, start_ts)
+                if total is not None:
+                    result_source = "Open Matchday"
             if total is None:
-                logging.info("Brak potwierdzonego wyniku rożnych FT: %s - %s", home, away)
+                logging.info("Brak potwierdzonego wyniku rożnych FT we wszystkich źródłach: %s - %s (%s)",
+                             home, away, league)
                 continue
             result = "WON" if int(total) > float(line) else "LOST"
             result_source = "źródło statystyczne"
