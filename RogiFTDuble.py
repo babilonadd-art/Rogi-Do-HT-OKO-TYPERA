@@ -1036,6 +1036,24 @@ def send_overall_report(c, now):
     logging.error("Nie udało się wysłać łącznego podsumowania FT")
     return False
 
+
+def clear_all_history(c):
+    """Permanently clear all stored FT-double history while retaining the DB schema."""
+    tables = (
+        "ft_double_legs",
+        "ft_double_reposts",
+        "ft_publication_proofs",
+        "ft_double_daily_reports",
+        "ft_daily_quota_resets",
+        "ft_doubles",
+    )
+    c.execute("PRAGMA foreign_keys=OFF")
+    for table in tables:
+        c.execute(f"DELETE FROM {table}")
+    c.commit()
+    logging.info("USUNIĘTO CAŁĄ ZAPISANĄ HISTORIĘ ROGÓW FT: typy, nogi, dowody publikacji, rozliczenia, raporty i limity. Baza gotowa od zera.")
+
+
 def main():
     if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
         raise RuntimeError("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID w GitHub Secrets")
@@ -1043,7 +1061,9 @@ def main():
     try:
         now = datetime.now(TZ)
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
-        if mode == "summary":
+        if mode == "clear-history":
+            clear_all_history(c)
+        elif mode == "summary":
             settle_doubles(c, now)
             send_overall_report(c, now)
         elif mode == "repost-pending":
