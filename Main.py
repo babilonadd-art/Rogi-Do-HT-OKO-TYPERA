@@ -1992,7 +1992,7 @@ def cornerflick_match_data(dataset_url):
     return _cornerflick_match_cache[dataset_url]
 
 def cornerflick_match_corners(payload):
-    """Read Cornerflick's published corner counts across its documented JSON shapes."""
+    """Read Cornerflick's published corner counts across its documented JSON shapes. [settle-ft]"""
     if not isinstance(payload,dict):
         return None
 
