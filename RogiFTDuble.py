@@ -405,7 +405,7 @@ def daily_quota_count(c, day):
 
 
 def reset_daily_quota(c, now):
-    """Unlock a fresh daily batch without deleting or modifying any old picks."""
+    """Unlock a fresh daily batch without deleting or modifying any old picks. Trigger: [reset-limit-ft]."""
     day = now.date().isoformat()
     c.execute(
         "INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?) "
