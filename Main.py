@@ -2358,8 +2358,11 @@ def cornerflick_ft_corner_total(league,home,away,start_ts):
             continue
         rh=str(match.get("home_team") or "")
         ra=str(match.get("away_team") or "")
-        if max(team_similarity(home,rh)+team_similarity(away,ra),
-               team_similarity(home,ra)+team_similarity(away,rh))<1.68:
+        # Nazwy w Superbet są często po polsku, a Cornerflick publikuje
+        # nazwy angielskie (np. Kuwejt/Kuwait, Urugwaj/Uruguay).
+        direct = team_similarity(home,rh) + team_similarity(away,ra)
+        reverse = team_similarity(home,ra) + team_similarity(away,rh)
+        if max(direct, reverse) < 1.42:
             continue
         if str(match.get("status") or "").lower() not in {"finished","ft","complete","completed"}:
             return None
