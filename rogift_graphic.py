@@ -64,10 +64,12 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
     for i,(home,away,league,line,odds,kickoff) in enumerate(rows):
         y=397+i*128
         d.rounded_rectangle((178,y,800,y+120),radius=18,fill=DARK)
-        fixture=f"{home} – {away}"
-        center(d,(188,y+7,550,y+48),fixture,fit(d,fixture,350,29,15),WHITE)
+        # Give each team its own full-width line. This keeps the original
+        # poster and panel positions while making club names substantially larger.
+        center(d,(188,y+3,550,y+40),home,fit(d,home,350,32,19),WHITE)
+        center(d,(188,y+37,550,y+74),away,fit(d,away,350,32,19),WHITE)
         league_time=f"{league}  •  {kickoff}"
-        center(d,(188,y+48,550,y+82),league_time,fit(d,league_time,350,20,11),WHITE)
+        center(d,(188,y+78,550,y+113),league_time,fit(d,league_time,350,17,10),WHITE)
         center(d,(555,y+15,790,y+58),f"OVER {line:.1f}",font(28),GREEN)
         center(d,(555,y+57,790,y+95),"ROGÓW FT",font(22),WHITE)
         d.rounded_rectangle((810,y+24,990,y+98),radius=18,fill=GREEN)
