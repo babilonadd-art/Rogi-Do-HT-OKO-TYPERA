@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont
 
+W, H = 1024, 1024
 TZ=ZoneInfo("Europe/Warsaw")
 TEMPLATE=Path(__file__).resolve().parent/"Screenshot_20261117-110724.png"
 WHITE=(255,255,255); GREEN=(143,255,0); RED=(255,45,55); DARK=(3,12,17)
@@ -30,13 +31,25 @@ def money(v): return f"{float(v):.2f}".replace(".",",")+" zł"
 def original_artwork():
     if not TEMPLATE.is_file(): raise FileNotFoundError(f"Brak oryginalnej grafiki: {TEMPLATE}")
     im=Image.open(TEMPLATE).convert("RGB")
-    # The saved source is a phone screenshot; isolate its square poster.
-    if im.height>im.width*1.15:
-        side=im.width; top=max(0,min(im.height-side,int(im.height*.456-side/2)))
-        im=im.crop((0,top,side,top+side))
-    elif im.width>im.height*1.15:
-        side=im.height; left=(im.width-side)//2; im=im.crop((left,0,left+side,side))
-    return im.resize((1024,1024),Image.Resampling.LANCZOS)
+    # The repository asset is a phone screenshot with the original square
+    # poster centred in the conversation viewer. Crop the poster itself,
+    # excluding browser chrome and the blurred viewer background.
+    if im.height > im.width * 1.15:
+        iw, ih = im.size
+        if abs(iw / ih - 0.45) < 0.08:
+            box = (round(iw * 0.176), round(ih * 0.321),
+                   round(iw * 0.824), round(ih * 0.613))
+            im = im.crop(box)
+        else:
+            side = min(iw, ih)
+            left = (iw - side) // 2
+            top = (ih - side) // 2
+            im = im.crop((left, top, left + side, top + side))
+    elif im.width > im.height * 1.15:
+        side = im.height
+        left = (im.width - side) // 2
+        im = im.crop((left, 0, left + side, side))
+    return im.resize((W, H), Image.Resampling.LANCZOS)
 
 def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark_id=None,settled=False):
     if len(legs)!=2: raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
@@ -45,7 +58,7 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
         home=str(leg.get("home") or "").strip(); away=str(leg.get("away") or "").strip()
         league=str(leg.get("league") or "").strip()
         if not home or not away or not league or home.lower() in {"a","b","mecz a","mecz b","team a","team b"} or away.lower() in {"a","b","mecz a","mecz b","team a","team b"}:
-            raise ValueError("Brak prawdziwych nazw drużyn lub ligi")
+            raise ValueError("Brak prawdziwej nazwy drużyny lub ligi")
         line=float(leg.get("line",0)); odds=float(leg.get("odds",0))
         if not settled and not 8.5<=line<=9.5: raise ValueError("Dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
         if not settled and not 1.60<=odds<=2.20: raise ValueError("Kurs poza zakresem 1.60–2.20")
