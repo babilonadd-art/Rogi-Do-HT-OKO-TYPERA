@@ -24,14 +24,15 @@ jobs:
           from pathlib import Path
           from rogift_graphic import render_coupon_image
           legs = [
-              {"home": "America de Cali", "away": "Internacional de Bogota", "league": "Colombia Cup", "line": 9.5, "odds": 1.77},
-              {"home": "Meksyk", "away": "Jamajka", "league": "International", "line": 9.5, "odds": 1.90},
+              {"home": "America de Cali", "away": "Internacional de Bogota", "league": "Colombia Cup", "start_ts": 1795284000, "line": 9.5, "odds": 1.77},
+              {"home": "Meksyk", "away": "Jamajka", "league": "International", "start_ts": 1795291200, "line": 9.5, "odds": 1.90},
           ]
-          for filename, settled in [
-              ("preview-rogi-ft.png", False),
-              ("preview-rogi-ft-settled.png", True),
+          for filename, settled, night in [
+              ("preview-rogi-ft.png", False, False),
+              ("preview-rogi-ft-settled.png", True, False),
+              ("preview-rogi-ft-night.png", False, True),
           ]:
-              image = render_coupon_image(legs, 3.363, 50.0, settled=settled)
+              image = render_coupon_image(legs, 3.363, 50.0, settled=settled, night=night)
               Path(filename).write_bytes(image.getvalue())
           PY
       - uses: actions/upload-artifact@v4
@@ -40,4 +41,5 @@ jobs:
           path: |
             preview-rogi-ft.png
             preview-rogi-ft-settled.png
+            preview-rogi-ft-night.png
           if-no-files-found: error
