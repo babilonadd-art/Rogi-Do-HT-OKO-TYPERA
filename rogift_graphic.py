@@ -74,13 +74,7 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
         center(d,(555,y+57,790,y+95),"ROGÓW FT",font(22),WHITE)
         d.rounded_rectangle((810,y+24,990,y+98),radius=18,fill=GREEN)
         center(d,(814,y+25,986,y+97),f"{odds:.2f}",fit(d,f"{odds:.2f}",160,58,34),(0,0,0))
-    # Keep only the stake and combined odds. Explicitly cover the original
-    # payout/profit areas so no stale template values or calculated winnings
-    # remain visible on the poster.
-    for box in ((245,690,410,795),(610,690,770,795),(790,690,1010,760),(690,760,1010,825)):
-        d.rounded_rectangle(box,radius=12,fill=DARK)
-    stake_text=money(stake)
-    center(d,(245,690,410,795),stake_text,fit(d,stake_text,155,42,24),RED)
-    odds_text=f"{total_odds:.2f}"
-    center(d,(610,690,770,795),odds_text,fit(d,odds_text,150,52,28),GREEN)
+    # Leave the entire original stake/odds/payout panel untouched.
+    # The user's original poster artwork must remain visible there; do not
+    # paint over it or add a red stake, payout, or profit overlay.
     out=BytesIO(); im.save(out,format="PNG",optimize=True); out.seek(0); return out
