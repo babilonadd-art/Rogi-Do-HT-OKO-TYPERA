@@ -21,6 +21,8 @@ STAKE = 50.0
 MIN_LEG_ODDS = 1.60
 MAX_LEG_ODDS = 2.20
 MAX_DOUBLES_PER_DAY = 2
+NIGHT_START_HOUR = 22
+NIGHT_END_HOUR = 8
 GRAPHIC_VERSION = "oko-typera-original-poster-real-fixtures-v12"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
@@ -47,7 +49,8 @@ def db_open():
     c.execute("""CREATE TABLE IF NOT EXISTS ft_doubles(
         coupon_id TEXT PRIMARY KEY, day TEXT NOT NULL, sent_at TEXT NOT NULL,
         total_odds REAL NOT NULL, stake REAL NOT NULL,
-        status TEXT NOT NULL DEFAULT 'PENDING', settled_at TEXT, profit REAL)""")
+        status TEXT NOT NULL DEFAULT 'PENDING', settled_at TEXT, profit REAL,
+        bucket TEXT NOT NULL DEFAULT 'day', quota_day TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS ft_double_legs(
         event_id INTEGER PRIMARY KEY, coupon_id TEXT NOT NULL, league TEXT NOT NULL,
         home TEXT NOT NULL, away TEXT NOT NULL, start_ts INTEGER NOT NULL,
@@ -59,6 +62,11 @@ def db_open():
         coupon_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, message_id INTEGER,
         FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
     double_columns = {row[1] for row in c.execute("PRAGMA table_info(ft_doubles)")}
+    if "bucket" not in double_columns:
+        c.execute("ALTER TABLE ft_doubles ADD COLUMN bucket TEXT NOT NULL DEFAULT 'day'")
+    if "quota_day" not in double_columns:
+        c.execute("ALTER TABLE ft_doubles ADD COLUMN quota_day TEXT")
+    c.execute("UPDATE ft_doubles SET quota_day=day WHERE quota_day IS NULL OR quota_day=''")
     if "settlement_reply_sent" not in double_columns:
         c.execute("ALTER TABLE ft_doubles ADD COLUMN settlement_reply_sent INTEGER NOT NULL DEFAULT 0")
     if "settlement_graphic_sent" not in double_columns:
@@ -151,7 +159,7 @@ def telegram_message_link(token, chat_id, message_id):
     return None
 
 
-def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None, existing_message_id=None):
+def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=None, existing_message_id=None, night=False):
     """Send the original PNG with event-specific Superbet corner-market buttons."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -176,7 +184,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
 
     graphic = render_coupon_image(
         legs, total_odds, STAKE, coupon_no=coupon_no,
-        watermark_id=publication_code(coupon_id),
+        watermark_id=publication_code(coupon_id), night=night,
     )
     try:
         if existing_message_id:
@@ -398,24 +406,38 @@ def fetch_candidates(now):
     return candidates
 
 
-def daily_quota_count(c, day):
-    """Count only coupons published after the latest explicit quota reset."""
-    reset = c.execute(
-        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (day,)
-    ).fetchone()
-    if reset:
-        return int(c.execute(
-            "SELECT COUNT(*) FROM ft_doubles WHERE day=? AND sent_at>?",
-            (day, reset[0]),
-        ).fetchone()[0])
+def night_session_day(now):
+    """Night session is named by the date on which its 22:00 start occurs."""
+    local = now.astimezone(TZ)
+    return (local.date() - timedelta(days=1) if local.hour < NIGHT_END_HOUR else local.date()).isoformat()
+
+
+def fixture_bucket(start_ts):
+    """Classify fixtures by Warsaw kickoff: night 22:00–07:59, day 08:00–21:59."""
+    kickoff = datetime.fromtimestamp(int(start_ts), timezone.utc).astimezone(TZ)
+    if kickoff.hour >= NIGHT_START_HOUR or kickoff.hour < NIGHT_END_HOUR:
+        quota_day = kickoff.date() - timedelta(days=1) if kickoff.hour < NIGHT_END_HOUR else kickoff.date()
+        return "night", quota_day.isoformat()
+    return "day", kickoff.date().isoformat()
+
+
+def daily_quota_count(c, day, bucket="day"):
+    """Count only the selected independent daytime/nighttime pool."""
+    if bucket == "day":
+        reset = c.execute("SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (day,)).fetchone()
+        if reset:
+            return int(c.execute(
+                "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=? AND sent_at>?",
+                (bucket, day, reset[0]),
+            ).fetchone()[0])
     return int(c.execute(
-        "SELECT COUNT(*) FROM ft_doubles WHERE day=?", (day,)
+        "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=?",
+        (bucket, day),
     ).fetchone()[0])
 
 
 def reset_daily_quota(c, now):
-    """Unlock a fresh daily batch without deleting or modifying any old picks. Trigger: [reset-limit-ft]."""
-    # Manual reset requested again by user on 2026-11-19 (second reset).
+    """Unlock a fresh daytime batch without deleting old picks."""
     day = now.date().isoformat()
     c.execute(
         "INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?) "
@@ -423,84 +445,70 @@ def reset_daily_quota(c, now):
         (day, now.isoformat()),
     )
     c.commit()
-    logging.info("Reset limitu %s: historia i nierozliczone duble zachowane.", day)
+    logging.info("Reset dziennego limitu %s: historia i nocna pula zachowane.", day)
     send_new_doubles(c, now)
 
 
 def send_new_doubles(c, now):
-    day = now.date().isoformat()
-    sent_today = c.execute(
-        "SELECT COUNT(*) FROM ft_doubles WHERE day=?", (day,)
-    ).fetchone()[0]
-    quota_count = daily_quota_count(c, day)
-    remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
+    today = now.date().isoformat()
+    active_night_day = night_session_day(now)
     history = c.execute(
-        "SELECT coupon_id,sent_at,total_odds,status FROM ft_doubles WHERE day=? ORDER BY sent_at",
-        (day,),
+        "SELECT coupon_id,sent_at,total_odds,status,bucket,quota_day FROM ft_doubles ORDER BY sent_at"
     ).fetchall()
-    for coupon_id, sent_at, total_odds, status in history:
+    for coupon_id, sent_at, total_odds, status, bucket, quota_day in history:
         legs = c.execute(
             "SELECT home,away,line,odds FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts",
             (coupon_id,),
         ).fetchall()
-        logging.info("Historia dubla %s | %s | kurs %.3f | %s | zdarzenia=%s",
-                     coupon_id, sent_at, total_odds, status, legs)
-    if remaining == 0:
-        logging.info("Limit nowej puli dubli osiągnięty: %s/%s (łącznie w historii dziś: %s)", quota_count, MAX_DOUBLES_PER_DAY, sent_today)
-        return
+        logging.info("Historia %s dubla %s | %s | kurs %.3f | %s | zdarzenia=%s",
+                     bucket.upper(), coupon_id, sent_at, total_odds, status, legs)
 
-    already_used = {int(row[0]) for row in c.execute(
-        "SELECT event_id FROM ft_double_legs"
-    ).fetchall()}
+    already_used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
     candidates = [x for x in fetch_candidates(now) if x["event_id"] not in already_used]
-    made = 0
-    while remaining and len(candidates) >= LEGS_PER_DOUBLE:
-        pair = candidates[:LEGS_PER_DOUBLE]
-        candidates = candidates[LEGS_PER_DOUBLE:]
-        total_odds = round(pair[0]["odds"] * pair[1]["odds"], 3)
-        coupon_id = f"{day}-{int(now.timestamp())}-{made + 1}"
-        lines = []
-        for index, item in enumerate(pair, 1):
-            kickoff = datetime.fromtimestamp(item["start_ts"], timezone.utc).astimezone(TZ)
-            lines.append(
-                f"{index}. {item['league']}\n"
-                f"⚽ {item['home']} – {item['away']}\n"
-                f"🎯 OVER {item['line']:.1f} rożnych FT\n"
-                f"💹 Kurs: {item['odds']:.2f} | 🕒 {kickoff:%d.%m %H:%M}"
-            )
-        message = (
-            "🚩 ROGI FT — DUBEL\n"
-            f"📅 {now:%d.%m.%Y} | DUBEL {int(sent_today) + made + 1}/{MAX_DOUBLES_PER_DAY}\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            + "\n\n".join(lines)
-            + "\n━━━━━━━━━━━━━━━━━━\n"
-            f"💹 KURS ŁĄCZNY: {total_odds:.2f}\n"
-            f"💰 STAWKA: {STAKE:.2f} zł\n"
-            f"🏦 Potencjalna wygrana: {STAKE * total_odds:.2f} zł\n"
-            "ℹ️ Wyłącznie rożne FT — cały mecz"
-        )
-        coupon_no = int(sent_today) + made + 1
-        proof = send_coupon_graphic(pair, total_odds, coupon_no, coupon_id)
-        if not proof:
-            logging.error("Telegram nie potwierdził wysłania podpisanej grafiki dubla %s", coupon_id)
-            break
-        message_id = proof["message_id"]
-        c.execute(
-            "INSERT INTO ft_doubles(coupon_id,day,sent_at,total_odds,stake) VALUES(?,?,?,?,?)",
-            (coupon_id, day, now.isoformat(), total_odds, STAKE),
-        )
-        for item in pair:
-            c.execute("""INSERT INTO ft_double_legs
-                (event_id,coupon_id,league,home,away,start_ts,line,odds)
-                VALUES(?,?,?,?,?,?,?,?)""",
-                (item["event_id"], coupon_id, item["league"], item["home"], item["away"],
-                 item["start_ts"], item["line"], item["odds"]))
-        save_publication_proof(c, coupon_id, proof)
-        c.commit()
-        made += 1
-        remaining -= 1
-    logging.info("Nowe duble dziś: %s; maksymalny limit: %s", made, MAX_DOUBLES_PER_DAY)
+    candidate_groups = {"day": [], "night": []}
+    for item in candidates:
+        bucket, quota_day = fixture_bucket(item["start_ts"])
+        expected_day = today if bucket == "day" else active_night_day
+        if quota_day == expected_day:
+            candidate_groups[bucket].append(item)
 
+    total_made = 0
+    for bucket, quota_day in (("day", today), ("night", active_night_day)):
+        quota_count = daily_quota_count(c, quota_day, bucket)
+        remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
+        group = candidate_groups[bucket]
+        logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
+                     bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
+        made = 0
+        while remaining and len(group) >= LEGS_PER_DOUBLE:
+            pair = group[:LEGS_PER_DOUBLE]
+            group = group[LEGS_PER_DOUBLE:]
+            total_odds = round(pair[0]["odds"] * pair[1]["odds"], 3)
+            coupon_id = f"{quota_day}-{bucket}-{int(now.timestamp())}-{made + 1}"
+            proof = send_coupon_graphic(
+                pair, total_odds, quota_count + made + 1, coupon_id,
+                night=(bucket == "night"),
+            )
+            if not proof:
+                logging.error("Telegram nie potwierdził wysłania grafiki %s dubla %s", bucket.upper(), coupon_id)
+                break
+            c.execute(
+                "INSERT INTO ft_doubles(coupon_id,day,sent_at,total_odds,stake,bucket,quota_day) VALUES(?,?,?,?,?,?,?)",
+                (coupon_id, quota_day, now.isoformat(), total_odds, STAKE, bucket, quota_day),
+            )
+            for item in pair:
+                c.execute("""INSERT INTO ft_double_legs
+                    (event_id,coupon_id,league,home,away,start_ts,line,odds)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (item["event_id"], coupon_id, item["league"], item["home"], item["away"],
+                     item["start_ts"], item["line"], item["odds"]))
+            save_publication_proof(c, coupon_id, proof)
+            c.commit()
+            made += 1
+            remaining -= 1
+        total_made += made
+        logging.info("Nowe %s duble: %s; limit puli: %s", bucket.upper(), made, MAX_DOUBLES_PER_DAY)
+    logging.info("Łącznie nowe duble FT w tym skanie: %s", total_made)
 
 
 
@@ -542,7 +550,7 @@ def repost_pending_doubles(c, now):
     # legacy rows whose proof exists but whose post needs to be shown again.
     # ft_double_reposts prevents a second recovery post on the next 5-minute scan.
     day = now.date().isoformat()
-    rows = c.execute("""SELECT coupon_id,day,total_odds
+    rows = c.execute("""SELECT coupon_id,day,total_odds,bucket
         FROM ft_doubles WHERE status='PENDING' AND day=? ORDER BY sent_at""",
         (day,)).fetchall()
     logging.info("Dzisiejsze pending duble do jednorazowego ponowienia: %s", len(rows))
@@ -550,7 +558,7 @@ def repost_pending_doubles(c, now):
     saved_legs = c.execute("""SELECT event_id FROM ft_double_legs
         WHERE coupon_id IN (SELECT coupon_id FROM ft_doubles WHERE status='PENDING')""").fetchall()
     fresh_names = refresh_saved_fixture_names(saved_legs, now)
-    for coupon_id, day, total_odds in rows:
+    for coupon_id, day, total_odds, bucket in rows:
         if not os.getenv("FORCE_REPOST", "").strip().lower() in ("1", "true", "yes"):
             previous = c.execute(
                 "SELECT graphic_version FROM ft_double_reposts WHERE coupon_id=?",
@@ -602,6 +610,7 @@ def repost_pending_doubles(c, now):
             graphic_legs, float(total_odds), max(1, coupon_no), coupon_id,
             existing_proof=existing_proof,
             existing_message_id=original_message_id,
+            night=(bucket == "night"),
         )
         if not proof:
             logging.error("Nie udało się ponownie opublikować podpisanego dubla %s — zatrzymuję", coupon_id)
