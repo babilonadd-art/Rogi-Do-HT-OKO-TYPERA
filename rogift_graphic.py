@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1024, 1024
 TZ=ZoneInfo("Europe/Warsaw")
-TEMPLATE=Path(__file__).resolve().parent/"Screenshot_20261117-110724.png"
+TEMPLATE=Path(__file__).resolve().parent/"rogi_poster.jpg"
 WHITE=(255,255,255); GREEN=(143,255,0); RED=(255,45,55); DARK=(3,12,17)
 
 def font(n):
@@ -29,26 +29,17 @@ def center(d,b,s,f,c):
 def money(v): return f"{float(v):.2f}".replace(".",",")+" zł"
 
 def original_artwork():
-    if not TEMPLATE.is_file(): raise FileNotFoundError(f"Brak oryginalnej grafiki: {TEMPLATE}")
-    im=Image.open(TEMPLATE).convert("RGB")
-    # The repository asset is a phone screenshot with the original square
-    # poster centred in the conversation viewer. Crop the poster itself,
-    # excluding browser chrome and the blurred viewer background.
-    if im.height > im.width * 1.15:
-        iw, ih = im.size
-        if abs(iw / ih - 0.45) < 0.08:
-            box = (round(iw * 0.176), round(ih * 0.321),
-                   round(iw * 0.824), round(ih * 0.613))
-            im = im.crop(box)
-        else:
-            side = min(iw, ih)
-            left = (iw - side) // 2
-            top = (ih - side) // 2
-            im = im.crop((left, top, left + side, top + side))
-    elif im.width > im.height * 1.15:
-        side = im.height
+    if not TEMPLATE.is_file():
+        raise FileNotFoundError(f"Brak oryginalnej grafiki użytkownika: {TEMPLATE}")
+    with Image.open(TEMPLATE) as source:
+        im = source.convert("RGB")
+    # The uploaded poster is square. Only centre-crop if GitHub serves a
+    # slightly non-square image; never crop screenshot chrome using old offsets.
+    if im.width != im.height:
+        side = min(im.width, im.height)
         left = (im.width - side) // 2
-        im = im.crop((left, 0, left + side, side))
+        top = (im.height - side) // 2
+        im = im.crop((left, top, left + side, top + side))
     return im.resize((W, H), Image.Resampling.LANCZOS)
 
 def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark_id=None,settled=False):
