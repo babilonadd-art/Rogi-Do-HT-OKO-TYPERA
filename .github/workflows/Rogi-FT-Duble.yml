@@ -15,6 +15,7 @@ on:
           - repost-pending
           - reset-limit
           - reset-today-and-scan
+          - clear-today-and-scan
           - replace-graphics
           - settle
           - summary
@@ -57,7 +58,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PUBLICATION_SIGNING_SECRET: ${{ secrets.PUBLICATION_SIGNING_SECRET }}
-          BOT_MODE: ${{ github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && 'settle' || github.event_name == 'push' && contains(github.event.head_commit.message, '[summary-ft]') && 'summary' || github.event_name == 'push' && contains(github.event.head_commit.message, '[settle-ft]') && 'settle' || github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-limit-ft]') && 'reset-limit' || github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-today-ft]') && 'reset-today-and-scan' || github.event_name == 'push' && contains(github.event.head_commit.message, '[repost-ft]') && 'repost-pending' || github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-ft]') && 'scan' || github.event_name == 'push' && 'dry-run' || github.event.inputs.mode || 'scan' }}
+          BOT_MODE: ${{ github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *' && 'settle' || github.event_name == 'push' && contains(github.event.head_commit.message, '[summary-ft]') && 'summary' || github.event_name == 'push' && contains(github.event.head_commit.message, '[settle-ft]') && 'settle' || github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-limit-ft]') && 'reset-limit' || github.event_name == 'push' && contains(github.event.head_commit.message, '[clear-today-ft]') && 'clear-today-and-scan' || contains(github.event.head_commit.message, '[reset-today-ft]') && 'reset-today-and-scan' || github.event_name == 'push' && contains(github.event.head_commit.message, '[repost-ft]') && 'repost-pending' || github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-ft]') && 'scan' || github.event_name == 'push' && 'dry-run' || github.event.inputs.mode || 'scan' }}
         run: python RogiFTDuble.py
       - name: Zapis historii dubli
         run: |
