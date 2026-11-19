@@ -1950,6 +1950,8 @@ CORNERFLICK_COMPETITIONS={
     "daniasuperliga":"danish-superliga","denmarksuperliga":"danish-superliga",
     "swisssuperleague":"swiss-super-league","belgiaproleague":"belgian-pro-league",
     "saudiproleague":"saudi-pro-league","japanj1league":"j1-league","j1league":"j1-league",
+    "internationalfriendlies":"international-friendlies","internationalfriendly":"international-friendlies",
+    "miedzynarodowetowarzyskie":"international-friendlies","miedzynarodowetowarzyskiea":"international-friendlies",
 }
 _cornerflick_season_cache={}
 _cornerflick_match_cache={}
