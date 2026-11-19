@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, daily_quota_count
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, daily_quota_count, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
 
@@ -22,26 +22,37 @@ class StrategyRulesTests(unittest.TestCase):
     def test_daily_cap_is_two_doubles(self):
         self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 4)
 
+    def test_night_and_day_pools_are_separate(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo('Europe/Warsaw')
+        night_kickoff = int(datetime(2026, 11, 21, 2, 30, tzinfo=tz).timestamp())
+        day_kickoff = int(datetime(2026, 11, 21, 14, 0, tzinfo=tz).timestamp())
+        self.assertEqual(fixture_bucket(night_kickoff), ('night', '2026-11-20'))
+        self.assertEqual(fixture_bucket(day_kickoff), ('day', '2026-11-21'))
+        self.assertEqual(night_session_day(datetime(2026, 11, 21, 3, 0, tzinfo=tz)), '2026-11-20')
+        self.assertEqual(night_session_day(datetime(2026, 11, 21, 10, 0, tzinfo=tz)), '2026-11-21')
+
     def test_quota_reset_preserves_old_history_and_unlocks_two_new_doubles(self):
         import sqlite3
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
         db = sqlite3.connect(':memory:')
-        db.execute('CREATE TABLE ft_doubles(coupon_id TEXT, day TEXT, sent_at TEXT)')
+        db.execute('CREATE TABLE ft_doubles(coupon_id TEXT, day TEXT, sent_at TEXT, bucket TEXT, quota_day TEXT)')
         db.execute('CREATE TABLE ft_daily_quota_resets(day TEXT PRIMARY KEY, reset_at TEXT)')
         day = '2026-11-17'
         db.executemany(
             'INSERT INTO ft_doubles VALUES(?,?,?)',
-            [('old-1', day, '2026-11-17T12:00:00+01:00'),
-             ('old-2', day, '2026-11-17T13:00:00+01:00')],
+            [('old-1', day, '2026-11-17T12:00:00+01:00', 'day', day),
+             ('old-2', day, '2026-11-17T13:00:00+01:00', 'day', day)],
         )
         now = datetime(2026, 11, 17, 20, 0, tzinfo=ZoneInfo('Europe/Warsaw'))
         db.execute('INSERT INTO ft_daily_quota_resets VALUES(?,?)', (day, now.isoformat()))
         self.assertEqual(daily_quota_count(db, day), 0)
         self.assertEqual(db.execute('SELECT COUNT(*) FROM ft_doubles').fetchone()[0], 2)
-        db.execute('INSERT INTO ft_doubles VALUES(?,?,?)',
-                   ('new-1', day, '2026-11-17T20:01:00+01:00'))
+        db.execute('INSERT INTO ft_doubles VALUES(?,?,?,?,?)',
+                   ('new-1', day, '2026-11-17T20:01:00+01:00', 'day', day))
         self.assertEqual(daily_quota_count(db, day), 1)
         db.close()
     def test_superbet_football_sport_id(self):
