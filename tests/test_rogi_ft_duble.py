@@ -54,6 +54,25 @@ class StrategyRulesTests(unittest.TestCase):
             "inplay_stats_metadata": {"status": "NOT_STARTED"},
         }))
 
+    def test_sofascore_extracts_full_time_corner_counts(self):
+        payload = {"statistics": {"periods": [{
+            "period": "ALL",
+            "groups": [{"statistics": [
+                {"name": "Corner kicks", "home": "7", "away": "5"},
+                {"name": "Shots", "home": "10", "away": "8"},
+            ]}],
+        }]}}
+        self.assertEqual(Main.sofascore_extract_corner_counts(payload), (7, 5))
+
+    def test_sofascore_does_not_use_half_time_corner_counts(self):
+        payload = {"statistics": {"periods": [{
+            "period": "1ST",
+            "groups": [{"statistics": [
+                {"name": "Corner kicks", "home": "4", "away": "2"},
+            ]}],
+        }]}}
+        self.assertIsNone(Main.sofascore_extract_corner_counts(payload))
+
     @patch("Main.superbet_api")
     def test_all_ft_over_lines_are_read_with_one_detail_request(self, api):
         api.return_value = {"events": [{
