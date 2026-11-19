@@ -737,11 +737,12 @@ def settle_doubles(c, now):
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
     now_ts = int(now.timestamp())
     for event_id, coupon_id, league, home, away, start_ts, line, odds in pending:
-        if now_ts < int(start_ts) + 100 * 60:
+        # Mecz standardowo kończy się po ok. 105 minutach od kickoffu
+        # (90 minut + przerwa + doliczony czas). Od 110. minuty sprawdzamy
+        # wynik co 5 minut; po publikacji statystyk rozliczamy od razu.
+        # Nie czekamy już 3 godzin i nie rozliczamy przed końcem spotkania.
+        if now_ts < int(start_ts) + 110 * 60:
             continue
-        # Po ok. 100 minutach od rozpoczęcia odpytuj źródła przy każdej iteracji.
-        # Wynik zostanie zapisany natychmiast, gdy dostawca opublikuje końcową
-        # liczbę rożnych; nie czekamy dodatkowych 2–3 godzin.
         # Najpierw respektuj wynik przekazany przez użytkownika dla tych konkretnych
         # czterech spotkań. Nie dopisujemy fikcyjnej liczby rzutów rożnych.
         result = manual_user_confirmed_ft_result(home, away, start_ts)
