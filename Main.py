@@ -1952,6 +1952,7 @@ CORNERFLICK_COMPETITIONS={
     "saudiproleague":"saudi-pro-league","japanj1league":"j1-league","j1league":"j1-league",
     "internationalfriendlies":"international-friendlies","internationalfriendly":"international-friendlies",
     "miedzynarodowetowarzyskie":"international-friendlies","miedzynarodowetowarzyskiea":"international-friendlies",
+    # [settle-ft] uruchom ponowne pobranie danych dla lig międzynarodowych.
 }
 _cornerflick_season_cache={}
 _cornerflick_match_cache={}
