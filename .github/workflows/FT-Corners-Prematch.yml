@@ -57,7 +57,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-limit-ft]') && 'reset-limit' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-graphics-ft]') && 'replace-graphics' || 'scan') }}
+          BOT_MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[clear-history-ft]') && 'clear-history' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-limit-ft]') && 'reset-limit' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-graphics-ft]') && 'replace-graphics' || 'scan')) }}
         run: python RogiFTDuble.py
       - name: Zapis historii wysłanych typów
         run: |
