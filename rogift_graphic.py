@@ -143,7 +143,7 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=0.12,
         line, odds = float(leg.get("line", 0)), float(leg.get("odds", 0))
         if not 8.5 <= line <= 9.5:
             raise ValueError("Blokada publikacji: dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
-        if not 1.60 <= odds <= 2.20:
+        if not settled and not 1.60 <= odds <= 2.20:
             raise ValueError("Blokada publikacji: kurs poza zakresem 1.60–2.20")
         start_ts = leg.get("start_ts")
         if start_ts is None:
