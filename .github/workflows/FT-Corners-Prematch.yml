@@ -39,9 +39,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           from PIL import Image
-          path = Path("rogi_poster.jpg")
+          path = Path("Neonowy plakat typsterski Rogi do HT.png")
           if not path.is_file():
-              raise SystemExit("BRAK rogi_poster.jpg — dodaj oryginalny plakat użytkownika do głównego katalogu repozytorium. Nie wysyłam grafiki zastępczej.")
+              raise SystemExit("BRAK Neonowy plakat typsterski Rogi do HT.png — dodaj oryginalny plakat użytkownika do głównego katalogu repozytorium. Nie wysyłam grafiki zastępczej.")
           image = Image.open(path)
           image.verify()
           image = Image.open(path)
