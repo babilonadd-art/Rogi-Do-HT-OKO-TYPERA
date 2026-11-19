@@ -34,6 +34,20 @@ jobs:
           python-version: "3.12"
       - name: Instalacja bibliotek
         run: pip install -r requirements.txt
+      - name: Pobranie grafiki do typów
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/user-attachments/assets/d1af52a0-0fe9-4423-ba7e-a5d836cdaaba" \
+            --output rogi_poster.jpg
+          python - <<'PY'
+          from PIL import Image
+          image = Image.open("rogi_poster.jpg")
+          image.verify()
+          image = Image.open("rogi_poster.jpg")
+          if image.width < 700 or image.height < 700 or abs(image.width - image.height) > 5:
+              raise SystemExit(f"Załącznik nie wygląda na oryginalny kwadratowy plakat: {image.size}")
+          print(f"Grafika użytkownika poprawnie pobrana: {image.size}, {image.format}")
+          PY
       - name: Kontrola składni
         run: python -m py_compile Main.py RogiFTDuble.py rogift_graphic.py
       - name: Testy strategii rożnych FT
