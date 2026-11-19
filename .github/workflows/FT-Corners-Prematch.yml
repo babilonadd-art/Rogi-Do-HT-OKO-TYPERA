@@ -70,3 +70,5 @@ jobs:
             git push
           fi
 # [reset-limit-ft] requested limit-only reset
+
+# Reset daily FT quota requested 2026-11-20T00:00 Europe/Warsaw
