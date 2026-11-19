@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1024, 1024
 TZ=ZoneInfo("Europe/Warsaw")
-TEMPLATE=Path(__file__).resolve().parent/"rogi_poster.jpg"
+TEMPLATE=Path(__file__).resolve().parent/"Neonowy plakat typsterski Rogi do HT.png"
 WHITE=(255,255,255); GREEN=(143,255,0); RED=(255,45,55); DARK=(3,12,17)
 
 def font(n):
