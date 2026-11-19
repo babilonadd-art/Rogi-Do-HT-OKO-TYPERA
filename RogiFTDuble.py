@@ -58,6 +58,11 @@ def db_open():
     c.execute("""CREATE TABLE IF NOT EXISTS ft_double_reposts(
         coupon_id TEXT PRIMARY KEY, sent_at TEXT NOT NULL, message_id INTEGER,
         FOREIGN KEY(coupon_id) REFERENCES ft_doubles(coupon_id))""")
+    double_columns = {row[1] for row in c.execute("PRAGMA table_info(ft_doubles)")}
+    if "settlement_reply_sent" not in double_columns:
+        c.execute("ALTER TABLE ft_doubles ADD COLUMN settlement_reply_sent INTEGER NOT NULL DEFAULT 0")
+    if "settlement_graphic_sent" not in double_columns:
+        c.execute("ALTER TABLE ft_doubles ADD COLUMN settlement_graphic_sent INTEGER NOT NULL DEFAULT 0")
     repost_columns = {row[1] for row in c.execute("PRAGMA table_info(ft_double_reposts)")}
     if "graphic_version" not in repost_columns:
         c.execute("ALTER TABLE ft_double_reposts ADD COLUMN graphic_version TEXT NOT NULL DEFAULT ''")
@@ -237,15 +242,15 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         logging.exception("Nie udało się wysłać grafiki dubla FT z linkami Superbet")
         return None
 
-def send_settled_coupon_graphic(legs, total_odds, coupon_id):
+def send_settled_coupon_graphic(c, legs, total_odds, coupon_id):
     """Send the same coupon poster with the settlement label, only after settlement."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    graphic = render_coupon_image(
-        legs, total_odds, STAKE, coupon_no=1,
-        watermark_id=publication_code(coupon_id), settled=True,
-    )
     try:
+        graphic = render_coupon_image(
+            legs, total_odds, STAKE, coupon_no=1,
+            watermark_id=publication_code(coupon_id), settled=True,
+        )
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendPhoto",
             data={"chat_id": chat_id},
@@ -257,6 +262,8 @@ def send_settled_coupon_graphic(legs, total_odds, coupon_id):
         if not payload.get("ok"):
             logging.error("Telegram sendPhoto rozliczonego dubla: %s", payload)
             return False
+        c.execute("UPDATE ft_doubles SET settlement_graphic_sent=1 WHERE coupon_id=?", (coupon_id,))
+        c.commit()
         logging.info("Wysłano grafikę rozliczonego dubla FT, message_id=%s",
                      payload["result"]["message_id"])
         return True
@@ -705,6 +712,8 @@ def send_coupon_reply(c, coupon_id, message):
         if not payload.get("ok"):
             logging.error("Telegram nie przyjął odpowiedzi do dubla %s: %s", coupon_id, payload)
             return False
+        c.execute("UPDATE ft_doubles SET settlement_reply_sent=1 WHERE coupon_id=?", (coupon_id,))
+        c.commit()
         logging.info("Rozliczenie dubla %s wysłane jako odpowiedź do message_id=%s",
                      coupon_id, row[0])
         return True
@@ -761,6 +770,42 @@ def manual_confirmed_ft_corner_total(home, away, start_ts):
         if direct or reverse:
             return total
     return None
+
+
+def retry_settled_notifications(c):
+    pending = c.execute("""SELECT coupon_id,total_odds,stake,status,profit
+        FROM ft_doubles
+        WHERE status IN ('WON','LOST')
+          AND (settlement_reply_sent=0 OR settlement_graphic_sent=0)
+        ORDER BY settled_at""").fetchall()
+    for coupon_id, total_odds, stake, final, profit in pending:
+        leg_rows = c.execute("""SELECT league,home,away,start_ts,line,odds,ft_corners,status
+            FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
+        if len(leg_rows) != LEGS_PER_DOUBLE:
+            continue
+        details = "\\n".join(
+            f"• {home} – {away}: OVER {line:.1f}, "
+            f"{'rożne: ' + str(corners) if corners is not None else 'wynik potwierdzony ręcznie'}, {status}"
+            for league, home, away, start_ts, line, odds, corners, status in leg_rows
+        )
+        message = (
+            "📊 ROZLICZENIE DUBLA — ROGI FT\\n\\n" + details +
+            f"\\n\\n💹 Kurs łączny: {float(total_odds):.2f}\\n"
+            f"💰 Stawka: {float(stake):.2f} zł\\n"
+            f"{'🟢 DUBEL WYGRANY' if final == 'WON' else '🔴 DUBEL PRZEGRANY'}\\n"
+            f"🏦 Wynik: {float(profit or 0):+.2f} zł"
+        )
+        settled_legs = [
+            {"home": home, "away": away, "start_ts": int(start_ts),
+             "line": float(line), "odds": float(odds)}
+            for league, home, away, start_ts, line, odds, corners, status in leg_rows
+        ]
+        flags = c.execute("""SELECT settlement_reply_sent,settlement_graphic_sent
+            FROM ft_doubles WHERE coupon_id=?""", (coupon_id,)).fetchone()
+        if flags and not flags[0]:
+            send_coupon_reply(c, coupon_id, message)
+        if flags and not flags[1]:
+            send_settled_coupon_graphic(c, settled_legs, float(total_odds), coupon_id)
 
 
 def settle_doubles(c, now):
@@ -847,9 +892,10 @@ def settle_doubles(c, now):
             {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
-        if not send_coupon_reply(c, coupon_id, message):
-            logging.error("Nie udało się wysłać rozliczenia jako odpowiedzi do dubla %s", coupon_id)
-        send_settled_coupon_graphic(settled_legs, float(total_odds), coupon_id)
+        # Powiadomienia są ponawiane z trwałej kolejki w kolejnych uruchomieniach.
+        # Nie blokują zapisu rozliczenia, jeśli Telegram chwilowo nie odpowiada.
+
+    retry_settled_notifications(c)
 
     days = [row[0] for row in c.execute(
         "SELECT DISTINCT day FROM ft_doubles ORDER BY day"
