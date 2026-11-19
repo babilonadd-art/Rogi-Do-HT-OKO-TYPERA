@@ -1992,17 +1992,66 @@ def cornerflick_match_data(dataset_url):
     return _cornerflick_match_cache[dataset_url]
 
 def cornerflick_match_corners(payload):
+    """Read Cornerflick's published corner counts across its documented JSON shapes."""
     if not isinstance(payload,dict):
         return None
-    stats=payload.get("statistics") or []
-    for stat in stats:
-        if normalized_team(stat.get("label",""))=="corners":
-            try:
-                home=int(float(stat.get("home")))
-                away=int(float(stat.get("away")))
-                return home,away
-            except (TypeError,ValueError):
+
+    # Some responses wrap the match record in a top-level data object.
+    if isinstance(payload.get("data"),dict):
+        payload=payload["data"]
+
+    def as_count(value):
+        try:
+            number=float(value)
+            if number < 0 or not number.is_integer():
                 return None
+            return int(number)
+        except (TypeError,ValueError):
+            return None
+
+    # Preferred documented structure: club_figures.home/away.corners.
+    figures=payload.get("club_figures")
+    if isinstance(figures,dict):
+        home=as_count((figures.get("home") or {}).get("corners"))
+        away=as_count((figures.get("away") or {}).get("corners"))
+        if home is not None and away is not None:
+            return home,away
+
+    # Documented team-statistics structure: stats[] -> {club_name, stats:{corners}}.
+    for key in ("stats","statistics"):
+        rows=payload.get(key)
+        if isinstance(rows,list):
+            side_counts=[]
+            for row in rows:
+                if not isinstance(row,dict):
+                    continue
+                nested=row.get("stats") if isinstance(row.get("stats"),dict) else row
+                value=as_count(nested.get("corners"))
+                if value is not None:
+                    side_counts.append(value)
+            if len(side_counts)>=2:
+                return side_counts[0],side_counts[1]
+
+            # Legacy paired-statistics structure: {label: corners, home, away}.
+            for row in rows:
+                if not isinstance(row,dict):
+                    continue
+                label=normalized_team(row.get("label") or row.get("name") or row.get("type") or "")
+                if label in {"corners","cornerkicks","totalcorners"}:
+                    home=as_count(row.get("home"))
+                    away=as_count(row.get("away"))
+                    if home is not None and away is not None:
+                        return home,away
+
+        # Also accept a paired object rather than a list.
+        elif isinstance(rows,dict):
+            for label,value in rows.items():
+                if normalized_team(label) in {"corners","cornerkicks","totalcorners"} and isinstance(value,dict):
+                    home=as_count(value.get("home"))
+                    away=as_count(value.get("away"))
+                    if home is not None and away is not None:
+                        return home,away
+
     return None
 
 def cornerflick_team_ft_corner_history(team,league,fixture_date):
