@@ -1101,3 +1101,5 @@ if __name__ == "__main__":
 # Wymuś jednorazowe rozliczenie oczekujących dubli FT po publikacji zmiany harmonogramu.
 
 # Clear all previous FT picks from persistent SQLite history [clear-history-ft].
+
+# Reset dziennego limitu FT na wyraźne żądanie użytkownika.
