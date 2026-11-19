@@ -42,7 +42,7 @@ def original_artwork():
         im = im.crop((left, top, left + side, top + side))
     return im.resize((W, H), Image.Resampling.LANCZOS)
 
-def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark_id=None,settled=False):
+def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark_id=None,settled=False,night=False):
     if len(legs)!=2: raise ValueError("Grafika dubla wymaga dokładnie dwóch meczów")
     rows=[]
     for leg in legs:
@@ -60,6 +60,9 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
     if stake<=0 or total_odds<=0 or not 0<=tax_rate<1: raise ValueError("Nieprawidłowa stawka, kurs lub podatek")
     if abs(rows[0][4]*rows[1][4]-total_odds)>.02: raise ValueError("Kurs łączny nie zgadza się z kursami obu meczów")
     im=original_artwork(); d=ImageDraw.Draw(im)
+    if night:
+        d.rounded_rectangle((300,330,724,382),radius=16,fill=RED)
+        center(d,(310,332,714,380),"NOCNY DUBEL",font(34),WHITE)
     # Preserve the user's bull, stadium, neon borders, balls and overall layout.
     for i,(home,away,league,line,odds,kickoff) in enumerate(rows):
         y=397+i*128
