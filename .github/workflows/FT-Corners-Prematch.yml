@@ -12,7 +12,7 @@ on:
       - ".github/workflows/FT-Corners-Prematch.yml"
       - ".github/workflows/Rogi-FT-Duble.yml"
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
