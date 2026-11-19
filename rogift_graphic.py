@@ -74,13 +74,15 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
         center(d,(555,y+57,790,y+95),"ROGÓW FT",font(22),WHITE)
         d.rounded_rectangle((810,y+24,990,y+98),radius=18,fill=GREEN)
         center(d,(814,y+25,986,y+97),f"{odds:.2f}",fit(d,f"{odds:.2f}",160,58,34),(0,0,0))
-    # Replace ONLY the template's printed combined-odds value (4.10)
-    # with the actual product of the two displayed leg odds. Keep the
-    # original stake, payout, and profit artwork completely untouched.
-    combined = f"{rows[0][4] * rows[1][4]:.2f}"
-    # The combined odds are printed in the CENTRE bottom column of the
-    # 1254x1254 source poster. After resizing to 1024x1024, the digits occupy
-    # x=440..580, y=735..790. Do not touch the right-hand payout column.
+    # Replace the template's static combined odds and potential payout
+    # with values calculated from the two actual selections and the stake.
+    combined_value = rows[0][4] * rows[1][4]
+    combined = f"{combined_value:.2f}"
+    potential_payout = money(stake * combined_value)
+    # Combined odds: centre bottom column. Potential payout: right-hand
+    # bottom column. Both values must never remain as stale template text.
     d.rectangle((440,735,580,790),fill=(1,2,2))
     center(d,(440,735,580,790),combined,fit(d,combined,132,64,48),GREEN)
+    d.rectangle((580,735,735,790),fill=(1,2,2))
+    center(d,(580,735,735,790),potential_payout,fit(d,potential_payout,145,42,26),GREEN)
     out=BytesIO(); im.save(out,format="PNG",optimize=True); out.seek(0); return out
