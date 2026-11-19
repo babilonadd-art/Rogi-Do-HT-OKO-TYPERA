@@ -36,6 +36,7 @@ UNDER_CORNER_LEAGUE_BLOCKLIST = {
     "u18", "u19", "u20", "u21", "u23",
     "youth", "junior", "reserves", "reserve", "development league",
     "club friendlies", "international friendlies",
+    "egypt", "egyptian", "egipt",
 }
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -303,7 +304,8 @@ def is_blocked_under_league(league):
     # Odrzucamy młodzieżówki/rezerwy również wtedy, gdy nazwa ligi zawiera
     # dopisek kraju lub sponsora.
     blocked_tokens = ("u18", "u19", "u20", "u21", "u23", "youth", "junior",
-                      "reserve", "reserves", "development", "friendlies", "friendly")
+                      "reserve", "reserves", "development", "friendlies", "friendly",
+                      "egypt", "egyptian", "egipt")
     return name in blocked or any(token in name for token in blocked_tokens)
 
 
