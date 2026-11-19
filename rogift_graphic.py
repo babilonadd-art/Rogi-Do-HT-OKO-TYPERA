@@ -70,7 +70,7 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
         center(d,(188,y+37,550,y+74),away,fit(d,away,350,32,19),WHITE)
         # League and kickoff get separate, larger rows for quick reading.
         center(d,(188,y+76,550,y+99),league.upper(),fit(d,league.upper(),350,22,13),WHITE)
-        center(d,(188,y+97,550,y+119),kickoff,fit(d,kickoff,350,29,25),GREEN)
+        center(d,(188,y+97,550,y+119),kickoff,fit(d,kickoff,350,29,25),RED)
         center(d,(555,y+15,790,y+58),f"OVER {line:.1f}",font(28),GREEN)
         center(d,(555,y+57,790,y+95),"ROGÓW FT",font(22),WHITE)
         d.rounded_rectangle((810,y+24,990,y+98),radius=18,fill=GREEN)
