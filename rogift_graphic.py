@@ -78,6 +78,9 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
     # with the actual product of the two displayed leg odds. Keep the
     # original stake, payout, and profit artwork completely untouched.
     combined = f"{rows[0][4] * rows[1][4]:.2f}"
-    d.rounded_rectangle((610,690,770,795),radius=12,fill=DARK)
-    center(d,(610,690,770,795),combined,fit(d,combined,150,52,28),GREEN)
+    # The combined odds are printed in the CENTRE bottom column of the
+    # 1254x1254 source poster. After resizing to 1024x1024, the digits occupy
+    # x=440..580, y=735..790. Do not touch the right-hand payout column.
+    d.rectangle((440,735,580,790),fill=(1,2,2))
+    center(d,(440,735,580,790),combined,fit(d,combined,132,64,48),GREEN)
     out=BytesIO(); im.save(out,format="PNG",optimize=True); out.seek(0); return out
