@@ -873,3 +873,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Wymuś jednorazowe rozliczenie oczekujących dubli FT po publikacji zmiany harmonogramu.
