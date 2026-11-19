@@ -24,7 +24,7 @@ jobs:
           from pathlib import Path
           from rogift_graphic import render_coupon_image
           legs = [
-              {"home": "America de Cali", "away": "Internacional de Bogota", "line": 10.5, "odds": 1.77},
+              {"home": "America de Cali", "away": "Internacional de Bogota", "line": 9.5, "odds": 1.77},
               {"home": "Meksyk", "away": "Jamajka", "line": 9.5, "odds": 1.90},
           ]
           for filename, settled in [
