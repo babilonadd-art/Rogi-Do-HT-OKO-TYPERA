@@ -2,7 +2,7 @@ name: ROGI FT — DUBLE PREMATCH
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # co 15 minut — samo rozliczanie zakończonych meczów
+    - cron: "*/5 * * * *" # kontrola rozliczeń co 5 minut
   workflow_dispatch:
     inputs:
       mode:
