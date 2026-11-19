@@ -139,7 +139,4 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=0.12,watermar
     _center(d,(530,1135,956,1190),"POTENCJALNY ZYSK",_font(28),(0,0,0))
     profit_text=("+" if profit>=0 else "")+_money(profit)
     _center(d,(530,1200,956,1280),profit_text,_fit(d,profit_text,390,45,25),(0,0,0))
-    if settled:
-        d.rounded_rectangle((300,20,724,72),radius=18,fill=RED)
-        _center(d,(310,22,714,70),"KUPON ROZLICZONY",_font(27),WHITE)
     output=BytesIO(); image.save(output,format="PNG",optimize=True); output.seek(0); return output
