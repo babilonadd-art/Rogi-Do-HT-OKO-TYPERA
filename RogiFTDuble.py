@@ -863,7 +863,7 @@ def retry_settled_notifications(c):
             f"🏦 Wynik: {float(profit or 0):+.2f} zł"
         )
         settled_legs = [
-            {"home": home, "away": away, "start_ts": int(start_ts),
+            {"league": league, "home": home, "away": away, "start_ts": int(start_ts),
              "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
@@ -960,7 +960,7 @@ def settle_doubles(c, now):
             f"🏦 Wynik: {profit:+.2f} zł"
         )
         settled_legs = [
-            {"home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
+            {"league": league, "home": home, "away": away, "start_ts": int(start_ts), "line": float(line), "odds": float(odds)}
             for league, home, away, start_ts, line, odds, corners, status in leg_rows
         ]
         # Rozliczenie wysyłamy wyłącznie jako grafikę; bez tekstowego podpisu pod typem.
