@@ -43,7 +43,7 @@ class StrategyRulesTests(unittest.TestCase):
         db.execute('CREATE TABLE ft_daily_quota_resets(day TEXT PRIMARY KEY, reset_at TEXT)')
         day = '2026-11-17'
         db.executemany(
-            'INSERT INTO ft_doubles VALUES(?,?,?)',
+            'INSERT INTO ft_doubles VALUES(?,?,?,?,?)',
             [('old-1', day, '2026-11-17T12:00:00+01:00', 'day', day),
              ('old-2', day, '2026-11-17T13:00:00+01:00', 'day', day)],
         )
