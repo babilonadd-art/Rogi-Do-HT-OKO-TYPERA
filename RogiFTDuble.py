@@ -750,21 +750,21 @@ def manual_confirmed_ft_corner_total(home, away, start_ts):
     a = str(away or "").casefold()
     fixtures = [
         # TotalCorner: U21 International, 17 Nov 2026.
-        ("2026-11-17", ("croatia u21", "germany u21"), 8),
-        ("2026-11-17", ("serbia u21", "poland u21"), 10),
+        ("2026-11-17", ("croatia u21", "chorwacja u21"), ("germany u21", "niemcy u21"), 8),
+        ("2026-11-17", ("serbia u21",), ("poland u21", "polska u21"), 10),
         # TotalCorner: International Match, 17 Nov 2026.
-        ("2026-11-18", ("ecuador", "bolivia"), 13),
+        ("2026-11-18", ("ecuador", "ekwador"), ("bolivia", "boliwia"), 13),
         # InplayFlux / match statistics: 7 + 2 corners.
-        ("2026-11-18", ("el salvador", "saint martin"), 9),
+        ("2026-11-18", ("el salvador", "salwador"), ("saint martin",), 9),
         # TotalCorner: Colombia Cup, local Warsaw date 18 Nov 2026.
-        ("2026-11-18", ("atletico nacional", "once caldas"), 8),
-        ("2026-11-18", ("america de cali", "internacional de bogota"), 5),
+        ("2026-11-18", ("atletico nacional",), ("once caldas",), 8),
+        ("2026-11-18", ("america de cali", "américa de cali"), ("internacional de bogota", "internacional de bogotá"), 5),
     ]
-    for fixture_day, (first, second), total in fixtures:
+    for fixture_day, home_aliases, away_aliases, total in fixtures:
         if day != fixture_day:
             continue
-        direct = first in h and second in a
-        reverse = first in a and second in h
+        direct = any(x in h for x in home_aliases) and any(x in a for x in away_aliases)
+        reverse = any(x in a for x in home_aliases) and any(x in h for x in away_aliases)
         if direct or reverse:
             return total
     return None
