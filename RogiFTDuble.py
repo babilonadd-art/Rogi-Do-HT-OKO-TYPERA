@@ -768,7 +768,6 @@ def settle_doubles(c, now):
                              home, away, league)
                 continue
             result = "WON" if int(total) > float(line) else "LOST"
-            result_source = "źródło statystyczne"
         c.execute("""UPDATE ft_double_legs SET status=?,ft_corners=? WHERE event_id=?""",
                   (result, int(total) if total is not None else None, event_id))
         c.commit()
