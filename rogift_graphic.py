@@ -79,10 +79,11 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
     combined_value = rows[0][4] * rows[1][4]
     combined = f"{combined_value:.2f}"
     potential_payout = money(stake * combined_value)
-    # Combined odds: centre bottom column. Potential payout: right-hand
-    # bottom column. Both values must never remain as stale template text.
+    # Combined odds: centre bottom column. Potential payout: far-right
+    # bottom column. Cover the complete printed amount, not the trophy icon
+    # or only the left edge of the old static "205.00 PLN" text.
     d.rectangle((440,735,580,790),fill=(1,2,2))
     center(d,(440,735,580,790),combined,fit(d,combined,132,64,48),GREEN)
-    d.rectangle((580,735,735,790),fill=(1,2,2))
-    center(d,(580,735,735,790),potential_payout,fit(d,potential_payout,145,42,26),GREEN)
+    d.rectangle((720,735,990,790),fill=(1,2,2))
+    center(d,(720,735,990,790),potential_payout,fit(d,potential_payout,260,42,26),GREEN)
     out=BytesIO(); im.save(out,format="PNG",optimize=True); out.seek(0); return out
