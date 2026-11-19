@@ -73,3 +73,5 @@ jobs:
 
 # Reset daily FT quota requested 2026-11-20T00:00 Europe/Warsaw
 # Reset limit trigger 2026-11-20
+
+# Reset FT quota after red kickoff-time graphic change 2026-11-20
