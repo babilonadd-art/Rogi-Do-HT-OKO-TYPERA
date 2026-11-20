@@ -1,24 +1,25 @@
-name: PREMATCH FT CORNERS — Superbet
+name: PREMATCH FT CORNERS — Superbet (manual legacy)
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "Main.py"
-      - "RogiFTDuble.py"
-      - "rogift_graphic.py"
-      - "tests/test_rogi_ft_duble.py"
-      - "tests/test_rogi_ft_security.py"
-      - ".github/workflows/FT-Corners-Prematch.yml"
-      - ".github/workflows/Rogi-FT-Duble.yml"
-  schedule:
-    - cron: "*/5 * * * *"
+    inputs:
+      mode:
+        description: "Tryb działania"
+        required: true
+        default: "scan"
+        type: choice
+        options:
+          - scan
+          - reset-limit
+          - replace-graphics
 
 permissions:
   contents: write
 
+# Ten starszy workflow jest wyłącznie ręczny. Automatyczne skanowanie
+# i reset limitów obsługuje tylko Rogi-FT-Duble.yml.
 concurrency:
-  group: rogi-ft-duble
+  group: rogi-ft-legacy-manual
   cancel-in-progress: false
 
 jobs:
@@ -41,23 +42,23 @@ jobs:
           from PIL import Image
           path = Path("Neonowy plakat typsterski Rogi do HT.png")
           if not path.is_file():
-              raise SystemExit("BRAK Neonowy plakat typsterski Rogi do HT.png — dodaj oryginalny plakat użytkownika do głównego katalogu repozytorium. Nie wysyłam grafiki zastępczej.")
+              raise SystemExit("BRAK oryginalnego plakatu użytkownika — nie wysyłam grafiki zastępczej.")
           image = Image.open(path)
           image.verify()
           image = Image.open(path)
           if image.width < 700 or image.height < 700 or abs(image.width - image.height) > 5:
-              raise SystemExit(f"Plakat musi być oryginalnym kwadratowym obrazem min. 700x700; otrzymano {image.size}")
+              raise SystemExit(f"Plakat musi być kwadratowy min. 700x700; otrzymano {image.size}")
           print(f"Oryginalny plakat poprawny: {image.size}, {image.format}")
           PY
-      - name: Kontrola składni
-        run: python -m py_compile Main.py RogiFTDuble.py rogift_graphic.py
-      - name: Testy strategii rożnych FT
-        run: python -m unittest discover -s tests -p "test_rogi_ft_*.py"
-      - name: Skan dubli FT i wysyłka oryginalnej grafiki
+      - name: Kontrola składni i testy
+        run: |
+          python -m py_compile Main.py RogiFTDuble.py rogift_graphic.py
+          python -m unittest discover -s tests -p "test_rogi_ft_*.py"
+      - name: Ręczne uruchomienie
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[clear-history-ft]') && 'clear-history' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[reset-limit-ft]') && 'reset-limit' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-graphics-ft]') && 'replace-graphics' || 'scan')) }}
+          BOT_MODE: ${{ inputs.mode }}
         run: python RogiFTDuble.py
       - name: Zapis historii wysłanych typów
         run: |
@@ -69,9 +70,3 @@ jobs:
             git pull --rebase --autostash origin main
             git push
           fi
-# [reset-limit-ft] requested limit-only reset
-
-# Reset daily FT quota requested 2026-11-20T00:00 Europe/Warsaw
-# Reset limit trigger 2026-11-20
-
-# Reset FT quota after red kickoff-time graphic change 2026-11-20
