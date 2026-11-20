@@ -1,4 +1,4 @@
-"""Render FT doubles over the original Oko Typera poster saved in the repository."""
+"""Render FT doubles over the user's updated Oko Typera poster."""
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone
@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1024, 1024
 TZ=ZoneInfo("Europe/Warsaw")
-TEMPLATE=Path(__file__).resolve().parent/"Neonowy plakat typsterski Rogi do HT.png"
+TEMPLATE=Path(__file__).resolve().parent/"Screenshot_20261120-092141~2.jpg"
 WHITE=(255,255,255); GREEN=(143,255,0); RED=(255,45,55); DARK=(3,12,17)
 
 def font(n):
@@ -30,11 +30,9 @@ def money(v): return f"{float(v):.2f}".replace(".",",")+" zł"
 
 def original_artwork():
     if not TEMPLATE.is_file():
-        raise FileNotFoundError(f"Brak oryginalnej grafiki użytkownika: {TEMPLATE}")
+        raise FileNotFoundError(f"Brak nowej grafiki użytkownika: {TEMPLATE}")
     with Image.open(TEMPLATE) as source:
         im = source.convert("RGB")
-    # The uploaded poster is square. Only centre-crop if GitHub serves a
-    # slightly non-square image; never crop screenshot chrome using old offsets.
     if im.width != im.height:
         side = min(im.width, im.height)
         left = (im.width - side) // 2
@@ -63,29 +61,20 @@ def render_coupon_image(legs,total_odds,stake,coupon_no=1,tax_rate=.12,watermark
     if night:
         d.rounded_rectangle((300,330,724,382),radius=16,fill=RED)
         center(d,(310,332,714,380),"NOCNY DUBEL",font(34),WHITE)
-    # Preserve the user's bull, stadium, neon borders, balls and overall layout.
     for i,(home,away,league,line,odds,kickoff) in enumerate(rows):
         y=397+i*128
         d.rounded_rectangle((178,y,800,y+120),radius=18,fill=DARK)
-        # Give each team its own full-width line. This keeps the original
-        # poster and panel positions while making club names substantially larger.
         center(d,(188,y+3,550,y+40),home,fit(d,home,350,32,19),WHITE)
         center(d,(188,y+37,550,y+74),away,fit(d,away,350,32,19),WHITE)
-        # League and kickoff get separate, larger rows for quick reading.
         center(d,(188,y+76,550,y+99),league.upper(),fit(d,league.upper(),350,22,13),WHITE)
         center(d,(188,y+97,550,y+119),kickoff,fit(d,kickoff,350,29,25),RED)
         center(d,(555,y+15,790,y+58),f"OVER {line:.1f}",font(28),GREEN)
         center(d,(555,y+57,790,y+95),"ROGÓW FT",font(22),WHITE)
         d.rounded_rectangle((810,y+24,990,y+98),radius=18,fill=GREEN)
         center(d,(814,y+25,986,y+97),f"{odds:.2f}",fit(d,f"{odds:.2f}",160,58,34),(0,0,0))
-    # Replace the template's static combined odds and potential payout
-    # with values calculated from the two actual selections and the stake.
     combined_value = rows[0][4] * rows[1][4]
     combined = f"{combined_value:.2f}"
     potential_payout = money(stake * combined_value)
-    # Combined odds: centre bottom column. Potential payout: far-right
-    # bottom column. Cover the complete printed amount, not the trophy icon
-    # or only the left edge of the old static "205.00 PLN" text.
     d.rectangle((440,735,580,790),fill=(1,2,2))
     center(d,(440,735,580,790),combined,fit(d,combined,132,64,48),GREEN)
     d.rectangle((720,735,990,790),fill=(1,2,2))
