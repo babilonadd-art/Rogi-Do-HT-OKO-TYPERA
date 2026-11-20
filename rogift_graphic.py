@@ -151,6 +151,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
     # The labels ("Stawka", "Łączny kurs", "Potencjalna wygrana") and all
     # surrounding artwork remain untouched.
     # Write values directly into the original value fields; keep printed labels/artwork untouched.
+    stake_text = f"{stake:.2f} PLN"
+    combined_text = f"{combined_value:.2f}"
     payout_text = f"{stake * combined_value:.2f} PLN"
     footer_style = {"stroke_width": 2, "stroke_fill": (0, 0, 0)}
     center(draw, (92, 531, 222, 574), stake_text,
