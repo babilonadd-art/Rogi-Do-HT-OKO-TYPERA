@@ -1103,3 +1103,5 @@ if __name__ == "__main__":
 # Retry quota reset trigger after prior queued run was cancelled.
 
 # Reset dziennego limitu na prośbę użytkownika — 2026-11-20.
+
+# Retry daily FT quota reset after disabling duplicate legacy workflow.
