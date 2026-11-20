@@ -209,17 +209,11 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                     "MESSAGE_ID_INVALID" in description or "message to edit not found" in description.lower()
                 ):
                     logging.warning(
-                        "Oryginalny post Telegram (message_id=%s) został usunięty; wysyłam grafikę ponownie jako nowy post.",
+                        "Oryginalny post Telegram (message_id=%s) został usunięty ręcznie; "
+                        "pomijam odtworzenie wiadomości i NIE wysyłam jej ponownie.",
                         existing_message_id,
                     )
-                    # The failed multipart edit consumed the BytesIO stream.
-                    graphic.seek(0)
-                    response = requests.post(
-                        f"https://api.telegram.org/bot{token}/sendPhoto",
-                        data={"chat_id": chat_id, "reply_markup": reply_markup},
-                        files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
-                        timeout=45,
-                    )
+                    return None
         else:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
