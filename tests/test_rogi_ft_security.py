@@ -67,3 +67,5 @@ class PublicationSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# Regression: poster dimensions and odds-only candidate scanning are covered by workflow checks.
