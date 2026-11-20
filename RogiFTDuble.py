@@ -18,18 +18,18 @@ import Main as source
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.60
-MAX_LEG_ODDS = 2.20
+MIN_LEG_ODDS = 1.90
+MAX_LEG_ODDS = 3.50
 MAX_DOUBLES_PER_DAY = 2
 NIGHT_START_HOUR = 22
 NIGHT_END_HOUR = 8
-GRAPHIC_VERSION = "oko-typera-original-poster-real-fixtures-v12"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
+GRAPHIC_VERSION = "oko-typera-clean-ft-template-real-fixtures-v13"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
-MIN_FT_CORNERS_LINE = 8.5
+MIN_FT_CORNERS_LINE = 9.5
 MAX_FT_CORNERS_LINE = 9.5
-FT_LINES = (8.5, 9.5)
+FT_LINES = (9.5,)
 
 # Twarda blokada rozgrywek, które nie mają trafiać do kuponów.
 # Nazwy są normalizowane; dodatkowe ligi można dopisać przez zmienną
