@@ -7,11 +7,11 @@ from Main import superbet_event_is_prematch
 
 class StrategyRulesTests(unittest.TestCase):
     def test_rules_are_ft_over_only_and_minimum_odds(self):
-        self.assertEqual(MIN_LEG_ODDS, 1.60)
-        self.assertEqual(MAX_LEG_ODDS, 2.20)
+        self.assertEqual(MIN_LEG_ODDS, 1.90)
+        self.assertEqual(MAX_LEG_ODDS, 3.50)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
-        self.assertEqual(FT_LINES, (8.5, 9.5))
+        self.assertEqual(FT_LINES, (9.5,))
 
     def test_placeholder_team_names_are_rejected(self):
         for name in ("A", "B", "Team A", "Team B", "Drużyna A", "Drużyna B", "Unknown", "TBD"):
@@ -110,7 +110,7 @@ class StrategyRulesTests(unittest.TestCase):
                 }],
             }],
         }]}
-        result = Main.superbet_ft_corners_over_prices(123, lines=FT_LINES, min_odds=1.60)
+        result = Main.superbet_ft_corners_over_prices(123, lines=FT_LINES, min_odds=1.90)
         self.assertEqual(result, {9.5: 1.90})
         api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
 
