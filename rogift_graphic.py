@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 TZ = ZoneInfo("Europe/Warsaw")
 # Native dimensions of the supplied original poster; never resize or crop it.
-W, H = 720, 739
+W, H = 1254, 1254
 TEMPLATE = Path(__file__).resolve().parent / "Neonowy plakat typsterski Rogi do HT.png"
 WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
