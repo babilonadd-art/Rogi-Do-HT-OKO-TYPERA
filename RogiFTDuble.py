@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Prematch FT corner doubles. Uses public Cornerflick stats when available; no API key."""
+# Explicit user-requested daily quota reset marker.
 import os
 import hashlib
 import hmac
