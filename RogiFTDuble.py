@@ -1101,3 +1101,5 @@ if __name__ == "__main__":
 # Operational reset trigger: preserve published history and reset only today's quota.
 
 # Retry quota reset trigger after prior queued run was cancelled.
+
+# Reset dziennego limitu na prośbę użytkownika — 2026-11-20.
