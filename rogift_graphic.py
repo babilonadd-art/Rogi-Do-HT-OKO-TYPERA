@@ -83,13 +83,6 @@ def _erase_existing_field_text(image):
     for x1, y1, x2, y2 in ((566, 316, 700, 380), (566, 405, 700, 469)):
         region(x1, y1, x2, y2, dark_text)
 
-    # Existing values in the original stake / combined odds / payout footer fields.
-    green_text = (hsv[:, :, 1] > 150) & (hsv[:, :, 0] > 35) & (hsv[:, :, 0] < 95) & (gray > 75)
-    yellow_text = (hsv[:, :, 0] > 15) & (hsv[:, :, 0] < 40) & (hsv[:, :, 1] > 100) & (gray > 90)
-    region(90, 535, 224, 580, green_text)
-    region(300, 535, 440, 580, green_text)
-    region(490, 535, 705, 580, yellow_text)
-
     # A small dilation catches anti-aliased edges without reaching the neon frame.
     mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
     repaired = cv2.inpaint(rgb, mask, 4, cv2.INPAINT_TELEA)
@@ -153,14 +146,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
         center(draw, (566, y + 3, 700, y + 61), f"{odds:.2f}",
                fit(draw, f"{odds:.2f}", 126, 48, 28), BLACK)
 
-    # Update the values in the original footer's three existing fields.
-    payout = money(stake * combined_value)
-    center(draw, (91, 536, 224, 579), f"{stake:.0f} PLN",
-           fit(draw, f"{stake:.0f} PLN", 126, 37, 23), GREEN)
-    center(draw, (301, 536, 440, 579), f"{combined_value:.2f}",
-           fit(draw, f"{combined_value:.2f}", 132, 39, 25), GREEN)
-    center(draw, (490, 536, 705, 579), payout,
-           fit(draw, payout, 207, 34, 20), (255, 230, 0))
+    # Preserve the original footer artwork and its labels exactly as supplied.
+    # Do not erase or redraw the stake / odds / payout inscriptions here.
 
     output = BytesIO()
     im.save(output, format="PNG", optimize=True)
