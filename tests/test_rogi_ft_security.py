@@ -6,7 +6,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from RogiFTDuble import publication_proof
-from rogift_graphic import W, H, render_coupon_image
+from rogift_graphic import W, H, render_coupon_image, calculate_coupon_totals
 
 
 class PublicationSecurityTests(unittest.TestCase):
@@ -27,8 +27,8 @@ class PublicationSecurityTests(unittest.TestCase):
                 "home": "Drużyna C",
                 "away": "Drużyna D",
                 "start_ts": 1790003600,
-                "line": 8.5,
-                "odds": 1.65,
+                "line": 9.5,
+                "odds": 2.10,
             },
         ]
 
@@ -46,15 +46,20 @@ class PublicationSecurityTests(unittest.TestCase):
         self.assertNotEqual(signature1, changed_signature)
         self.assertEqual(payload1["legs"][0]["market"], "OVER_CORNERS_FT")
 
+    def test_combined_odds_and_payout_use_the_displayed_rounded_total(self):
+        combined, payout = calculate_coupon_totals([1.95, 2.10], 50.0)
+        self.assertEqual(str(combined), "4.10")
+        self.assertEqual(str(payout), "205.00")
+
     def test_render_uses_compact_two_match_graphic(self):
-        rendered = render_coupon_image(self.legs, 3.1515, 50.0)
+        rendered = render_coupon_image(self.legs, 4.011, 50.0)
         with Image.open(rendered) as image:
             self.assertEqual(image.size, (W, H))
             self.assertEqual(image.format, "PNG")
 
     def test_settlement_flag_does_not_change_match_identity_or_layout(self):
         prematch = render_coupon_image(self.legs, 3.1515, 50.0).getvalue()
-        settled = render_coupon_image(self.legs, 3.1515, 50.0, settled=True).getvalue()
+        settled = render_coupon_image(self.legs, 4.011, 50.0, settled=True).getvalue()
         self.assertEqual(prematch, settled)
 
     def test_renderer_rejects_missing_real_team_names(self):
