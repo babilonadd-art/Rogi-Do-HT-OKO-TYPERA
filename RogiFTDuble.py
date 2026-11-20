@@ -414,24 +414,15 @@ def daily_quota_count(c, day, bucket="day"):
 
 
 def reset_daily_quota(c, now):
-    """Unlock one fresh daytime batch per day without deleting old picks."""
+    """Force a fresh daytime quota window without deleting pick history."""
     day = now.date().isoformat()
-    existing = c.execute(
-        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?",
-        (day,),
-    ).fetchone()
-    if existing:
-        logging.info(
-            "Limit FT na %s był już dziś resetowany (%s); pomijam powtórny reset i wysyłkę.",
-            day, existing[0],
-        )
-        return
     c.execute(
-        "INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?)",
+        """INSERT INTO ft_daily_quota_resets(day,reset_at) VALUES(?,?)
+           ON CONFLICT(day) DO UPDATE SET reset_at=excluded.reset_at""",
         (day, now.isoformat()),
     )
     c.commit()
-    logging.info("Reset dziennego limitu %s: historia i nocna pula zachowane.", day)
+    logging.info("Wymuszony reset dziennego limitu %s: historia i nocna pula zachowane.", day)
     send_new_doubles(c, now)
 
 
