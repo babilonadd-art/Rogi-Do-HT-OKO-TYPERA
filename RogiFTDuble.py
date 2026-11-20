@@ -1074,3 +1074,5 @@ if __name__ == "__main__":
 # Manual user request: reset today's FT corner quota and immediately scan for fresh doubles. [reset-limit-ft]
 
 # Manual request: reset today's FT daily quota only; keep all published picks and settlement history.
+
+# Operational reset trigger: preserve published history and reset only today's quota.
