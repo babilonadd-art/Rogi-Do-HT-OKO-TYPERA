@@ -38,13 +38,13 @@ def fit(draw, value, max_width, high=28, low=12):
     return font(low)
 
 
-def center(draw, bounds, value, selected_font, color):
+def center(draw, bounds, value, selected_font, color, **text_options):
     x1, y1, x2, y2 = bounds
     box = draw.textbbox((0, 0), value, font=selected_font)
     width, height = box[2] - box[0], box[3] - box[1]
     draw.text(
         (x1 + (x2 - x1 - width) / 2, y1 + (y2 - y1 - height) / 2 - box[1]),
-        value, font=selected_font, fill=color,
+        value, font=selected_font, fill=color, **text_options,
     )
 
 
@@ -146,8 +146,42 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
         center(draw, (566, y + 3, 700, y + 61), f"{odds:.2f}",
                fit(draw, f"{odds:.2f}", 126, 48, 28), BLACK)
 
-    # Preserve the original footer artwork and its labels exactly as supplied.
-    # Do not erase or redraw the stake / odds / payout inscriptions here.
+    # Replace only the three numeric value fields in the original footer.
+    # The labels ("Stawka", "Łączny kurs", "Potencjalna wygrana") and all
+    # surrounding artwork remain untouched.
+    rgb = np.asarray(im).copy()
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    footer_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
+
+    def footer_value_box(bounds, hue_low, hue_high):
+        x1, y1, x2, y2 = bounds
+        roi = hsv[y1:y2, x1:x2]
+        # Mask the bright colored glyphs, not the dark/green poster background.
+        selected = (
+            (roi[:, :, 0] >= hue_low) & (roi[:, :, 0] <= hue_high) &
+            (roi[:, :, 1] >= 125) & (roi[:, :, 2] >= 155)
+        )
+        footer_mask[y1:y2, x1:x2][selected] = 255
+
+    # Green values: stake and combined odds. Yellow value: potential payout.
+    footer_value_box((94, 532, 220, 574), 35, 95)
+    footer_value_box((304, 532, 438, 574), 35, 95)
+    footer_value_box((505, 532, 700, 574), 15, 40)
+    footer_mask = cv2.dilate(footer_mask, np.ones((2, 2), np.uint8), iterations=1)
+    cleaned = cv2.inpaint(np.asarray(im), footer_mask, 3, cv2.INPAINT_TELEA)
+    im = Image.fromarray(cleaned)
+    draw = ImageDraw.Draw(im)
+
+    stake_text = f"{stake:.2f} PLN"
+    combined_text = f"{combined_value:.2f}"
+    payout_text = f"{stake * combined_value:.2f} PLN"
+    footer_style = {"stroke_width": 2, "stroke_fill": (0, 0, 0)}
+    center(draw, (92, 531, 222, 574), stake_text,
+           fit(draw, stake_text, 126, 39, 23), GREEN, **footer_style)
+    center(draw, (302, 531, 440, 574), combined_text,
+           fit(draw, combined_text, 134, 48, 28), GREEN, **footer_style)
+    center(draw, (500, 531, 702, 574), payout_text,
+           fit(draw, payout_text, 198, 39, 21), (255, 235, 0), **footer_style)
 
     output = BytesIO()
     im.save(output, format="PNG", optimize=True)
