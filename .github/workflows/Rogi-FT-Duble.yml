@@ -49,10 +49,41 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install -r requirements.txt
+      - name: Pobierz i przygotuj nowy szablon z Issue #2
+        run: |
+          if [ ! -f rogi_ft_template_new.png ]; then
+            curl --fail --location --retry 3 "https://github.com/user-attachments/assets/06aff966-7d7d-46f1-a174-d0037bbad350" --output /tmp/rogi-ft-issue-screenshot.png
+            python - <<'PY'
+          from PIL import Image
+          source = Image.open("/tmp/rogi-ft-issue-screenshot.png").convert("RGB")
+          if source.size != (720, 1640):
+              raise SystemExit(f"Nieoczekiwany rozmiar zrzutu Issue #2: {source.size}")
+          poster = source.crop((0, 445, 720, 1196))
+          if poster.size != (720, 751):
+              raise SystemExit(f"Nieprawidłowy wycinek plakatu: {poster.size}")
+          poster.save("rogi_ft_template_new.png", format="PNG", optimize=True)
+          PY
+          fi
+          python - <<'PY'
+          from PIL import Image
+          image = Image.open("rogi_ft_template_new.png")
+          assert image.size == (720, 751), image.size
+          print("Nowy szablon FT zweryfikowany:", image.size)
+          PY
       - name: Kontrola składni i testów
         run: |
           python -m py_compile Main.py RogiFTDuble.py
           python -m unittest discover -s tests -p "test_rogi_ft_*.py"
+      - name: Zapisz nowy plakat i usuń stary szablon z bieżącej wersji repo
+        run: |
+          git rm -f "Neonowy plakat typsterski Rogi do HT.png" || true
+          git add rogi_ft_template_new.png
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+users.noreply.github.com"
+            git commit -m "Install clean FT poster template and remove legacy poster"
+            git push origin HEAD:main
+          fi
       - name: Skanowanie i rozliczanie dubli FT
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
