@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 TZ = ZoneInfo("Europe/Warsaw")
 # Native dimensions of the supplied original poster; never resize or crop it.
 W, H = 720, 739
-TEMPLATE = Path(__file__).resolve().parent / "Screenshot_20261120-092141~2.jpg"
+TEMPLATE = Path(__file__).resolve().parent / "Neonowy plakat typsterski Rogi do HT.png"
 WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
 RED = (255, 45, 55)
@@ -127,7 +127,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
 
     # Keep the uploaded artwork at its exact native dimensions. No new cards,
     # dark rectangles, resizing, cropping or replacement background are added.
-    im = _erase_existing_field_text(original_artwork())
+    # Use the original poster artwork directly. Do not erase or inpaint existing fields.
+    im = original_artwork()
     draw = ImageDraw.Draw(im)
 
     # Existing team-name fields (two lines) and market / odds fields.
@@ -149,31 +150,7 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
     # Replace only the three numeric value fields in the original footer.
     # The labels ("Stawka", "Łączny kurs", "Potencjalna wygrana") and all
     # surrounding artwork remain untouched.
-    rgb = np.asarray(im).copy()
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    footer_mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-
-    def footer_value_box(bounds, hue_low, hue_high):
-        x1, y1, x2, y2 = bounds
-        roi = hsv[y1:y2, x1:x2]
-        # Mask the bright colored glyphs, not the dark/green poster background.
-        selected = (
-            (roi[:, :, 0] >= hue_low) & (roi[:, :, 0] <= hue_high) &
-            (roi[:, :, 1] >= 125) & (roi[:, :, 2] >= 155)
-        )
-        footer_mask[y1:y2, x1:x2][selected] = 255
-
-    # Green values: stake and combined odds. Yellow value: potential payout.
-    footer_value_box((94, 532, 220, 574), 35, 95)
-    footer_value_box((304, 532, 438, 574), 35, 95)
-    footer_value_box((505, 532, 700, 574), 15, 40)
-    footer_mask = cv2.dilate(footer_mask, np.ones((2, 2), np.uint8), iterations=1)
-    cleaned = cv2.inpaint(np.asarray(im), footer_mask, 3, cv2.INPAINT_TELEA)
-    im = Image.fromarray(cleaned)
-    draw = ImageDraw.Draw(im)
-
-    stake_text = f"{stake:.2f} PLN"
-    combined_text = f"{combined_value:.2f}"
+    # Write values directly into the original value fields; keep printed labels/artwork untouched.
     payout_text = f"{stake * combined_value:.2f} PLN"
     footer_style = {"stroke_width": 2, "stroke_fill": (0, 0, 0)}
     center(draw, (92, 531, 222, 574), stake_text,
