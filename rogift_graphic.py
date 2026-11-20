@@ -83,6 +83,15 @@ def _erase_existing_field_text(image):
     for x1, y1, x2, y2 in ((566, 316, 700, 380), (566, 405, 700, 469)):
         region(x1, y1, x2, y2, dark_text)
 
+    # Remove the template's preprinted footer values as well. These tight
+    # rectangles contain VALUE text only; the printed labels stay intact.
+    bright_footer_text = gray > 155
+    for x1, y1, x2, y2 in (
+        (92, 531, 222, 574), (302, 531, 440, 574),
+        (500, 531, 702, 574),
+    ):
+        region(x1, y1, x2, y2, bright_footer_text)
+
     # A small dilation catches anti-aliased edges without reaching the neon frame.
     mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
     repaired = cv2.inpaint(rgb, mask, 4, cv2.INPAINT_TELEA)
@@ -128,7 +137,8 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
     # Keep the uploaded artwork at its exact native dimensions. No new cards,
     # dark rectangles, resizing, cropping or replacement background are added.
     # Use the original poster artwork directly. Do not erase or inpaint existing fields.
-    im = original_artwork()
+    # Clear all dynamic fields before writing fresh odds and calculated payout.
+    im = _erase_existing_field_text(original_artwork())
     draw = ImageDraw.Draw(im)
 
     # Existing team-name fields (two lines) and market / odds fields.
