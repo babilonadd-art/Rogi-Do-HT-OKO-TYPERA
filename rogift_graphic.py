@@ -96,10 +96,12 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
             raise ValueError("Brak prawdziwej nazwy drużyny lub ligi")
         line = float(leg.get("line", 0))
         odds = float(leg.get("odds", 0))
-        if not settled and line != 9.5:
-            raise ValueError("Dozwolone wyłącznie OVER 9.5 rożnych FT")
-        if not settled and not 1.90 <= odds <= 3.50:
-            raise ValueError("Kurs poza zakresem 1.90–3.50")
+        # New picks are filtered in RogiFTDuble.py; the renderer also has to
+        # reprint legitimate historical coupons whose old odds/lines differ.
+        if not settled and not 8.5 <= line <= 9.5:
+            raise ValueError("Nieprawidłowa linia rożnych FT")
+        if not settled and odds <= 1.0:
+            raise ValueError("Nieprawidłowy kurs meczu")
         if leg.get("start_ts") is None:
             raise ValueError("Brak godziny rozpoczęcia meczu")
         kickoff = datetime.fromtimestamp(
