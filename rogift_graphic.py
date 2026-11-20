@@ -2,6 +2,7 @@
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 import cv2
@@ -11,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 TZ = ZoneInfo("Europe/Warsaw")
 # Native dimensions of the supplied original poster; never resize or crop it.
 W, H = 720, 751
-TEMPLATE = Path(__file__).resolve().parent / "Neonowy plakat typsterski Rogi do HT.png"
+TEMPLATE = Path(__file__).resolve().parent / "rogi_ft_template_new.png"
 WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
 RED = (255, 45, 55)
@@ -52,10 +53,25 @@ def money(value):
     return f"{float(value):.2f}".replace(".", ",") + " PLN"
 
 
+def calculate_coupon_totals(leg_odds, stake):
+    """Round the displayed combined odds first, then calculate the displayed payout."""
+    if len(leg_odds) != 2:
+        raise ValueError("Dubel musi zawierać dokładnie dwa kursy")
+    combined = (Decimal(str(leg_odds[0])) * Decimal(str(leg_odds[1]))).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    payout = (Decimal(str(stake)) * combined).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return combined, payout
+
+
 def original_artwork():
     if not TEMPLATE.is_file():
         raise FileNotFoundError(f"Brak oryginalnej grafiki użytkownika: {TEMPLATE}")
     with Image.open(TEMPLATE) as source:
+        if source.size != (720, 751):
+            raise ValueError(f"Nieprawidłowy rozmiar nowego szablonu: {source.size}; oczekiwano 720x751")
         return source.convert("RGB").copy()
 
 
@@ -80,10 +96,10 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
             raise ValueError("Brak prawdziwej nazwy drużyny lub ligi")
         line = float(leg.get("line", 0))
         odds = float(leg.get("odds", 0))
-        if not settled and not 8.5 <= line <= 9.5:
-            raise ValueError("Dozwolone wyłącznie OVER 8.5–9.5 rożnych FT")
-        if not settled and not 1.60 <= odds <= 2.20:
-            raise ValueError("Kurs poza zakresem 1.60–2.20")
+        if not settled and line != 9.5:
+            raise ValueError("Dozwolone wyłącznie OVER 9.5 rożnych FT")
+        if not settled and not 1.90 <= odds <= 3.50:
+            raise ValueError("Kurs poza zakresem 1.90–3.50")
         if leg.get("start_ts") is None:
             raise ValueError("Brak godziny rozpoczęcia meczu")
         kickoff = datetime.fromtimestamp(
@@ -125,8 +141,11 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
                fit(draw, f"{odds:.2f}", 142, 43, 25), BLACK)
 
     # Stake (50 PLN) is preprinted. Fill the combined odds and payout.
-    combined_text = f"{combined_value:.2f}"
-    payout_text = f"{stake * combined_value:.2f} PLN"
+    displayed_total, displayed_payout = calculate_coupon_totals(
+        [rows[0][4], rows[1][4]], stake
+    )
+    combined_text = f"{displayed_total:.2f}"
+    payout_text = f"{displayed_payout:.2f} PLN"
     footer_style = {"stroke_width": 2, "stroke_fill": (0, 0, 0)}
     center(draw, (300, 510, 420, 550), combined_text,
            fit(draw, combined_text, 116, 37, 22), GREEN, **footer_style)
