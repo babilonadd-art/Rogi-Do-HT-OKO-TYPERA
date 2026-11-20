@@ -58,7 +58,7 @@ class PublicationSecurityTests(unittest.TestCase):
             self.assertEqual(image.format, "PNG")
 
     def test_settlement_flag_does_not_change_match_identity_or_layout(self):
-        prematch = render_coupon_image(self.legs, 3.1515, 50.0).getvalue()
+        prematch = render_coupon_image(self.legs, 4.011, 50.0).getvalue()
         settled = render_coupon_image(self.legs, 4.011, 50.0, settled=True).getvalue()
         self.assertEqual(prematch, settled)
 
