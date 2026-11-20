@@ -1106,3 +1106,5 @@ if __name__ == "__main__":
 # Clear all previous FT picks from persistent SQLite history [clear-history-ft].
 
 # Reset dziennego limitu FT na wyraźne żądanie użytkownika.
+
+# Manual user request: reset today's FT corner quota and immediately scan for fresh doubles. [reset-limit-ft]
