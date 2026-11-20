@@ -1076,3 +1076,5 @@ if __name__ == "__main__":
 # Manual request: reset today's FT daily quota only; keep all published picks and settlement history.
 
 # Operational reset trigger: preserve published history and reset only today's quota.
+
+# Retry quota reset trigger after prior queued run was cancelled.
