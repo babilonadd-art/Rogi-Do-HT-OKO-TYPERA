@@ -9,6 +9,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 TZ = ZoneInfo("Europe/Warsaw")
+# Native dimensions of the supplied original poster; never resize or crop it.
+W, H = 720, 736
 TEMPLATE = Path(__file__).resolve().parent / "Screenshot_20261120-092141~2.jpg"
 WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
