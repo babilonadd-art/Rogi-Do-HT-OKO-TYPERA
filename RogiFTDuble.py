@@ -460,7 +460,30 @@ def send_new_doubles(c, now):
         while remaining and len(group) >= LEGS_PER_DOUBLE:
             pair = group[:LEGS_PER_DOUBLE]
             group = group[LEGS_PER_DOUBLE:]
-            total_odds = round(pair[0]["odds"] * pair[1]["odds"], 3)
+
+            # Ostatnia kontrola kursów bezpośrednio przed publikacją.
+            # Nie używamy kursu z cache, statystyk ani wartości zastępczych:
+            # oba kursy muszą pochodzić z aktywnego rynku Superbet dla tego meczu i linii.
+            verified_pair = []
+            for item in pair:
+                fresh_prices = source.superbet_ft_corners_over_prices(
+                    int(item["event_id"]), lines=(float(item["line"]),), min_odds=MIN_LEG_ODDS
+                )
+                fresh_price = fresh_prices.get(round(float(item["line"]), 2))
+                if fresh_price is None or not (MIN_LEG_ODDS <= float(fresh_price) <= MAX_LEG_ODDS):
+                    logging.warning(
+                        "Pomijam dubel: brak aktualnego aktywnego kursu Superbet dla %s - %s, linia FT %s; niczego nie podstawiam.",
+                        item["home"], item["away"], item["line"]
+                    )
+                    verified_pair = []
+                    break
+                item = dict(item)
+                item["odds"] = float(fresh_price)
+                verified_pair.append(item)
+            if len(verified_pair) != LEGS_PER_DOUBLE:
+                continue
+            pair = verified_pair
+            total_odds = round(float(pair[0]["odds"]) * float(pair[1]["odds"]), 3)
             coupon_id = f"{quota_day}-{bucket}-{int(now.timestamp())}-{made + 1}"
             proof = send_coupon_graphic(
                 pair, total_odds, quota_count + made + 1, coupon_id,
