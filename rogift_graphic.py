@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 TZ = ZoneInfo("Europe/Warsaw")
 # Native dimensions of the supplied original poster; never resize or crop it.
-W, H = 1254, 1254
+W, H = 720, 751
 TEMPLATE = Path(__file__).resolve().parent / "Neonowy plakat typsterski Rogi do HT.png"
 WHITE = (255, 255, 255)
 GREEN = (143, 255, 0)
@@ -60,42 +60,8 @@ def original_artwork():
 
 
 def _erase_existing_field_text(image):
-    """Inpaint only printed letters/numbers; preserve the poster, borders and field colors."""
-    rgb = np.asarray(image).copy()
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    mask = np.zeros(gray.shape, dtype=np.uint8)
-
-    def region(x1, y1, x2, y2, condition):
-        roi = mask[y1:y2, x1:x2]
-        roi[condition[y1:y2, x1:x2]] = 255
-
-    # White team and market lettering inside the two original coupon rows.
-    white_text = (gray > 165) & (hsv[:, :, 1] < 115)
-    for x1, y1, x2, y2 in (
-        (42, 316, 350, 380), (370, 316, 548, 380),
-        (42, 405, 350, 469), (370, 405, 548, 469),
-    ):
-        region(x1, y1, x2, y2, white_text)
-
-    # Dark odds digits on the original neon-green odds panels.
-    dark_text = gray < 72
-    for x1, y1, x2, y2 in ((566, 316, 700, 380), (566, 405, 700, 469)):
-        region(x1, y1, x2, y2, dark_text)
-
-    # Remove the template's preprinted footer values as well. These tight
-    # rectangles contain VALUE text only; the printed labels stay intact.
-    bright_footer_text = gray > 155
-    for x1, y1, x2, y2 in (
-        (92, 531, 222, 574), (302, 531, 440, 574),
-        (500, 531, 702, 574),
-    ):
-        region(x1, y1, x2, y2, bright_footer_text)
-
-    # A small dilation catches anti-aliased edges without reaching the neon frame.
-    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
-    repaired = cv2.inpaint(rgb, mask, 4, cv2.INPAINT_TELEA)
-    return Image.fromarray(repaired)
+    """The latest supplied template already has clean, empty dynamic fields."""
+    return image.copy()
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
@@ -141,37 +107,31 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
     im = _erase_existing_field_text(original_artwork())
     draw = ImageDraw.Draw(im)
 
-    # Existing team-name fields (two lines) and market / odds fields.
+    # Latest blank poster: two fixture rows, with kickoff shown under team names.
     for index, (home, away, league, line, odds, kickoff) in enumerate(rows):
-        y = 316 + index * 89
-        first_line = home
-        second_line = f"– {away}"
-        center(draw, (44, y, 350, y + 31), first_line,
-               fit(draw, first_line, 292, 28, 15), WHITE)
-        center(draw, (44, y + 29, 350, y + 61), second_line,
-               fit(draw, second_line, 292, 28, 15), WHITE)
-        center(draw, (370, y + 2, 548, y + 31), f"Over {line:.1f}",
-               fit(draw, f"Over {line:.1f}", 168, 24, 16), WHITE)
-        center(draw, (370, y + 30, 548, y + 60), "Rogów FT",
-               fit(draw, "Rogów FT", 168, 22, 15), WHITE)
-        center(draw, (566, y + 3, 700, y + 61), f"{odds:.2f}",
-               fit(draw, f"{odds:.2f}", 126, 48, 28), BLACK)
+        y = 300 + index * 88
+        fixture_text = f"{home} – {away}"
+        center(draw, (28, y + 4, 348, y + 38), fixture_text,
+               fit(draw, fixture_text, 310, 24, 13), WHITE)
+        kickoff_text = f"Start: {kickoff}"
+        center(draw, (28, y + 39, 348, y + 66), kickoff_text,
+               fit(draw, kickoff_text, 310, 19, 14), WHITE)
+        market_top = f"Over {line:.1f}"
+        center(draw, (368, y + 4, 525, y + 36), market_top,
+               fit(draw, market_top, 150, 23, 15), WHITE)
+        center(draw, (368, y + 37, 525, y + 66), "Rogów FT",
+               fit(draw, "Rogów FT", 150, 20, 14), WHITE)
+        center(draw, (540, y + 4, 691, y + 66), f"{odds:.2f}",
+               fit(draw, f"{odds:.2f}", 142, 43, 25), BLACK)
 
-    # Replace only the three numeric value fields in the original footer.
-    # The labels ("Stawka", "Łączny kurs", "Potencjalna wygrana") and all
-    # surrounding artwork remain untouched.
-    # Write values directly into the original value fields; keep printed labels/artwork untouched.
-    stake_text = f"{stake:.2f} PLN"
+    # Stake (50 PLN) is preprinted. Fill the combined odds and payout.
     combined_text = f"{combined_value:.2f}"
     payout_text = f"{stake * combined_value:.2f} PLN"
     footer_style = {"stroke_width": 2, "stroke_fill": (0, 0, 0)}
-    center(draw, (92, 531, 222, 574), stake_text,
-           fit(draw, stake_text, 126, 39, 23), GREEN, **footer_style)
-    center(draw, (302, 531, 440, 574), combined_text,
-           fit(draw, combined_text, 134, 48, 28), GREEN, **footer_style)
-    center(draw, (500, 531, 702, 574), payout_text,
-           fit(draw, payout_text, 198, 39, 21), (255, 235, 0), **footer_style)
-
+    center(draw, (300, 510, 420, 550), combined_text,
+           fit(draw, combined_text, 116, 37, 22), GREEN, **footer_style)
+    center(draw, (520, 510, 698, 550), payout_text,
+           fit(draw, payout_text, 170, 31, 17), (255, 235, 0), **footer_style)
     output = BytesIO()
     im.save(output, format="PNG", optimize=True)
     output.seek(0)
