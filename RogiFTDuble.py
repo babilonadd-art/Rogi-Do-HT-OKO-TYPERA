@@ -1105,3 +1105,5 @@ if __name__ == "__main__":
 # Reset dziennego limitu na prośbę użytkownika — 2026-11-20.
 
 # Retry daily FT quota reset after disabling duplicate legacy workflow.
+
+# Ręczne ponowienie resetu dziennego limitu na żądanie użytkownika — 2026-11-20.
