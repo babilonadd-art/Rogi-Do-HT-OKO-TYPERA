@@ -827,43 +827,34 @@ def manual_confirmed_ft_corner_total(home, away, start_ts):
 
 
 def retry_settled_notifications(c):
+    """Publish computed settlement figures from SQLite, never from poster artwork."""
     pending = c.execute("""SELECT coupon_id,total_odds,stake,status,profit
         FROM ft_doubles
         WHERE status IN ('WON','LOST')
-          AND (settlement_reply_sent=0 OR settlement_graphic_sent=0)
+          AND settlement_reply_sent=0
         ORDER BY settled_at""").fetchall()
     for coupon_id, total_odds, stake, final, profit in pending:
-        leg_rows = c.execute("""SELECT league,home,away,start_ts,line,odds,ft_corners,status
+        leg_rows = c.execute("""SELECT league,home,away,line,odds,ft_corners,status
             FROM ft_double_legs WHERE coupon_id=? ORDER BY start_ts""", (coupon_id,)).fetchall()
         if len(leg_rows) != LEGS_PER_DOUBLE:
             continue
         details = "\\n".join(
-            f"• {home} – {away}: OVER {line:.1f}, "
-            f"{'rożne: ' + str(corners) if corners is not None else 'wynik potwierdzony ręcznie'}, {status}"
-            for league, home, away, start_ts, line, odds, corners, status in leg_rows
+            f"• {home} – {away}: OVER {float(line):.1f} @ {float(odds):.2f} | "
+            f"rożne FT: {corners if corners is not None else 'brak danych'} | {status}"
+            for league, home, away, line, odds, corners, status in leg_rows
         )
         message = (
             "📊 ROZLICZENIE DUBLA — ROGI FT\\n\\n" + details +
-            f"\\n\\n💹 Kurs łączny: {float(total_odds):.2f}\\n"
-            f"💰 Stawka: {float(stake):.2f} zł\\n"
-            f"{'🟢 DUBEL WYGRANY' if final == 'WON' else '🔴 DUBEL PRZEGRANY'}\\n"
-            f"🏦 Wynik: {float(profit or 0):+.2f} zł"
+            f"\\n\\n💹 Kurs łączny: {float(total_odds):.2f}"
+            f"\\n💰 Stawka: {float(stake):.2f} zł"
+            f"\\n{'🟢 DUBEL WYGRANY' if final == 'WON' else '🔴 DUBEL PRZEGRANY'}"
+            f"\\n🏦 Wynik: {float(profit or 0):+.2f} zł"
         )
-        settled_legs = [
-            {"league": league, "home": home, "away": away, "start_ts": int(start_ts),
-             "line": float(line), "odds": float(odds)}
-            for league, home, away, start_ts, line, odds, corners, status in leg_rows
-        ]
-        flags = c.execute("""SELECT settlement_reply_sent,settlement_graphic_sent
-            FROM ft_doubles WHERE coupon_id=?""", (coupon_id,)).fetchone()
-        # Rozliczenie publikujemy wyłącznie jako grafikę — bez tekstowej odpowiedzi
-        # (podpisu) pod oryginalnym typem. Oznaczamy pole reply jako pominięte,
-        # aby kolejka nie próbowała wysyłać podpisu przy każdym kolejnym skanie.
-        if flags and not flags[0]:
-            c.execute("UPDATE ft_doubles SET settlement_reply_sent=1 WHERE coupon_id=?", (coupon_id,))
+        if send_coupon_reply(c, coupon_id, message):
+            # Settlement is a text reply containing database-calculated figures.
+            # Mark the legacy graphic flag complete so old poster-based retries stop.
+            c.execute("UPDATE ft_doubles SET settlement_graphic_sent=1 WHERE coupon_id=?", (coupon_id,))
             c.commit()
-        if flags and not flags[1]:
-            send_settled_coupon_graphic(c, settled_legs, float(total_odds), coupon_id)
 
 
 def settle_doubles(c, now):
@@ -877,33 +868,23 @@ def settle_doubles(c, now):
         # Nie czekamy już 3 godzin i nie rozliczamy przed końcem spotkania.
         if now_ts < int(start_ts) + 110 * 60:
             continue
-        # Najpierw respektuj wynik przekazany przez użytkownika dla tych konkretnych
-        # czterech spotkań. Nie dopisujemy fikcyjnej liczby rzutów rożnych.
-        result = manual_user_confirmed_ft_result(home, away, start_ts)
-        total = None
-        result_source = "potwierdzenie użytkownika"
-        if result is None:
-            total = manual_confirmed_ft_corner_total(home, away, start_ts)
+        # Wyłącznie automatyczne źródła statystyk meczowych — nigdy plakat ani
+        # ręcznie wpisane wyniki. Brak potwierdzonej liczby rożnych = oczekuje.
+        total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
+        result_source = "Cornerflick"
+        if total is None:
+            total = source.sofascore_ft_corner_total(league, home, away, start_ts)
             if total is not None:
-                result_source = "zweryfikowane statystyki meczowe"
-            else:
-                # Szukamy w kilku niezależnych źródłach: baza ligowa, globalny
-                # terminarz/statystyki SofaScore, a na końcu otwarte CSV Open Matchday.
-                total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
-                result_source = "Cornerflick"
-                if total is None:
-                    total = source.sofascore_ft_corner_total(league, home, away, start_ts)
-                    if total is not None:
-                        result_source = "SofaScore (globalny terminarz)"
-                if total is None:
-                    total = source.matchday_ft_corner_total(league, home, away, start_ts)
-                    if total is not None:
-                        result_source = "Open Matchday"
-            if total is None:
-                logging.info("Brak potwierdzonego wyniku rożnych FT we wszystkich źródłach: %s - %s (%s)",
-                             home, away, league)
-                continue
-            result = "WON" if int(total) > float(line) else "LOST"
+                result_source = "SofaScore"
+        if total is None:
+            total = source.matchday_ft_corner_total(league, home, away, start_ts)
+            if total is not None:
+                result_source = "Open Matchday"
+        if total is None:
+            logging.info("Brak potwierdzonych danych FT — pozostaje PENDING: %s - %s (%s)",
+                         home, away, league)
+            continue
+        result = "WON" if int(total) > float(line) else "LOST"
         c.execute("""UPDATE ft_double_legs SET status=?,ft_corners=? WHERE event_id=?""",
                   (result, int(total) if total is not None else None, event_id))
         c.commit()
