@@ -350,27 +350,10 @@ def fetch_candidates(now):
                          league, home, away)
             continue
 
-        # Statystyki FT pobieramy z Cornerflick (publiczne dane JSON, bez klucza API).
-        # Gdy liga/drużyna nie występuje w bazie Cornerflick, nie blokujemy meczu:
-        # nadal wymagamy prawdziwych nazw, aktywnego rynku Superbet i kursu w widełkach.
-        fixture_date = datetime.fromtimestamp(kickoff, timezone.utc).date().isoformat()
-        home_history = source.cornerflick_team_ft_corner_history(home, league, fixture_date)
-        away_history = source.cornerflick_team_ft_corner_history(away, league, fixture_date)
+        # Selekcja prematch opiera się na kursach Superbet, zgodnie z kryterium użytkownika.
+        # Nie pobieramy historii Cornerflick dla każdej drużyny: to spowalnia skanowanie,
+        # nie jest warunkiem wyboru typu i może blokować publikację przy dużej liczbie spotkań.
         quality_score = 0.0
-        if home_history and away_history:
-            all_totals = [float(row[2]) for row in home_history + away_history]
-            average = sum(all_totals) / len(all_totals)
-            hit_rate = sum(value >= 9.5 for value in all_totals) / len(all_totals)
-            quality_score = average + hit_rate * 4.0
-            logging.info(
-                "CORNERFLICK %s - %s (%s): próba %s+%s, średnia %.2f, Over 9.5 %.0f%%",
-                home, away, league, len(home_history), len(away_history), average, hit_rate * 100
-            )
-        else:
-            logging.info(
-                "CORNERFLICK: brak historii dla %s - %s (%s); mecz pozostaje w skanowaniu po kursach Superbet",
-                home, away, league
-            )
 
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
