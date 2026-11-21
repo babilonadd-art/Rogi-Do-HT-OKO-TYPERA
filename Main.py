@@ -41,7 +41,9 @@ sb.headers.update({
 
 def superbet_api(path,params=None):
     try:
-        r=sb.get(SUPERBET_API+path,params=params,timeout=45)
+        # requests.get creates an isolated session per call; this is safe when
+        # RogiFTDuble checks many event markets concurrently.
+        r=requests.get(SUPERBET_API+path,headers=sb.headers,params=params,timeout=20)
         if r.status_code in (403,404,429):
             logging.warning("Superbet HTTP %s %s",r.status_code,path); return {}
         r.raise_for_status()
