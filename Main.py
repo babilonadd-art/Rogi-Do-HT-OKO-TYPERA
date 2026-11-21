@@ -1,4 +1,4 @@
-import os, time, sqlite3, logging, re, unicodedata, csv, io, json
+import os, time, sqlite3, logging, re, unicodedata, csv, io, json, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
@@ -2088,31 +2088,50 @@ def cornerflick_team_ft_corner_history(team,league,fixture_date):
         history.append((match_date,own,corners[0]+corners[1]))
     return history
 _cornerflick_global_history_cache={}
+_cornerflick_global_matches_cache=None
+_cornerflick_global_matches_lock=threading.Lock()
 
 def cornerflick_team_ft_corner_history_global(team,fixture_date):
-    """Fallback: search a team's recent FT corner history across all indexed Cornerflick competitions."""
+    """Fallback: search a team's recent FT corner history across published Cornerflick competitions."""
+    global _cornerflick_global_matches_cache
     cache_key=(normalized_team(team),str(fixture_date))
     if cache_key in _cornerflick_global_history_cache:
         return list(_cornerflick_global_history_cache[cache_key])
-    slugs=sorted(set(CORNERFLICK_COMPETITIONS.values())-{"international-friendlies"})
+
+    # Build the season index once. Without this shared lock, parallel fixture
+    # workers can all download the same 24 season files at the same time.
+    if _cornerflick_global_matches_cache is None:
+        with _cornerflick_global_matches_lock:
+            if _cornerflick_global_matches_cache is None:
+                all_matches=[]
+                slugs=sorted(set(CORNERFLICK_COMPETITIONS.values())-{"international-friendlies"})
+                for slug in slugs:
+                    for match in cornerflick_season_matches(slug):
+                        all_matches.append((slug,match))
+                _cornerflick_global_matches_cache=all_matches
+                logging.info("Cornerflick global: wspólny indeks %s meczów z %s rozgrywek",
+                             len(all_matches),len(slugs))
+
     matches=[]
-    for slug in slugs:
-        for match in cornerflick_season_matches(slug):
-            kickoff=str(match.get("kickoff_at") or "")
-            match_date=kickoff[:10]
-            if (not match_date or match_date>=str(fixture_date)
-                    or str(match.get("status") or "").lower()!="finished"):
-                continue
-            home=str(match.get("home_team") or "")
-            away=str(match.get("away_team") or "")
-            hs=team_similarity(team,home)
-            aws=team_similarity(team,away)
-            if max(hs,aws)<0.74 or abs(hs-aws)<0.05:
-                continue
-            matches.append((match_date,match,hs>aws))
+    for slug,match in _cornerflick_global_matches_cache or []:
+        kickoff=str(match.get("kickoff_at") or "")
+        match_date=kickoff[:10]
+        if (not match_date or match_date>=str(fixture_date)
+                or str(match.get("status") or "").lower()!="finished"):
+            continue
+        home=str(match.get("home_team") or "")
+        away=str(match.get("away_team") or "")
+        hs=team_similarity(team,home)
+        aws=team_similarity(team,away)
+        if max(hs,aws)<0.74 or abs(hs-aws)<0.05:
+            continue
+        matches.append((match_date,match,hs>aws))
     matches.sort(key=lambda item:item[0],reverse=True)
+
     history=[]
     seen=set()
+    # Six most recent candidate records are enough to establish a small,
+    # real sample; do not fetch dozens of match-detail files for every club.
     for match_date,match,is_home in matches:
         identity=(match_date,normalized_team(match.get("home_team")),normalized_team(match.get("away_team")))
         if identity in seen:
@@ -2123,12 +2142,13 @@ def cornerflick_team_ft_corner_history_global(team,fixture_date):
             continue
         own=corners[0] if is_home else corners[1]
         history.append((match_date,own,corners[0]+corners[1]))
-        if len(history)>=12:
+        if len(history)>=6:
             break
     _cornerflick_global_history_cache[cache_key]=history
-    logging.info("Cornerflick global: %s — znaleziono %s meczów FT rożnych w %s rozgrywkach",
-                 team,len(history),len(slugs))
+    logging.info("Cornerflick global: %s — znaleziono %s meczów FT rożnych",
+                 team,len(history))
     return list(history)
+
 
 
 def season_team_ft_corner_history(team,rows,fixture_date):
