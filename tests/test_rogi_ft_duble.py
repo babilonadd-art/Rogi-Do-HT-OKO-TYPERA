@@ -10,7 +10,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(MIN_LEG_ODDS, 1.90)
         self.assertEqual(MAX_LEG_ODDS, 3.50)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
-        self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
+        self.assertEqual(MAX_DOUBLES_PER_DAY, 4)
         self.assertEqual(FT_LINES, (9.5,))
 
     def test_placeholder_team_names_are_rejected(self):
@@ -19,8 +19,8 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertFalse(_placeholder_team("Kuwejt"))
         self.assertFalse(_placeholder_team("Honduras"))
 
-    def test_daily_cap_is_two_doubles(self):
-        self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 4)
+    def test_daily_cap_is_four_doubles(self):
+        self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 8)
 
     def test_night_and_day_pools_are_separate(self):
         from datetime import datetime
@@ -33,7 +33,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(night_session_day(datetime(2026, 11, 21, 3, 0, tzinfo=tz)), '2026-11-20')
         self.assertEqual(night_session_day(datetime(2026, 11, 21, 10, 0, tzinfo=tz)), '2026-11-21')
 
-    def test_quota_reset_preserves_old_history_and_unlocks_two_new_doubles(self):
+    def test_quota_reset_preserves_old_history_and_unlocks_new_doubles(self):
         import sqlite3
         from datetime import datetime
         from zoneinfo import ZoneInfo
