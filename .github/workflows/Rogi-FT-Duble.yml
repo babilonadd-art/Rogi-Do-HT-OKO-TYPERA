@@ -33,6 +33,7 @@ permissions:
   contents: write
 
 # Scheduled cycles only scan and publish new FT doubles; settlement is manual.
+# [publish-ft] Immediate scan after user-requested four-doubles limit change.
 
 concurrency:
   group: rogi-ft-duble
