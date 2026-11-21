@@ -32,6 +32,8 @@ on:
 permissions:
   contents: write
 
+# Scheduled cycles settle existing coupons and also scan for new FT doubles.
+
 concurrency:
   group: rogi-ft-duble
   cancel-in-progress: false
