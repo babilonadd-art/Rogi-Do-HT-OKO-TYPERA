@@ -21,7 +21,7 @@ DB = "rogift_duble.db"
 STAKE = 50.0
 MIN_LEG_ODDS = 1.90
 MAX_LEG_ODDS = 3.50
-MAX_DOUBLES_PER_DAY = 2
+MAX_DOUBLES_PER_DAY = 4
 NIGHT_START_HOUR = 22
 NIGHT_END_HOUR = 8
 GRAPHIC_VERSION = "oko-typera-clean-ft-template-real-fixtures-v13"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
@@ -451,9 +451,15 @@ def send_new_doubles(c, now):
             candidate_groups[bucket].append(item)
 
     total_made = 0
+    # Jeden wspólny limit publikacji na dzień kalendarzowy (dzień + noc razem).
+    published_today = int(c.execute(
+        "SELECT COUNT(*) FROM ft_doubles WHERE substr(sent_at,1,10)=?", (today,)
+    ).fetchone()[0])
+    remaining_today = max(0, MAX_DOUBLES_PER_DAY - published_today)
+    logging.info("Wspólny limit dzienny: wykorzystano %s/%s dubli", published_today, MAX_DOUBLES_PER_DAY)
     for bucket, quota_day in (("day", today), ("night", active_night_day)):
         quota_count = daily_quota_count(c, quota_day, bucket)
-        remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
+        remaining = remaining_today
         group = candidate_groups[bucket]
         logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
                      bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
@@ -507,6 +513,7 @@ def send_new_doubles(c, now):
             c.commit()
             made += 1
             remaining -= 1
+            remaining_today -= 1
         total_made += made
         logging.info("Nowe %s duble: %s; limit puli: %s", bucket.upper(), made, MAX_DOUBLES_PER_DAY)
     logging.info("Łącznie nowe duble FT w tym skanie: %s", total_made)
@@ -1076,12 +1083,13 @@ def main():
                 logging.info("DRY RUN: %s | %s - %s | OVER %.1f FT @%.2f | %s",
                              item["league"], item["home"], item["away"], item["line"],
                              item["odds"], kickoff.isoformat())
-        else:
-            # Normal scan must never repost old pending coupons. Recovery is
-            # available only through the explicit repost-pending mode.
+        elif mode == "settle":
+            # Rozliczanie wyłącznie na jawne, ręczne uruchomienie trybu settle.
             settle_doubles(c, now)
-            if mode != "settle":
-                send_new_doubles(c, now)
+        else:
+            # Automatyczny i zwykły tryb scan tylko szuka oraz publikuje nowe duble.
+            # Nie sprawdza wyników i nie rozlicza kuponów.
+            send_new_doubles(c, now)
     finally:
         c.close()
 
