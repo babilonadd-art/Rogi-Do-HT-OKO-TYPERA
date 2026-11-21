@@ -462,15 +462,29 @@ def fetch_candidates(now):
     # that made a single scan exceed the Actions time limit. Bounded concurrency
     # speeds up market discovery while limiting pressure on Superbet.
     with ThreadPoolExecutor(max_workers=12) as pool:
-        candidates = [
+        market_candidates = [
             item for item in pool.map(
                 lambda event: _event_corner_candidate(event, earliest), events
             ) if item is not None
         ]
 
+    # Market odds alone are never enough: require real historical FT corner data
+    # for both teams, then rank by their combined average.
+    candidates = []
+    for item in market_candidates:
+        try:
+            analyzed = _candidate_ft_corner_stats(item)
+            if analyzed is not None:
+                candidates.append(analyzed)
+        except Exception:
+            logging.exception("Błąd analizy statystyk FT dla %s - %s",
+                              item.get("home"), item.get("away"))
+
     candidates.sort(key=lambda x: (-x["quality_score"], x["start_ts"], x["line"]))
-    logging.info("ROGI FT: kandydaci spełniający kurs %.2f–%.2f: %s",
-                 MIN_LEG_ODDS, MAX_LEG_ODDS, len(candidates))
+    logging.info(
+        "ROGI FT: rynki z kursem %.2f–%.2f=%s; po analizie statystyk FT=%s",
+        MIN_LEG_ODDS, MAX_LEG_ODDS, len(market_candidates), len(candidates)
+    )
     return candidates
 
 def night_session_day(now):
