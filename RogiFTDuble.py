@@ -320,6 +320,88 @@ def is_blocked_under_league(league):
     return name in blocked or any(token in name for token in blocked_tokens)
 
 
+_matchday_ft_rows = None
+FT_STATS_MIN_SAMPLE = 3
+FT_STATS_MIN_TEAM_AVG = 3.5
+FT_STATS_MIN_COMBINED_AVG = 10.8
+
+
+def _candidate_ft_corner_stats(item):
+    """Require real recent FT corner history for both teams before a match can qualify."""
+    global _matchday_ft_rows
+    fixture_date = datetime.fromtimestamp(
+        int(item["start_ts"]), timezone.utc
+    ).date().isoformat()
+
+    home_history = source.cornerflick_team_ft_corner_history(
+        item["home"], item["league"], fixture_date
+    )
+    away_history = source.cornerflick_team_ft_corner_history(
+        item["away"], item["league"], fixture_date
+    )
+    history_source = "Cornerflick"
+
+    # Fallback only when Cornerflick lacks enough real matches for either team.
+    if (len(home_history) < FT_STATS_MIN_SAMPLE
+            or len(away_history) < FT_STATS_MIN_SAMPLE):
+        if _matchday_ft_rows is None:
+            _matchday_ft_rows = source.load_all_matchday_results() or []
+            logging.info("Open Matchday: załadowano zapasową historię FT rożnych: %s meczów",
+                         len(_matchday_ft_rows))
+        fallback_home = source.season_team_ft_corner_history(
+            item["home"], _matchday_ft_rows, fixture_date
+        )
+        fallback_away = source.season_team_ft_corner_history(
+            item["away"], _matchday_ft_rows, fixture_date
+        )
+        if len(home_history) < FT_STATS_MIN_SAMPLE:
+            home_history = fallback_home
+        if len(away_history) < FT_STATS_MIN_SAMPLE:
+            away_history = fallback_away
+        history_source = "Cornerflick + Open Matchday"
+
+    if (len(home_history) < FT_STATS_MIN_SAMPLE
+            or len(away_history) < FT_STATS_MIN_SAMPLE):
+        logging.info(
+            "Odrzucono %s - %s: brak próbki FT rożnych (%s/%s, wymagane %s na zespół)",
+            item["home"], item["away"], len(home_history), len(away_history),
+            FT_STATS_MIN_SAMPLE
+        )
+        return None
+
+    home_avg = sum(row[1] for row in home_history[:12]) / min(len(home_history), 12)
+    away_avg = sum(row[1] for row in away_history[:12]) / min(len(away_history), 12)
+    combined_avg = home_avg + away_avg
+
+    if home_avg < FT_STATS_MIN_TEAM_AVG or away_avg < FT_STATS_MIN_TEAM_AVG:
+        logging.info(
+            "Odrzucono %s - %s: za mało własnych rożnych FT (%.2f / %.2f)",
+            item["home"], item["away"], home_avg, away_avg
+        )
+        return None
+    if combined_avg < FT_STATS_MIN_COMBINED_AVG:
+        logging.info(
+            "Odrzucono %s - %s: średnia łączna FT %.2f < %.2f",
+            item["home"], item["away"], combined_avg, FT_STATS_MIN_COMBINED_AVG
+        )
+        return None
+
+    item = dict(item)
+    item.update({
+        "home_avg": home_avg,
+        "away_avg": away_avg,
+        "combined_avg": combined_avg,
+        "stats_source": history_source,
+        "quality_score": combined_avg,
+    })
+    logging.info(
+        "Kandydat przeszedł analizę FT: %s - %s | próbka %s/%s | średnie własne %.2f/%.2f | razem %.2f | źródło %s",
+        item["home"], item["away"], len(home_history), len(away_history),
+        home_avg, away_avg, combined_avg, history_source
+    )
+    return item
+
+
 def _event_corner_candidate(event, earliest):
     """Read one event's live Superbet FT corners market; safe to run in parallel."""
     fixture = event.get("fixture") or {}
@@ -364,9 +446,9 @@ def _event_corner_candidate(event, earliest):
     return {
         "event_id": int(event_id), "league": league,
         "home": home, "away": away, "start_ts": kickoff,
-        "line": chosen[0], "odds": chosen[1], "quality_score": 0.0,
+        "line": chosen[0], "odds": chosen[1],
+        "quality_score": 0.0,
     }
-
 
 def fetch_candidates(now):
     start = now.astimezone(timezone.utc)
