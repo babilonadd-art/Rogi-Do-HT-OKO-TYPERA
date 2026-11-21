@@ -2,7 +2,7 @@ name: ROGI FT — DUBLE PREMATCH
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # kontrola rozliczeń co 5 minut
+    - cron: "*/5 * * * *" # wyszukiwanie nowych dubli co 5 minut
   workflow_dispatch:
     inputs:
       mode:
@@ -32,7 +32,7 @@ on:
 permissions:
   contents: write
 
-# Scheduled cycles settle existing coupons and also scan for new FT doubles.
+# Scheduled cycles only scan and publish new FT doubles; settlement is manual.
 
 concurrency:
   group: rogi-ft-duble
