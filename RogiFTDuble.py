@@ -502,15 +502,17 @@ def fixture_bucket(start_ts):
     return "day", kickoff.date().isoformat()
 
 
-def daily_quota_count(c, day, bucket="day"):
-    """Count only the selected independent daytime/nighttime pool."""
-    if bucket == "day":
-        reset = c.execute("SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (day,)).fetchone()
-        if reset:
-            return int(c.execute(
-                "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=? AND sent_at>?",
-                (bucket, day, reset[0]),
-            ).fetchone()[0])
+def daily_quota_count(c, day, bucket="day", reset_day=None):
+    """Count picks in a quota bucket since the latest explicit daily reset."""
+    reset_key = reset_day or day
+    reset = c.execute(
+        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (reset_key,)
+    ).fetchone()
+    if reset:
+        return int(c.execute(
+            "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=? AND sent_at>?",
+            (bucket, day, reset[0]),
+        ).fetchone()[0])
     return int(c.execute(
         "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=?",
         (bucket, day),
@@ -555,13 +557,21 @@ def send_new_doubles(c, now):
 
     total_made = 0
     # Jeden wspólny limit publikacji na dzień kalendarzowy (dzień + noc razem).
-    published_today = int(c.execute(
-        "SELECT COUNT(*) FROM ft_doubles WHERE substr(sent_at,1,10)=?", (today,)
-    ).fetchone()[0])
+    reset_row = c.execute(
+        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (today,)
+    ).fetchone()
+    if reset_row:
+        published_today = int(c.execute(
+            "SELECT COUNT(*) FROM ft_doubles WHERE sent_at>?", (reset_row[0],)
+        ).fetchone()[0])
+    else:
+        published_today = int(c.execute(
+            "SELECT COUNT(*) FROM ft_doubles WHERE substr(sent_at,1,10)=?", (today,)
+        ).fetchone()[0])
     remaining_today = max(0, MAX_DOUBLES_PER_DAY - published_today)
     logging.info("Wspólny limit dzienny: wykorzystano %s/%s dubli", published_today, MAX_DOUBLES_PER_DAY)
     for bucket, quota_day in (("day", today), ("night", active_night_day)):
-        quota_count = daily_quota_count(c, quota_day, bucket)
+        quota_count = daily_quota_count(c, quota_day, bucket, reset_day=today)
         remaining = remaining_today
         group = candidate_groups[bucket]
         logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
