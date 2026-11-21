@@ -1118,3 +1118,5 @@ if __name__ == "__main__":
 # Ręczne ponowienie resetu dziennego limitu na żądanie użytkownika — 2026-11-20.
 
 # Ręczny reset dziennego limitu FT na żądanie użytkownika — 2026-11-20 (ponowienie).
+
+# Ręczne żądanie użytkownika: wyczyść całą historię typów FT i limity. [clear-history-ft]
