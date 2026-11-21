@@ -8,6 +8,7 @@ import json
 import sqlite3
 import logging
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
 from rogift_graphic import render_coupon_image
@@ -319,43 +320,32 @@ def is_blocked_under_league(league):
     return name in blocked or any(token in name for token in blocked_tokens)
 
 
-def fetch_candidates(now):
-    start = now.astimezone(timezone.utc)
-    # Look ahead 36 hours so late-night scans also see tomorrow's fixtures.
-    end = start + timedelta(hours=36)
-    events = source.superbet_football_events(start, end)
-    candidates = []
-    earliest = int((now + timedelta(hours=MIN_HOURS_BEFORE_KICKOFF)).timestamp())
-    for event in events:
-        fixture = event.get("fixture") or {}
-        event_id = event.get("event_id") or event.get("id")
-        if not event_id:
-            continue
-        try:
-            kickoff = int(datetime.fromisoformat(str(fixture["utc_date"]).replace("Z", "+00:00")).timestamp())
-        except (KeyError, TypeError, ValueError):
-            continue
-        if kickoff < earliest:
-            continue
-        parts = str(fixture.get("event_name") or "").split("·", 1)
-        if len(parts) != 2:
-            continue
-        home, away = (part.strip() for part in parts)
-        if (not home or not away or _placeholder_team(home) or _placeholder_team(away)):
-            logging.warning("Pomijam zdarzenie %s: brak prawdziwych nazw drużyn (%r - %r)",
-                            event_id, home, away)
-            continue
-        league = source.extract_league_name(event) or "Liga niepodana"
-        if is_blocked_under_league(league):
-            logging.info("ODRZUCAM Z CZARNEJ LISTY LIG: %s | %s - %s",
-                         league, home, away)
-            continue
-
-        # Selekcja prematch opiera się na kursach Superbet, zgodnie z kryterium użytkownika.
-        # Nie pobieramy historii Cornerflick dla każdej drużyny: to spowalnia skanowanie,
-        # nie jest warunkiem wyboru typu i może blokować publikację przy dużej liczbie spotkań.
-        quality_score = 0.0
-
+def _event_corner_candidate(event, earliest):
+    """Read one event's live Superbet FT corners market; safe to run in parallel."""
+    fixture = event.get("fixture") or {}
+    event_id = event.get("event_id") or event.get("id")
+    if not event_id:
+        return None
+    try:
+        kickoff = int(datetime.fromisoformat(
+            str(fixture["utc_date"]).replace("Z", "+00:00")
+        ).timestamp())
+    except (KeyError, TypeError, ValueError):
+        return None
+    if kickoff < earliest:
+        return None
+    parts = str(fixture.get("event_name") or "").split("·", 1)
+    if len(parts) != 2:
+        return None
+    home, away = (part.strip() for part in parts)
+    if not home or not away or _placeholder_team(home) or _placeholder_team(away):
+        logging.warning("Pomijam zdarzenie %s: brak prawdziwych nazw drużyn (%r - %r)",
+                        event_id, home, away)
+        return None
+    league = source.extract_league_name(event) or "Liga niepodana"
+    if is_blocked_under_league(league):
+        return None
+    try:
         prices = source.superbet_ft_corners_over_prices(
             int(event_id), lines=FT_LINES, min_odds=MIN_LEG_ODDS
         )
@@ -365,24 +355,41 @@ def fetch_candidates(now):
             if float(line) >= MIN_FT_CORNERS_LINE
             and MIN_LEG_ODDS <= float(price) <= MAX_LEG_ODDS
         }
-        chosen = next(
-            ((line, float(prices[line])) for line in FT_LINES if line in prices),
-            None,
-        )
-        if not chosen:
-            continue
-        candidates.append({
-            "event_id": int(event_id),
-            "league": league,
-            "home": home, "away": away, "start_ts": kickoff,
-            "line": chosen[0], "odds": chosen[1],
-            "quality_score": float(quality_score),
-        })
-    # Najpierw najlepszy profil statystyczny, a nie po prostu najwcześniejszy mecz.
-    candidates.sort(key=lambda x: (-x["quality_score"], x["start_ts"], x["line"]))
-    logging.info("ROGI FT: kandydaci spełniający kurs >= %.2f: %s", MIN_LEG_ODDS, len(candidates))
-    return candidates
+    except Exception:
+        logging.exception("Superbet: błąd pobierania rynku rożnych FT dla event_id=%s", event_id)
+        return None
+    chosen = next(((line, float(prices[line])) for line in FT_LINES if line in prices), None)
+    if not chosen:
+        return None
+    return {
+        "event_id": int(event_id), "league": league,
+        "home": home, "away": away, "start_ts": kickoff,
+        "line": chosen[0], "odds": chosen[1], "quality_score": 0.0,
+    }
 
+
+def fetch_candidates(now):
+    start = now.astimezone(timezone.utc)
+    # Look ahead 36 hours so late-night scans also see tomorrow's fixtures.
+    end = start + timedelta(hours=36)
+    events = source.superbet_football_events(start, end)
+    earliest = int((now + timedelta(hours=MIN_HOURS_BEFORE_KICKOFF)).timestamp())
+    logging.info("Superbet: sprawdzam rynki FT dla %s wydarzeń równolegle (12 połączeń)", len(events))
+
+    # Previously every event was checked sequentially; with hundreds of fixtures
+    # that made a single scan exceed the Actions time limit. Bounded concurrency
+    # speeds up market discovery while limiting pressure on Superbet.
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        candidates = [
+            item for item in pool.map(
+                lambda event: _event_corner_candidate(event, earliest), events
+            ) if item is not None
+        ]
+
+    candidates.sort(key=lambda x: (-x["quality_score"], x["start_ts"], x["line"]))
+    logging.info("ROGI FT: kandydaci spełniający kurs %.2f–%.2f: %s",
+                 MIN_LEG_ODDS, MAX_LEG_ODDS, len(candidates))
+    return candidates
 
 def night_session_day(now):
     """Night session is named by the date on which its 22:00 start occurs."""
@@ -1061,9 +1068,9 @@ def main():
         mode = os.getenv("BOT_MODE", "scan").strip().lower()
         if mode == "clear-history":
             clear_all_history(c)
-        elif mode == "summary":
-            settle_doubles(c, now)
-            send_overall_report(c, now)
+        elif mode in {"summary", "settle"}:
+            logging.warning("Rozliczanie jest wyłączone. Bot wyłącznie wyszukuje i publikuje nowe duble.")
+            return
         elif mode == "repost-pending":
             repost_pending_doubles(c, now)
         elif mode == "replace-graphics":
@@ -1083,9 +1090,6 @@ def main():
                 logging.info("DRY RUN: %s | %s - %s | OVER %.1f FT @%.2f | %s",
                              item["league"], item["home"], item["away"], item["line"],
                              item["odds"], kickoff.isoformat())
-        elif mode == "settle":
-            # Rozliczanie wyłącznie na jawne, ręczne uruchomienie trybu settle.
-            settle_doubles(c, now)
         else:
             # Automatyczny i zwykły tryb scan tylko szuka oraz publikuje nowe duble.
             # Nie sprawdza wyników i nie rozlicza kuponów.
@@ -1097,7 +1101,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Wymuś jednorazowe rozliczenie oczekujących dubli FT po publikacji zmiany harmonogramu.
+# Bot FT: wyłącznie wyszukiwanie i publikacja nowych dubli.
 
 # Clear all previous FT picks from persistent SQLite history [clear-history-ft].
 
