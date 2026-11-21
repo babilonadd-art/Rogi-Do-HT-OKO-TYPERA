@@ -341,7 +341,8 @@ def _candidate_ft_corner_stats(item):
     )
     history_source = "Cornerflick"
 
-    # Fallback only when Cornerflick lacks enough real matches for either team.
+    # Merge independent datasets instead of discarding partial Cornerflick history.
+    # Open Matchday is searched globally across competitions.
     if (len(home_history) < FT_STATS_MIN_SAMPLE
             or len(away_history) < FT_STATS_MIN_SAMPLE):
         if _matchday_ft_rows is None:
@@ -354,11 +355,36 @@ def _candidate_ft_corner_stats(item):
         fallback_away = source.season_team_ft_corner_history(
             item["away"], _matchday_ft_rows, fixture_date
         )
+        def merge_history(*histories):
+            merged = {}
+            for history in histories:
+                for row in history or []:
+                    if len(row) < 3:
+                        continue
+                    key = (str(row[0]), int(row[1]), int(row[2]))
+                    merged[key] = key
+            return sorted(merged.values(), key=lambda row: row[0], reverse=True)[:12]
         if len(home_history) < FT_STATS_MIN_SAMPLE:
-            home_history = fallback_home
+            home_history = merge_history(home_history, fallback_home)
         if len(away_history) < FT_STATS_MIN_SAMPLE:
-            away_history = fallback_away
+            away_history = merge_history(away_history, fallback_away)
         history_source = "Cornerflick + Open Matchday"
+
+    # If the fixture league has no coverage, look for the same club in
+    # other published Cornerflick competitions (domestic league/cup history).
+    if (len(home_history) < FT_STATS_MIN_SAMPLE
+            or len(away_history) < FT_STATS_MIN_SAMPLE):
+        global_home = source.cornerflick_team_ft_corner_history_global(
+            item["home"], fixture_date
+        )
+        global_away = source.cornerflick_team_ft_corner_history_global(
+            item["away"], fixture_date
+        )
+        if len(home_history) < FT_STATS_MIN_SAMPLE:
+            home_history = merge_history(home_history, global_home)
+        if len(away_history) < FT_STATS_MIN_SAMPLE:
+            away_history = merge_history(away_history, global_away)
+        history_source = "Cornerflick global + Open Matchday"
 
     if (len(home_history) < FT_STATS_MIN_SAMPLE
             or len(away_history) < FT_STATS_MIN_SAMPLE):
