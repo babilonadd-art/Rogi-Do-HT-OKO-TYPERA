@@ -166,7 +166,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     proof_payload, signature = publication_proof(legs, total_odds, coupon_id)
-    telegram_caption = "🌙 NOCNE TYPY • ROŻNE FT" if night else None
+    telegram_caption = ("🌙 NOCNE TYPY • ROŻNE FT\nDane statystyczne: Cornerflick.com" if night else "Dane statystyczne: Cornerflick.com")
 
     # Telegram photos cannot contain clickable regions. Native URL buttons
     # are attached immediately below the image, one for each fixture.
