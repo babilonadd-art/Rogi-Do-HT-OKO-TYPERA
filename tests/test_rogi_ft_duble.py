@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, fixture_bucket, night_session_day
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _candidate_ft_corner_stats, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
 
@@ -27,6 +27,20 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertAlmostEqual(profile["own_average"], 5.4)
         self.assertIsNotNone(_recent_five_corner_profile(complete[:3]))
         self.assertIsNone(_recent_five_corner_profile(complete[:1]))
+
+    @patch("RogiFTDuble.source.cornerflick_team_ft_corner_history")
+    @patch("RogiFTDuble.source.load_all_matchday_results")
+    def test_team_history_is_not_used_to_reject_market_candidates(self, load_history, corner_history):
+        item = {
+            "event_id": 321, "league": "Liga", "home": "Gospodarze",
+            "away": "Goscie", "start_ts": 1795550000,
+            "line": 9.5, "odds": 1.85,
+        }
+        result = _candidate_ft_corner_stats(item)
+        self.assertEqual(result["event_id"], 321)
+        self.assertEqual(result["quality_score"], 0.0)
+        corner_history.assert_not_called()
+        load_history.assert_not_called()
 
     def test_top_six_league_detection(self):
         self.assertTrue(_is_top_six_league("Premier League"))
