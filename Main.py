@@ -211,6 +211,20 @@ def extract_league_name(event):
         name=superbet_tournament_names().get(str(tournament_id))
         if name:
             return name
+    # Fallback: identify both clubs through TheSportsDB's free public test key.
+    # Only accept a competition when both teams independently agree.
+    event_name=str(fixture.get("event_name") or event.get("event_name") or "")
+    teams=[part.strip() for part in event_name.split("·",1)]
+    if len(teams)==2:
+        try:
+            import team_league_resolver
+            resolved=team_league_resolver.resolve_match_league(teams[0],teams[1])
+            if resolved:
+                logging.info("Liga rozpoznana po nazwach drużyn: %s — %s / %s",
+                             resolved,teams[0],teams[1])
+                return resolved
+        except Exception as exc:
+            logging.warning("Rozpoznawanie ligi po drużynach nie powiodło się: %s",exc)
     return ""
 
 
