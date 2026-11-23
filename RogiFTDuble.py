@@ -564,24 +564,12 @@ def send_new_doubles(c, now):
     )
 
     total_made = 0
-    # Jeden wspólny limit publikacji na dzień kalendarzowy (dzień + noc razem).
-    reset_row = c.execute(
-        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (today,)
-    ).fetchone()
-    if reset_row:
-        published_today = int(c.execute(
-            "SELECT COUNT(*) FROM ft_doubles WHERE sent_at>?", (reset_row[0],)
-        ).fetchone()[0])
-    else:
-        published_today = int(c.execute(
-            "SELECT COUNT(*) FROM ft_doubles WHERE substr(sent_at,1,10)=?", (today,)
-        ).fetchone()[0])
-    remaining_today = max(0, MAX_DOUBLES_PER_DAY - published_today)
-    logging.info("Wspólny limit dzienny: wykorzystano %s/%s dubli", published_today, MAX_DOUBLES_PER_DAY)
+    # Każda pula ma własny limit: typy dzienne nie blokują nocnych
+    # (i odwrotnie). Limit dotyczy konkretnego bucket + quota_day.
     for (bucket, quota_day), group in ordered_groups:
         reset_key = today if quota_day == today else quota_day
         quota_count = daily_quota_count(c, quota_day, bucket, reset_day=reset_key)
-        remaining = remaining_today
+        remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
         logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
                      bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
         made = 0
@@ -634,7 +622,6 @@ def send_new_doubles(c, now):
             c.commit()
             made += 1
             remaining -= 1
-            remaining_today -= 1
         total_made += made
         logging.info("Nowe %s duble dla %s: %s; limit puli: %s",
                      bucket.upper(), quota_day, made, MAX_DOUBLES_PER_DAY)
