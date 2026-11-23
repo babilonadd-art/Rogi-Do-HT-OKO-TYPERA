@@ -400,15 +400,7 @@ def _match_payload(item):
         return None
 
 
-def load_team_history(league, home, away, fixture_date):
-    """Return real FT-corner rows for the two candidate teams from Cornerflick."""
-    slug = resolve_league_slug(league)
-    if not slug:
-        return []
-    season = _season_data(slug)
-    if not isinstance(season, dict):
-        return []
-    matches = season.get("matches") or []
+def _load_team_history_from_matches(matches, home, away, fixture_date, label):
     selected = {}
     for team in (home, away):
         for item in _team_matches(team, matches, fixture_date):
@@ -416,8 +408,6 @@ def load_team_history(league, home, away, fixture_date):
             if identity:
                 selected[str(identity)] = item
     if not selected:
-        logging.info("Cornerflick: brak zakończonych meczów dla %s / %s (%s)",
-                     home, away, slug)
         return []
     payloads = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -430,5 +420,70 @@ def load_team_history(league, home, away, fixture_date):
                     payloads.append(row)
     payloads.sort(key=lambda row: row["date"], reverse=True)
     logging.info("Cornerflick: %s — pobrano %s meczów z rzeczywistymi rożnymi dla %s / %s",
-                 slug, len(payloads), home, away)
+                 label, len(payloads), home, away)
     return payloads
+
+
+def _load_global_team_history(home, away, fixture_date):
+    """Fallback across all indexed competitions when Superbet's league name is missing
+    or Cornerflick has no team history under the resolved competition slug."""
+    entries = _load_league_index()
+    if not entries:
+        return []
+    logging.info("Cornerflick: globalne szukanie historii %s / %s w %s ligach",
+                 home, away, len(entries))
+    seasons = {}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(_season_data, item["slug"]): item for item in entries}
+        for future in as_completed(futures):
+            item = futures[future]
+            try:
+                payload = future.result()
+            except Exception as exc:
+                logging.debug("Cornerflick: indeks sezonu %s: %s", item["slug"], exc)
+                continue
+            if isinstance(payload, dict) and isinstance(payload.get("matches"), list):
+                seasons[item["slug"]] = payload["matches"]
+    selected = {}
+    for slug, matches in seasons.items():
+        for team in (home, away):
+            for item in _team_matches(team, matches, fixture_date):
+                identity = item.get("id") or item.get("dataset_url") or item.get("url")
+                if identity:
+                    selected[str(identity)] = item
+    if not selected:
+        logging.info("Cornerflick: globalnie nie znaleziono historii %s / %s", home, away)
+        return []
+    rows = []
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = [pool.submit(_match_payload, item) for item in selected.values()]
+        for future in as_completed(futures):
+            payload = future.result()
+            if payload:
+                row = _extract_corner_row(payload)
+                if row:
+                    rows.append(row)
+    rows.sort(key=lambda row: row["date"], reverse=True)
+    logging.info("Cornerflick: globalnie pobrano %s meczów z rzeczywistymi rożnymi dla %s / %s",
+                 len(rows), home, away)
+    return rows
+
+
+def load_team_history(league, home, away, fixture_date):
+    """Return real FT-corner rows; fall back to the full league index for unlisted competitions."""
+    slug = resolve_league_slug(league)
+    rows = []
+    if slug:
+        season = _season_data(slug)
+        if isinstance(season, dict):
+            rows = _load_team_history_from_matches(
+                season.get("matches") or [], home, away, fixture_date, slug
+            )
+    if len(rows) < 10:
+        global_rows = _load_global_team_history(home, away, fixture_date)
+        merged = {
+            (row["date"], _norm(row["home"]), _norm(row["away"])): row
+            for row in rows + global_rows
+        }
+        rows = sorted(merged.values(), key=lambda row: row["date"], reverse=True)
+    return rows
