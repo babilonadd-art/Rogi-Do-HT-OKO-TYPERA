@@ -303,6 +303,7 @@ def normalized_league_name(value):
     import re
     import unicodedata
     value = unicodedata.normalize("NFKD", str(value or "").casefold())
+    value = value.replace("ł", "l")
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", "", value)
 
