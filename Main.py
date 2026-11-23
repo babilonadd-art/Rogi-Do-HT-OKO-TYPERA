@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
+import cornerflick_source
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 SUPERBET_API="https://production-superbet-offer-pl.freetls.fastly.net"
@@ -777,11 +778,35 @@ def league_ft_corner_profile(rows,fixture_date,limit=80):
 
 
 def ft_matchday_candidate_profile(league,home,away,start_ts):
-    """Build a corner-analysis profile and reject weak or incomplete team samples."""
-    rows=load_matchday_results(league)
-    if rows is None:
-        return None,"brak danych Open Matchday FT"
+    """Build one FT-corner profile from Open Matchday plus Cornerflick real match records."""
     fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    open_rows=load_matchday_results(league) or []
+    cornerflick_rows=cornerflick_source.load_team_history(league,home,away,fixture_date)
+    # Keep one record per fixture; Cornerflick wins duplicates because its match
+    # JSON contains the direct, provenance-labelled corner statistic.
+    merged={}
+    for row in open_rows:
+        try:
+            hc=float(row.get("home_corners"))
+            ac=float(row.get("away_corners"))
+            if hc < 0 or ac < 0:
+                continue
+        except (TypeError,ValueError):
+            continue
+        key=(str(row.get("date") or ""),normalized_team(row.get("home")),
+             normalized_team(row.get("away")))
+        if key[0] and key[1] and key[2]:
+            merged[key]=row
+    for row in cornerflick_rows:
+        key=(str(row.get("date") or ""),normalized_team(row.get("home")),
+             normalized_team(row.get("away")))
+        if key[0] and key[1] and key[2]:
+            merged[key]=row
+    rows=list(merged.values())
+    if not rows:
+        return None,"brak rzeczywistych danych rożnych Open Matchday i Cornerflick"
+    logging.info("ROGI FT: połączone źródła — Open Matchday %s wierszy, Cornerflick %s, razem %s",
+                 len(open_rows),len(cornerflick_rows),len(rows))
     hh=recent_team_ft_corner_history(home,rows,fixture_date)
     ah=recent_team_ft_corner_history(away,rows,fixture_date)
     home_home=recent_team_ft_corner_history(home,rows,fixture_date,venue="home")
