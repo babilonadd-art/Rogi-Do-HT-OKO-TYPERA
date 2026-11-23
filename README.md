@@ -10,7 +10,12 @@ Aktywny moduł `RogiFTDuble.py` publikuje wyłącznie przedmeczowe duble na rzut
 - Maksymalnie **2 duble dziennie** (4 pojedyncze zdarzenia).
 - Skanowanie co 5 minut przez GitHub Actions.
 - Mecz musi rozpoczynać się co najmniej 3 godziny po skanowaniu.
-- Nie są używane statystyki ani historia drużyn do wyboru zdarzeń.
+- Analiza rożnych FT opiera się na ostatnich maksymalnie 5 dostępnych meczach każdej drużyny; wymagane są co najmniej 4 kompletne rekordy.
+- Obie drużyny muszą mieć co najmniej 4 z 5 ostatnich meczów z łączną liczbą rożnych powyżej 8.5.
+- Minimalna suma średnich własnych rożnych z ostatnich 5 meczów: 10.2 w Premier League, LaLiga, Serie A, Bundeslidze, Ligue 1 i Eredivisie; 11.0 w pozostałych ligach.
+- Statystyki są pobierane z Cornerflick, a przy brakach uzupełniane przez Open Matchday; mecze bez wystarczających danych są odrzucane.
+- Nie zakładamy dostępności strzałów ani xG w ligach egzotycznych; nie zastępujemy brakujących statystyk fikcyjnymi wartościami.
+- Bot nie ma jeszcze wiarygodnej historii kursów z kolejnych skanów, więc nie potwierdza ruchu linii jako sygnału.
 - Bot nie publikuje ponownie tego samego meczu.
 - Stawka rozliczeniowa: 50 zł za dubel.
 - Nowe duble są wysyłane jako dynamiczna grafika PNG w stylu OKO TYPERA; grafika zawiera oba mecze, linie FT, kursy, podatek 12%, kwotę grającą, kurs łączny, wypłatę i zysk netto.
