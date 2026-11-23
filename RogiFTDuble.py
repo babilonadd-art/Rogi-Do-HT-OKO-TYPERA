@@ -321,19 +321,19 @@ def is_blocked_under_league(league):
 
 
 _matchday_ft_rows = None
-FT_STATS_MIN_SAMPLE = 4  # at least 4 usable matches out of the latest 5
+FT_STATS_MIN_SAMPLE = 3  # at least 3 real usable matches out of the latest 5
 FT_STATS_WINDOW = 5
-FT_STATS_MIN_TEAM_AVG = 3.5
-FT_STATS_MIN_COMBINED_AVG_TOP6 = 10.2
-FT_STATS_MIN_COMBINED_AVG_OTHER = 11.0
-FT_STATS_MIN_OVER85_HITS = 4  # each team: at least 4 of 5 recent match totals > 8.5
+FT_STATS_MIN_TEAM_AVG = 3.0
+FT_STATS_MIN_COMBINED_AVG_TOP6 = 9.8
+FT_STATS_MIN_COMBINED_AVG_OTHER = 10.0
+FT_STATS_MIN_OVER85_HITS = 3  # each team: at least 3 of 5 recent match totals > 8.5
 TOP_SIX_LEAGUE_MARKERS = (
     "premierleague", "laliga", "bundesliga", "ligue1", "eredivisie",
 )
 
 
 def _recent_five_corner_profile(history):
-    """Use up to five latest completed matches; require at least four real corner records."""
+    """Use up to five latest completed matches; require at least three real corner records."""
     rows = [row for row in (history or [])[:FT_STATS_WINDOW]
             if len(row) >= 3 and row[1] is not None and row[2] is not None]
     if len(rows) < FT_STATS_MIN_SAMPLE:
@@ -357,7 +357,7 @@ def _is_top_six_league(league):
 
 
 def _candidate_ft_corner_stats(item):
-    """Require recent FT corner history, 4/5 Over 8.5 hits and a league-tier average."""
+    """Require recent FT corner history, 3/5 Over 8.5 hits and a league-tier average."""
     global _matchday_ft_rows
     fixture_date = datetime.fromtimestamp(
         int(item["start_ts"]), timezone.utc
@@ -425,7 +425,7 @@ def _candidate_ft_corner_stats(item):
     away_profile = _recent_five_corner_profile(away_history)
     if home_profile is None or away_profile is None:
         logging.info(
-            "Odrzucono %s - %s: niepełna historia FT rożnych (min. 4 z 5); próbka %s/%s",
+            "Odrzucono %s - %s: niepełna historia FT rożnych (min. 3 z 5); próbka %s/%s",
             item["home"], item["away"],
             home_profile["sample"] if home_profile else 0,
             away_profile["sample"] if away_profile else 0,
@@ -555,8 +555,13 @@ def fetch_candidates(now):
 
     # Market odds alone are never enough: require real historical FT corner data
     # for both teams, then rank by their combined average.
+    # Apply the explicit youth/reserve/friendly/Egypt exclusions before statistics.
     candidates = []
     for item in market_candidates:
+        if is_blocked_under_league(item.get("league", "")):
+            logging.info("Odrzucono %s - %s: zablokowane rozgrywki (%s)",
+                         item.get("home"), item.get("away"), item.get("league"))
+            continue
         try:
             analyzed = _candidate_ft_corner_stats(item)
             if analyzed is not None:
