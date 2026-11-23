@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
+import cornerflick_source
 from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _candidate_ft_corner_stats, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
@@ -196,6 +197,47 @@ class StrategyRulesTests(unittest.TestCase):
         }]}
         result = Main.superbet_ft_corners_over_prices(456, lines=(9.5,), min_odds=1.60)
         self.assertEqual(result, {9.5: 1.82})
+
+
+class CornerflickSourceTests(unittest.TestCase):
+    def test_extracts_only_real_finished_full_time_corner_counts(self):
+        payload = {
+            "meta": {"url": "https://cornerflick.com/example"},
+            "match": {"status": "finished", "kickoff_at": "2026-11-22T16:30:00+00:00"},
+            "teams": {"home": {"name": "Liverpool"}, "away": {"name": "Manchester United"}},
+            "statistics": [
+                {"label": "Shots", "home": 28, "away": 9},
+                {"label": "Corners", "home": 15, "away": 5},
+            ],
+        }
+        row = cornerflick_source._extract_corner_row(payload)
+        self.assertEqual(row["date"], "2026-11-22")
+        self.assertEqual(row["home"], "Liverpool")
+        self.assertEqual(row["away"], "Manchester United")
+        self.assertEqual(row["home_corners"], 15)
+        self.assertEqual(row["away_corners"], 5)
+
+    def test_missing_corner_stat_is_not_treated_as_zero(self):
+        payload = {
+            "match": {"status": "finished", "kickoff_at": "2026-11-22T16:30:00+00:00"},
+            "teams": {"home": {"name": "A"}, "away": {"name": "B"}},
+            "statistics": [{"label": "Shots", "home": 4, "away": 3}],
+        }
+        self.assertIsNone(cornerflick_source._extract_corner_row(payload))
+
+    def test_unfinished_match_is_rejected(self):
+        payload = {
+            "match": {"status": "live", "kickoff_at": "2026-11-22T16:30:00+00:00"},
+            "teams": {"home": {"name": "A"}, "away": {"name": "B"}},
+            "statistics": [{"label": "Corners", "home": 4, "away": 3}],
+        }
+        self.assertIsNone(cornerflick_source._extract_corner_row(payload))
+
+    def test_competition_match_ignores_country_suffix(self):
+        self.assertGreaterEqual(
+            cornerflick_source._competition_score("Anglia - Premier League", "Premier League - England"),
+            0.95,
+        )
 
 
 if __name__ == "__main__":
