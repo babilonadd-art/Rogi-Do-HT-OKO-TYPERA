@@ -326,11 +326,11 @@ def is_blocked_youth_or_reserve_team(team):
     value = str(team or "").casefold()
     value = value.replace("ё", "е")
     patterns = (
-        r"\\bu\\s*[- ]?\\s*(18|19|20|21|23)\\b",
-        r"\\bunder\\s*[- ]?\\s*(18|19|20|21|23)\\b",
-        r"\\b(u18|u19|u20|u21|u23)\\b",
-        r"\\b(reserves?|rezerwy|youth|junior(?:s)?)\\b",
-        r"(?:^|\\s)(?:ii|iii|b)\\s*$",
+        r"\bu\s*[- ]?\s*(18|19|20|21|23)\b",
+        r"\bunder\s*[- ]?\s*(18|19|20|21|23)\b",
+        r"\b(u18|u19|u20|u21|u23)\b",
+        r"\b(reserves?|rezerwy|youth|junior(?:s)?)\b",
+        r"(?:^|\s)(?:ii|iii|b)\s*$",
     )
     return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in patterns)
 
