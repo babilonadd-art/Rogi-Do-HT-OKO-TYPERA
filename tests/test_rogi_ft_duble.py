@@ -239,6 +239,15 @@ class CornerflickSourceTests(unittest.TestCase):
             0.95,
         )
 
+    def test_competition_match_rejects_wrong_country_and_similar_division(self):
+        self.assertEqual(
+            cornerflick_source._competition_score("Walia - Premier League", "Premier League - England"),
+            0.0,
+        )
+        self.assertLess(
+            cornerflick_source._competition_score("Japonia - J2 League", "J1 League - Japan"),
+            0.85,
+        )
 
 if __name__ == "__main__":
     unittest.main()
