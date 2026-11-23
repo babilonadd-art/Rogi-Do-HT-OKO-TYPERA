@@ -281,18 +281,30 @@ def superbet_ft_corners_over_prices(event_id,lines=(9.5,),min_odds=1.80):
             continue
         for odd in market.get("odds") or []:
             meta=odd.get("metadata") or {}
-            raw_line=meta.get("special_bet_value",odd.get("special_bet_value"))
+            selection=" ".join(str(x or "") for x in (
+                odd.get("name"), meta.get("name"), meta.get("info"), odd.get("label")
+            )).lower()
+            raw_line=meta.get("special_bet_value", odd.get("special_bet_value"))
+            # Superbet nie zawsze zwraca special_bet_value; wtedy odczytaj linię
+            # z nazwy selekcji, ale tylko jeśli selekcja jawnie mówi Over/Powyżej.
             try:
                 odd_line=round(float(str(raw_line).replace(",",".")),2)
+            except (TypeError,ValueError):
+                match=re.search(r"\b(?:over|powyżej|powyzej)\s*(\d+(?:[.,]\d+)?)",selection)
+                if not match:
+                    continue
+                odd_line=round(float(match.group(1).replace(",",".")),2)
+            try:
                 price=float(odd.get("price"))
             except (TypeError,ValueError):
                 continue
             if odd_line not in wanted:
                 continue
-            selection=" ".join(str(x or "") for x in (odd.get("name"),meta.get("name"),meta.get("info"),odd.get("label"))).lower()
             if not re.search(r"\b(powyżej|powyzej|over)\b",selection):
                 continue
-            if odd.get("status") not in (1,"1","ACTIVE","active") or odd.get("display") is False:
+            # Status selection może być pominięty w odpowiedzi API; jawny status
+            # nieaktywny nadal odrzucamy. Sam rynek i fixture muszą być aktywne.
+            if odd.get("status") not in (None,1,"1",True,"ACTIVE","active") or odd.get("display") is False:
                 continue
             if str(meta.get("offer_state_id",1))!="1" or price<float(min_odds):
                 continue
