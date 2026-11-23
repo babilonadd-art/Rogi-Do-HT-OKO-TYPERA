@@ -167,5 +167,26 @@ class StrategyRulesTests(unittest.TestCase):
         api.assert_called_once_with("/v3/pl-PL/events", {"events": "123"})
 
 
+    @patch("Main.superbet_api")
+    def test_ft_corner_market_accepts_line_in_selection_and_missing_optional_status(self, api):
+        api.return_value = {"events": [{
+            "id": 456,
+            "fixture": {"event_name": "Team One·Team Two", "offer_state_status": {"1": 1}},
+            "inplay_stats_metadata": {"status": "NOT_STARTED"},
+            "markets": [{
+                "name": "Liczba rzutów rożnych",
+                "status": 1,
+                "odds": [{
+                    "name": "Powyżej 9.5",
+                    "price": 1.82,
+                    "display": True,
+                    "metadata": {"offer_state_id": 1},
+                }],
+            }],
+        }]}
+        result = Main.superbet_ft_corners_over_prices(456, lines=(9.5,), min_odds=1.60)
+        self.assertEqual(result, {9.5: 1.82})
+
+
 if __name__ == "__main__":
     unittest.main()
