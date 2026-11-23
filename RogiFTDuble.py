@@ -166,6 +166,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     proof_payload, signature = publication_proof(legs, total_odds, coupon_id)
+    telegram_caption = "🌙 NOCNE TYPY • ROŻNE FT" if night else None
 
     # Telegram photos cannot contain clickable regions. Native URL buttons
     # are attached immediately below the image, one for each fixture.
@@ -195,7 +196,10 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
                 data={
                     "chat_id": chat_id,
                     "message_id": int(existing_message_id),
-                    "media": json.dumps({"type": "photo", "media": "attach://photo"}),
+                    "media": json.dumps({
+                        "type": "photo", "media": "attach://photo",
+                        **({"caption": telegram_caption} if telegram_caption else {}),
+                    }),
                     "reply_markup": reply_markup,
                 },
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
@@ -219,7 +223,10 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
         else:
             response = requests.post(
                 f"https://api.telegram.org/bot{token}/sendPhoto",
-                data={"chat_id": chat_id, "reply_markup": reply_markup},
+                data={
+                    "chat_id": chat_id, "reply_markup": reply_markup,
+                    **({"caption": telegram_caption} if telegram_caption else {}),
+                },
                 files={"photo": ("rogi-ft-dubel.png", graphic, "image/png")},
                 timeout=45,
             )
@@ -232,7 +239,7 @@ def send_coupon_graphic(legs, total_odds, coupon_no, coupon_id, existing_proof=N
             return None
         message_id = int(payload["result"]["message_id"])
         logging.info("%s, Telegram message_id=%s, dodano %s linki Superbet FT",
-                     "Zastąpiono grafikę w istniejącym poście" if existing_message_id else "Wysłano oryginalną grafikę bez opisu",
+                     "Zastąpiono grafikę w istniejącym poście" if existing_message_id else "Wysłano oryginalną grafikę z podpisem" if telegram_caption else "Wysłano oryginalną grafikę bez opisu",
                      message_id, len(keyboard))
         return {
             "message_id": message_id,
@@ -343,6 +350,11 @@ FT_STATS_MIN_TEAM_AVG = 2.7
 FT_STATS_MIN_COMBINED_AVG_TOP6 = 8.8
 FT_STATS_MIN_COMBINED_AVG_OTHER = 9.0
 FT_STATS_MIN_OVER85_HITS = 2  # each team: at least 2 recent match totals > 8.5
+# Nocą dopuszczamy szerszy profil, ale nadal wymagamy realnych danych i kursu Superbet.
+FT_NIGHT_MIN_TEAM_AVG = 2.4
+FT_NIGHT_MIN_COMBINED_AVG_TOP6 = 8.0
+FT_NIGHT_MIN_COMBINED_AVG_OTHER = 8.3
+FT_NIGHT_MIN_OVER85_HITS = 1
 TOP_SIX_LEAGUE_MARKERS = (
     "premierleague", "laliga", "bundesliga", "ligue1", "eredivisie",
 )
@@ -452,24 +464,28 @@ def _candidate_ft_corner_stats(item):
     away_avg = away_profile["own_average"]
     combined_avg = home_avg + away_avg
     top_six = _is_top_six_league(item["league"])
+    is_night = fixture_bucket(item["start_ts"])[0] == "night"
+    required_team_avg = FT_NIGHT_MIN_TEAM_AVG if is_night else FT_STATS_MIN_TEAM_AVG
     required_average = (
-        FT_STATS_MIN_COMBINED_AVG_TOP6 if top_six
-        else FT_STATS_MIN_COMBINED_AVG_OTHER
+        (FT_NIGHT_MIN_COMBINED_AVG_TOP6 if top_six else FT_NIGHT_MIN_COMBINED_AVG_OTHER)
+        if is_night else
+        (FT_STATS_MIN_COMBINED_AVG_TOP6 if top_six else FT_STATS_MIN_COMBINED_AVG_OTHER)
     )
+    required_over85_hits = FT_NIGHT_MIN_OVER85_HITS if is_night else FT_STATS_MIN_OVER85_HITS
 
-    if home_avg < FT_STATS_MIN_TEAM_AVG or away_avg < FT_STATS_MIN_TEAM_AVG:
+    if home_avg < required_team_avg or away_avg < required_team_avg:
         logging.info(
             "Odrzucono %s - %s: za mało własnych rożnych FT (%.2f / %.2f)",
             item["home"], item["away"], home_avg, away_avg
         )
         return None
-    if home_profile["over85_hits"] < FT_STATS_MIN_OVER85_HITS:
+    if home_profile["over85_hits"] < required_over85_hits:
         logging.info(
             "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
             item["home"], home_profile["over85_hits"], home_profile["sample"]
         )
         return None
-    if away_profile["over85_hits"] < FT_STATS_MIN_OVER85_HITS:
+    if away_profile["over85_hits"] < required_over85_hits:
         logging.info(
             "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
             item["away"], away_profile["over85_hits"], away_profile["sample"]
@@ -495,10 +511,11 @@ def _candidate_ft_corner_stats(item):
     })
     logging.info(
         "Kandydat przeszedł analizę FT: %s - %s | próbka %s/%s | Over 8.5 %s/%s | "
-        "średnie własne %.2f/%.2f | razem %.2f (próg %.2f) | źródło %s",
+        "średnie własne %.2f/%.2f (próg drużyny %.2f) | razem %.2f (próg %.2f), Over 8.5 min. %s | źródło %s",
         item["home"], item["away"], home_profile["sample"], away_profile["sample"],
         item["home_over85"], item["away_over85"],
-        home_avg, away_avg, combined_avg, required_average, history_source
+        home_avg, away_avg, required_team_avg, combined_avg, required_average,
+        required_over85_hits, history_source
     )
     return item
 
