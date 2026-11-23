@@ -118,6 +118,25 @@ class StrategyRulesTests(unittest.TestCase):
                    ('new-1', day, '2026-11-17T20:01:00+01:00', 'day', day))
         self.assertEqual(daily_quota_count(db, day), 1)
         db.close()
+
+    @patch("team_league_resolver._team_record")
+    def test_team_league_lookup_requires_both_clubs_to_agree(self, lookup):
+        lookup.side_effect = [
+            {"country": "Brazil", "league": "Serie A"},
+            {"country": "Brazil", "league": "Serie A"},
+        ]
+        from team_league_resolver import resolve_match_league
+        self.assertEqual(resolve_match_league("Coritiba", "Santos"), "Brazil - Serie A")
+
+    @patch("team_league_resolver._team_record")
+    def test_team_league_lookup_rejects_disagreement(self, lookup):
+        lookup.side_effect = [
+            {"country": "Brazil", "league": "Serie A"},
+            {"country": "Brazil", "league": "Serie B"},
+        ]
+        from team_league_resolver import resolve_match_league
+        self.assertIsNone(resolve_match_league("Coritiba", "Santos"))
+
     def test_superbet_football_sport_id(self):
         self.assertTrue(superbet_event_is_prematch({
             "fixture": {"sport_id": 5, "offer_state_status": {"1": 1}},
