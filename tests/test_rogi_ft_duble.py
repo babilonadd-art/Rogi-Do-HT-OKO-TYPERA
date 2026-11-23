@@ -51,6 +51,15 @@ class StrategyRulesTests(unittest.TestCase):
     def test_daily_cap_is_four_doubles(self):
         self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 8)
 
+    def test_future_fixtures_keep_their_own_day_or_night_quota(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Warsaw")
+        tomorrow_day = int(datetime(2026, 11, 24, 18, 0, tzinfo=tz).timestamp())
+        tomorrow_night = int(datetime(2026, 11, 25, 2, 0, tzinfo=tz).timestamp())
+        self.assertEqual(fixture_bucket(tomorrow_day), ("day", "2026-11-24"))
+        self.assertEqual(fixture_bucket(tomorrow_night), ("night", "2026-11-24"))
+
     def test_night_and_day_pools_are_separate(self):
         from datetime import datetime
         from zoneinfo import ZoneInfo
