@@ -657,12 +657,17 @@ def send_new_doubles(c, now):
 
     already_used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
     candidates = [x for x in fetch_candidates(now) if x["event_id"] not in already_used]
-    candidate_groups = {"day": [], "night": []}
+    # Grupuj wszystkie znalezione mecze z okna 36 h według ich właściwej
+    # puli i daty rozliczeniowej. Poprzednio odrzucaliśmy jutro i kolejne
+    # sesje, mimo że fetch_candidates pobierał te mecze.
+    candidate_groups = {}
     for item in candidates:
         bucket, quota_day = fixture_bucket(item["start_ts"])
-        expected_day = today if bucket == "day" else active_night_day
-        if quota_day == expected_day:
-            candidate_groups[bucket].append(item)
+        candidate_groups.setdefault((bucket, quota_day), []).append(item)
+    ordered_groups = sorted(
+        candidate_groups.items(),
+        key=lambda entry: min(x["start_ts"] for x in entry[1]),
+    )
 
     total_made = 0
     # Jeden wspólny limit publikacji na dzień kalendarzowy (dzień + noc razem).
@@ -679,10 +684,10 @@ def send_new_doubles(c, now):
         ).fetchone()[0])
     remaining_today = max(0, MAX_DOUBLES_PER_DAY - published_today)
     logging.info("Wspólny limit dzienny: wykorzystano %s/%s dubli", published_today, MAX_DOUBLES_PER_DAY)
-    for bucket, quota_day in (("day", today), ("night", active_night_day)):
-        quota_count = daily_quota_count(c, quota_day, bucket, reset_day=today)
+    for (bucket, quota_day), group in ordered_groups:
+        reset_key = today if quota_day == today else quota_day
+        quota_count = daily_quota_count(c, quota_day, bucket, reset_day=reset_key)
         remaining = remaining_today
-        group = candidate_groups[bucket]
         logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
                      bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
         made = 0
@@ -737,7 +742,8 @@ def send_new_doubles(c, now):
             remaining -= 1
             remaining_today -= 1
         total_made += made
-        logging.info("Nowe %s duble: %s; limit puli: %s", bucket.upper(), made, MAX_DOUBLES_PER_DAY)
+        logging.info("Nowe %s duble dla %s: %s; limit puli: %s",
+                     bucket.upper(), quota_day, made, MAX_DOUBLES_PER_DAY)
     logging.info("Łącznie nowe duble FT w tym skanie: %s", total_made)
 
 
