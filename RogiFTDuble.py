@@ -385,14 +385,23 @@ def _is_top_six_league(league):
 
 
 def _candidate_ft_corner_stats(item):
-    """Do not filter fixtures by team history; active Superbet FT odds decide eligibility."""
+    """Require real Open Matchday FT corner history and rank by measured quality."""
     candidate = dict(item)
-    candidate["quality_score"] = 0.0
+    score, detail = source.ft_matchday_candidate_profile(
+        candidate["league"], candidate["home"], candidate["away"], candidate["start_ts"]
+    )
+    if score is None:
+        logging.info(
+            "Odrzucono po analizie rożnych FT: %s - %s | %s | %s",
+            candidate["home"], candidate["away"], candidate["league"], detail,
+        )
+        return None
+    candidate["quality_score"] = float(score)
+    candidate["stats_detail"] = detail
     logging.info(
-        "Historia drużyn pominięta — mecz pozostaje kandydatem na podstawie aktywnego rynku FT: "
-        "%s - %s | %s | Over %s @ %.2f",
+        "Analiza rożnych FT OK: %s - %s | %s | wynik %.1f | %s | kurs %.2f",
         candidate["home"], candidate["away"], candidate["league"],
-        candidate["line"], candidate["odds"],
+        candidate["quality_score"], detail, candidate["odds"],
     )
     return candidate
 
@@ -564,18 +573,47 @@ def send_new_doubles(c, now):
     )
 
     total_made = 0
-    # Każda pula ma własny limit: typy dzienne nie blokują nocnych
-    # (i odwrotnie). Limit dotyczy konkretnego bucket + quota_day.
+    # Każda pula ma własny limit: typy dzienne nie blokują nocnych.
+    # W jednej puli liga może wystąpić maksymalnie w jednym duble.
     for (bucket, quota_day), group in ordered_groups:
         reset_key = today if quota_day == today else quota_day
         quota_count = daily_quota_count(c, quota_day, bucket, reset_day=reset_key)
         remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
-        logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
-                     bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
+        used_leagues = {
+            normalized_league_name(row[0])
+            for row in c.execute(
+                """SELECT DISTINCT l.league FROM ft_double_legs l
+                   JOIN ft_doubles d ON d.coupon_id=l.coupon_id
+                   WHERE d.bucket=? AND d.quota_day=?""",
+                (bucket, quota_day),
+            ).fetchall()
+        }
+        group.sort(key=lambda x: (-float(x.get("quality_score", 0)), x["start_ts"]))
+        logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s, ligi już użyte=%s",
+                     bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY,
+                     len(group), len(used_leagues))
         made = 0
         while remaining and len(group) >= LEGS_PER_DOUBLE:
-            pair = group[:LEGS_PER_DOUBLE]
-            group = group[LEGS_PER_DOUBLE:]
+            first_index = next(
+                (i for i, item in enumerate(group)
+                 if normalized_league_name(item["league"]) not in used_leagues),
+                None,
+            )
+            if first_index is None:
+                logging.info("Brak nowych lig do kolejnego dubla %s (%s)", bucket.upper(), quota_day)
+                break
+            first = group.pop(first_index)
+            second_index = next(
+                (i for i, item in enumerate(group)
+                 if normalized_league_name(item["league"]) not in used_leagues
+                 and normalized_league_name(item["league"]) != normalized_league_name(first["league"])),
+                None,
+            )
+            if second_index is None:
+                logging.info("Brak drugiej, różnej ligi do dubla %s (%s)", bucket.upper(), quota_day)
+                break
+            second = group.pop(second_index)
+            pair = [first, second]
 
             # Ostatnia kontrola kursów bezpośrednio przed publikacją.
             # Nie używamy kursu z cache, statystyk ani wartości zastępczych:
@@ -622,6 +660,7 @@ def send_new_doubles(c, now):
             c.commit()
             made += 1
             remaining -= 1
+            used_leagues.update(normalized_league_name(item["league"]) for item in pair)
         total_made += made
         logging.info("Nowe %s duble dla %s: %s; limit puli: %s",
                      bucket.upper(), quota_day, made, MAX_DOUBLES_PER_DAY)
