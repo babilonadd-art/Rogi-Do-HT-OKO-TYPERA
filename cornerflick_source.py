@@ -107,7 +107,7 @@ LEAGUE_ALIASES = {
     "mls": "mls",
     "usamls": "mls",
     "majorleaguesoccer": "mls",
-    "mlsplayoff": "major-league-soccer",
+    "mlsplayoff": "mls",
     "ligaprofesional": "liga-profesional",
     "ekstraklasa": "ekstraklasa",
 }
