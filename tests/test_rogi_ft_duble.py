@@ -13,7 +13,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(MAX_DOUBLES_PER_DAY, 4)
         self.assertEqual(FT_LINES, (9.5,))
 
-    def test_recent_five_requires_four_real_corner_records(self):
+    def test_recent_five_requires_two_real_corner_records(self):
         complete = [
             ("2026-11-20", 6, 10),
             ("2026-11-18", 5, 9),
@@ -25,7 +25,8 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(profile["sample"], 5)
         self.assertEqual(profile["over85_hits"], 4)
         self.assertAlmostEqual(profile["own_average"], 5.4)
-        self.assertIsNone(_recent_five_corner_profile(complete[:3]))
+        self.assertIsNotNone(_recent_five_corner_profile(complete[:3]))
+        self.assertIsNone(_recent_five_corner_profile(complete[:1]))
 
     def test_top_six_league_detection(self):
         self.assertTrue(_is_top_six_league("Premier League"))
