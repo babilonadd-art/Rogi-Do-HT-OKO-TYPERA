@@ -385,139 +385,16 @@ def _is_top_six_league(league):
 
 
 def _candidate_ft_corner_stats(item):
-    """Require recent FT corner history, at least 2 Over 8.5 hits in the available sample and a league-tier average."""
-    global _matchday_ft_rows
-    fixture_date = datetime.fromtimestamp(
-        int(item["start_ts"]), timezone.utc
-    ).date().isoformat()
-
-    home_history = source.cornerflick_team_ft_corner_history(
-        item["home"], item["league"], fixture_date
-    )
-    away_history = source.cornerflick_team_ft_corner_history(
-        item["away"], item["league"], fixture_date
-    )
-    history_source = "Cornerflick"
-
-    # Merge independent datasets when Cornerflick does not provide four usable records.
-    if (len(home_history) < FT_STATS_MIN_SAMPLE
-            or len(away_history) < FT_STATS_MIN_SAMPLE):
-        if _matchday_ft_rows is None:
-            _matchday_ft_rows = source.load_all_matchday_results() or []
-            logging.info("Open Matchday: załadowano zapasową historię FT rożnych: %s meczów",
-                         len(_matchday_ft_rows))
-        fallback_home = source.season_team_ft_corner_history(
-            item["home"], _matchday_ft_rows, fixture_date
-        )
-        fallback_away = source.season_team_ft_corner_history(
-            item["away"], _matchday_ft_rows, fixture_date
-        )
-
-        def merge_history(*histories):
-            merged = {}
-            for history in histories:
-                for row in history or []:
-                    if len(row) < 3 or row[1] is None or row[2] is None:
-                        continue
-                    key = (str(row[0]), int(row[1]), int(row[2]))
-                    merged[key] = key
-            return sorted(merged.values(), key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
-
-        if len(home_history) < FT_STATS_MIN_SAMPLE:
-            home_history = merge_history(home_history, fallback_home)
-        else:
-            home_history = sorted(home_history, key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
-        if len(away_history) < FT_STATS_MIN_SAMPLE:
-            away_history = merge_history(away_history, fallback_away)
-        else:
-            away_history = sorted(away_history, key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
-        history_source = "Cornerflick + Open Matchday"
-
-    # If league-level coverage is still insufficient, try the club's published
-    # Cornerflick history across other competitions.
-    if (len(home_history) < FT_STATS_MIN_SAMPLE
-            or len(away_history) < FT_STATS_MIN_SAMPLE):
-        global_home = source.cornerflick_team_ft_corner_history_global(
-            item["home"], fixture_date
-        )
-        global_away = source.cornerflick_team_ft_corner_history_global(
-            item["away"], fixture_date
-        )
-        if len(home_history) < FT_STATS_MIN_SAMPLE:
-            home_history = merge_history(home_history, global_home)
-        if len(away_history) < FT_STATS_MIN_SAMPLE:
-            away_history = merge_history(away_history, global_away)
-        history_source = "Cornerflick global + Open Matchday"
-
-    home_profile = _recent_five_corner_profile(home_history)
-    away_profile = _recent_five_corner_profile(away_history)
-    if home_profile is None or away_profile is None:
-        logging.info(
-            "Odrzucono %s - %s: niepełna historia FT rożnych (min. 2 z 5); próbka %s/%s",
-            item["home"], item["away"],
-            home_profile["sample"] if home_profile else 0,
-            away_profile["sample"] if away_profile else 0,
-        )
-        return None
-
-    home_avg = home_profile["own_average"]
-    away_avg = away_profile["own_average"]
-    combined_avg = home_avg + away_avg
-    top_six = _is_top_six_league(item["league"])
-    is_night = fixture_bucket(item["start_ts"])[0] == "night"
-    required_team_avg = FT_NIGHT_MIN_TEAM_AVG if is_night else FT_STATS_MIN_TEAM_AVG
-    required_average = (
-        (FT_NIGHT_MIN_COMBINED_AVG_TOP6 if top_six else FT_NIGHT_MIN_COMBINED_AVG_OTHER)
-        if is_night else
-        (FT_STATS_MIN_COMBINED_AVG_TOP6 if top_six else FT_STATS_MIN_COMBINED_AVG_OTHER)
-    )
-    required_over85_hits = FT_NIGHT_MIN_OVER85_HITS if is_night else FT_STATS_MIN_OVER85_HITS
-
-    if home_avg < required_team_avg or away_avg < required_team_avg:
-        logging.info(
-            "Odrzucono %s - %s: za mało własnych rożnych FT (%.2f / %.2f)",
-            item["home"], item["away"], home_avg, away_avg
-        )
-        return None
-    if home_profile["over85_hits"] < required_over85_hits:
-        logging.info(
-            "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
-            item["home"], home_profile["over85_hits"], home_profile["sample"]
-        )
-        return None
-    if away_profile["over85_hits"] < required_over85_hits:
-        logging.info(
-            "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
-            item["away"], away_profile["over85_hits"], away_profile["sample"]
-        )
-        return None
-    if combined_avg < required_average:
-        logging.info(
-            "Odrzucono %s - %s: średnia łączna FT %.2f < %.2f (%s)",
-            item["home"], item["away"], combined_avg, required_average,
-            "Top 6" if top_six else "pozostałe ligi"
-        )
-        return None
-
-    item = dict(item)
-    item.update({
-        "home_avg": home_avg,
-        "away_avg": away_avg,
-        "combined_avg": combined_avg,
-        "home_over85": f'{home_profile["over85_hits"]}/{home_profile["sample"]}',
-        "away_over85": f'{away_profile["over85_hits"]}/{away_profile["sample"]}',
-        "stats_source": history_source,
-        "quality_score": combined_avg,
-    })
+    """Do not filter fixtures by team history; active Superbet FT odds decide eligibility."""
+    candidate = dict(item)
+    candidate["quality_score"] = 0.0
     logging.info(
-        "Kandydat przeszedł analizę FT: %s - %s | próbka %s/%s | Over 8.5 %s/%s | "
-        "średnie własne %.2f/%.2f (próg drużyny %.2f) | razem %.2f (próg %.2f), Over 8.5 min. %s | źródło %s",
-        item["home"], item["away"], home_profile["sample"], away_profile["sample"],
-        item["home_over85"], item["away_over85"],
-        home_avg, away_avg, required_team_avg, combined_avg, required_average,
-        required_over85_hits, history_source
+        "Historia drużyn pominięta — mecz pozostaje kandydatem na podstawie aktywnego rynku FT: "
+        "%s - %s | %s | Over %s @ %.2f",
+        candidate["home"], candidate["away"], candidate["league"],
+        candidate["line"], candidate["odds"],
     )
-    return item
+    return candidate
 
 
 def _event_corner_candidate(event, earliest):
@@ -589,9 +466,9 @@ def fetch_candidates(now):
             ) if item is not None
         ]
 
-    # Market odds alone are never enough: require real historical FT corner data
-    # for both teams, then rank by their combined average.
-    # Apply the explicit youth/reserve/friendly/Egypt exclusions before statistics.
+    # Team-history statistics are intentionally disabled: fixtures are selected
+    # from active Superbet FT corner markets and the configured odds range.
+    # Explicit youth/reserve/friendly/Egypt exclusions remain in force.
     candidates = []
     for item in market_candidates:
         if is_blocked_under_league(item.get("league", "")):
@@ -608,7 +485,7 @@ def fetch_candidates(now):
 
     candidates.sort(key=lambda x: (-x["quality_score"], x["start_ts"], x["line"]))
     logging.info(
-        "ROGI FT: rynki z kursem %.2f–%.2f=%s; po analizie statystyk FT=%s",
+        "ROGI FT: aktywne rynki FT z kursem %.2f–%.2f=%s; kandydaci bez filtra historii=%s",
         MIN_LEG_ODDS, MAX_LEG_ODDS, len(market_candidates), len(candidates)
     )
     return candidates
