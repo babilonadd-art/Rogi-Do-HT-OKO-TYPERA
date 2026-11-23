@@ -43,7 +43,40 @@ COUNTRY_WORDS = {
     "meksyk", "usa", "canada", "japan", "japanese", "japonia", "australia",
     "saudi", "arabia", "egypt", "egyptian", "egipt", "europe", "uefa",
     "international", "africa", "asia", "oceania", "america", "south",
-    "north", "america",
+    "north", "america", "wales", "walia", "south", "africa", "rpa",
+    "uruguay", "colombia", "chile", "peru", "ecuador", "paraguay",
+    "bolivia", "venezuela", "new", "zealand", "india", "indonesia",
+    "thailand", "vietnam", "malaysia", "singapore",
+}
+COUNTRY_CANON = {
+    "anglia": "england", "english": "england", "england": "england",
+    "hiszpania": "spain", "spanish": "spain", "spain": "spain",
+    "wlochy": "italy", "italian": "italy", "italy": "italy",
+    "francja": "france", "french": "france", "france": "france",
+    "niemcy": "germany", "german": "germany", "germany": "germany",
+    "holandia": "netherlands", "dutch": "netherlands", "netherlands": "netherlands",
+    "portugalia": "portugal", "portuguese": "portugal", "portugal": "portugal",
+    "turcja": "turkey", "turkish": "turkey", "turkey": "turkey",
+    "polska": "poland", "polish": "poland", "poland": "poland",
+    "szkocja": "scotland", "scottish": "scotland", "scotland": "scotland",
+    "belgia": "belgium", "belgian": "belgium", "belgium": "belgium",
+    "grecja": "greece", "greek": "greece", "greece": "greece",
+    "szwajcaria": "switzerland", "swiss": "switzerland", "switzerland": "switzerland",
+    "dania": "denmark", "danish": "denmark", "denmark": "denmark",
+    "szwecja": "sweden", "swedish": "sweden", "sweden": "sweden",
+    "norwegia": "norway", "norwegian": "norway", "norway": "norway",
+    "finlandia": "finland", "finnish": "finland", "finland": "finland",
+    "irlandia": "ireland", "irish": "ireland", "ireland": "ireland",
+    "walia": "wales", "wales": "wales",
+    "brazylia": "brazil", "brazilian": "brazil", "brazil": "brazil",
+    "argentyna": "argentina", "argentinian": "argentina", "argentina": "argentina",
+    "meksyk": "mexico", "mexican": "mexico", "mexico": "mexico",
+    "japonia": "japan", "japanese": "japan", "japan": "japan",
+    "usa": "usa", "canada": "canada", "rpa": "southafrica",
+    "southafrica": "southafrica", "uruguay": "uruguay", "colombia": "colombia",
+    "chile": "chile", "peru": "peru", "ecuador": "ecuador",
+    "paraguay": "paraguay", "bolivia": "bolivia", "venezuela": "venezuela",
+    "saudi": "saudiarabia", "arabia": "saudiarabia",
 }
 LEAGUE_ALIASES = {
     "epl": "premier-league",
@@ -61,6 +94,7 @@ LEAGUE_ALIASES = {
     "portugueseprimera": "primeira-liga",
     "brasileiraoseriea": "brasileirao-serie-a",
     "mls": "major-league-soccer",
+    "mlsplayoff": "major-league-soccer",
     "ligaprofesional": "liga-profesional",
     "ekstraklasa": "ekstraklasa",
 }
@@ -78,13 +112,26 @@ def _norm(value):
     )
 
 
-def _core_tokens(value):
+def _raw_tokens(value):
     raw = str(value or "").replace("ł", "l").replace("Ł", "L")
-    tokens = re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode().lower())
+    return re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode().lower())
+
+
+def _core_tokens(value):
+    tokens = _raw_tokens(value)
     return {token for token in tokens if token not in COUNTRY_WORDS and token not in {"football", "soccer"}}
 
 
+def _country_tag(value):
+    return next((COUNTRY_CANON[token] for token in _raw_tokens(value) if token in COUNTRY_CANON), None)
+
+
 def _competition_score(requested, candidate):
+    requested_country = _country_tag(requested)
+    candidate_country = _country_tag(candidate)
+    # Never map a same-named competition from a different country.
+    if requested_country and candidate_country and requested_country != candidate_country:
+        return 0.0
     a, b = _core_tokens(requested), _core_tokens(candidate)
     if not a or not b:
         return 0.0
@@ -213,7 +260,7 @@ def resolve_league_slug(league):
         ((_competition_score(league, item["name"]), item["slug"]) for item in entries),
         reverse=True,
     )
-    if not ranked or ranked[0][0] < 0.72:
+    if not ranked or ranked[0][0] < 0.85:
         logging.info("Cornerflick: brak pewnego mapowania ligi '%s'", league)
         return None
     if len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 0.06:
