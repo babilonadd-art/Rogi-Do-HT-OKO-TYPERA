@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, daily_quota_count, fixture_bucket, night_session_day
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _is_top_six_league, daily_quota_count, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
 
@@ -12,6 +12,25 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 4)
         self.assertEqual(FT_LINES, (9.5,))
+
+    def test_recent_five_requires_four_real_corner_records(self):
+        complete = [
+            ("2026-11-20", 6, 10),
+            ("2026-11-18", 5, 9),
+            ("2026-11-16", 7, 12),
+            ("2026-11-14", 4, 11),
+            ("2026-11-12", 5, 8),
+        ]
+        profile = _recent_five_corner_profile(complete)
+        self.assertEqual(profile["sample"], 5)
+        self.assertEqual(profile["over85_hits"], 4)
+        self.assertAlmostEqual(profile["own_average"], 5.4)
+        self.assertIsNone(_recent_five_corner_profile(complete[:3]))
+
+    def test_top_six_league_detection(self):
+        self.assertTrue(_is_top_six_league("Premier League"))
+        self.assertTrue(_is_top_six_league("LaLiga"))
+        self.assertFalse(_is_top_six_league("Bolivian Primera Division"))
 
     def test_placeholder_team_names_are_rejected(self):
         for name in ("A", "B", "Team A", "Team B", "Drużyna A", "Drużyna B", "Unknown", "TBD"):
