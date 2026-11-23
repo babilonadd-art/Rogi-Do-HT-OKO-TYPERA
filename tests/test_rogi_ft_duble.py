@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import Main
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _is_top_six_league, daily_quota_count, fixture_bucket, night_session_day
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
 
@@ -32,6 +32,15 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertTrue(_is_top_six_league("Premier League"))
         self.assertTrue(_is_top_six_league("LaLiga"))
         self.assertFalse(_is_top_six_league("Bolivian Primera Division"))
+
+    def test_youth_and_reserve_leagues_and_teams_are_rejected(self):
+        for league in ("UEFA - Liga Młodzieżowa", "Premier League U21", "National Reserve League"):
+            self.assertTrue(is_blocked_under_league(league), league)
+        for team in ("Galatasaray U19", "Tottenham U21", "Arsenal Under 18",
+                     "Bayern II", "Manchester City B", "Legia Rezerwy"):
+            self.assertTrue(is_blocked_youth_or_reserve_team(team), team)
+        for team in ("Manchester United", "Bologna", "Kuwejt"):
+            self.assertFalse(is_blocked_youth_or_reserve_team(team), team)
 
     def test_placeholder_team_names_are_rejected(self):
         for name in ("A", "B", "Team A", "Team B", "Drużyna A", "Drużyna B", "Unknown", "TBD"):
