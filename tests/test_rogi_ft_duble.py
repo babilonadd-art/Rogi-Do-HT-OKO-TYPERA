@@ -13,7 +13,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(MAX_DOUBLES_PER_DAY, 4)
         self.assertEqual(FT_LINES, (9.5,))
 
-    def test_recent_five_requires_two_real_corner_records(self):
+    def test_recent_five_accepts_two_or_more_real_corner_records(self):
         complete = [
             ("2026-11-20", 6, 10),
             ("2026-11-18", 5, 9),
