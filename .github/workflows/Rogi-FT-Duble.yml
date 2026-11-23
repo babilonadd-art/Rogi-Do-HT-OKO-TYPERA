@@ -20,6 +20,7 @@ on:
   push:
     paths:
       - "Main.py"
+      - "cornerflick_source.py"
       - "RogiFTDuble.py"
       - "rogift_graphic.py"
       - "tests/test_rogi_ft_security.py"
