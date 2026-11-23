@@ -105,29 +105,38 @@ def _db_connect():
 
 
 def _cache_get(key, ttl):
+    conn = None
     try:
-        with _db_connect() as conn:
-            row = conn.execute(
-                "SELECT fetched_at,payload FROM cornerflick_cache WHERE cache_key=?", (key,)
-            ).fetchone()
+        conn = _db_connect()
+        row = conn.execute(
+            "SELECT fetched_at,payload FROM cornerflick_cache WHERE cache_key=?", (key,)
+        ).fetchone()
         if row and int(time.time()) - int(row[0]) < ttl:
             return json.loads(row[1])
     except Exception as exc:
         logging.debug("Cornerflick cache read %s: %s", key, exc)
+    finally:
+        if conn is not None:
+            conn.close()
     return None
 
 
 def _cache_set(key, payload):
+    conn = None
     try:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        with _db_connect() as conn:
-            conn.execute(
-                "INSERT INTO cornerflick_cache(cache_key,fetched_at,payload) VALUES(?,?,?) "
-                "ON CONFLICT(cache_key) DO UPDATE SET fetched_at=excluded.fetched_at,payload=excluded.payload",
-                (key, int(time.time()), encoded),
-            )
+        conn = _db_connect()
+        conn.execute(
+            "INSERT INTO cornerflick_cache(cache_key,fetched_at,payload) VALUES(?,?,?) "
+            "ON CONFLICT(cache_key) DO UPDATE SET fetched_at=excluded.fetched_at,payload=excluded.payload",
+            (key, int(time.time()), encoded),
+        )
+        conn.commit()
     except Exception as exc:
         logging.warning("Cornerflick cache write %s: %s", key, exc)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _get_json(url, timeout=20):
@@ -231,6 +240,29 @@ def _season_data(slug):
     return payload
 
 
+def _team_similarity(first, second):
+    aliases = {
+        "manutd": "manchesterunited", "manchesterunited": "manchesterunited",
+        "mancity": "manchestercity", "manchestercity": "manchestercity",
+        "tottenham": "tottenham", "tottenhamhotspur": "tottenham",
+        "spurs": "tottenham", "intermilan": "inter", "internazionale": "inter",
+        "inter": "inter", "psg": "parissaintgermain",
+        "parissaintgermain": "parissaintgermain", "atleticodemadrid": "atleticomadrid",
+        "atleticomadrid": "atleticomadrid", "bayernmunich": "bayernmunchen",
+        "bayernmunchen": "bayernmunchen", "nottmforest": "nottinghamforest",
+        "nottinghamforest": "nottinghamforest",
+    }
+    a, b = _norm(first), _norm(second)
+    a, b = aliases.get(a, a), aliases.get(b, b)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    if min(len(a), len(b)) >= 5 and (a in b or b in a):
+        return 0.92
+    return SequenceMatcher(None, a, b).ratio()
+
+
 def _team_matches(team, matches, fixture_date):
     selected = []
     for item in matches:
@@ -242,8 +274,8 @@ def _team_matches(team, matches, fixture_date):
             continue
         home = item.get("home_team") or ""
         away = item.get("away_team") or ""
-        hscore = SequenceMatcher(None, _norm(team), _norm(home)).ratio()
-        ascore = SequenceMatcher(None, _norm(team), _norm(away)).ratio()
+        hscore = _team_similarity(team, home)
+        ascore = _team_similarity(team, away)
         if max(hscore, ascore) >= 0.74 and abs(hscore - ascore) >= 0.04:
             selected.append(item)
     selected.sort(key=lambda item: str(item.get("kickoff_at") or ""), reverse=True)
