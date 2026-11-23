@@ -1253,6 +1253,8 @@ def clear_all_history(c):
 def main():
     if not os.getenv("TELEGRAM_BOT_TOKEN") or not os.getenv("TELEGRAM_CHAT_ID"):
         raise RuntimeError("Brak TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID w GitHub Secrets")
+    logging.info("ROGI FT: aktywny zakres kursów %.2f–%.2f; limit %s dubli/dzień.",
+                 MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY)
     c = db_open()
     try:
         now = datetime.now(TZ)
@@ -1317,3 +1319,5 @@ if __name__ == "__main__":
 # Ręczne żądanie użytkownika: wyczyść całą historię typów FT i limity. [clear-history-ft]
 
 # Uruchom skan FT po wyczyszczeniu historii i limitów. [publish-ft]
+
+# Ręczne uruchomienie skanu publikującego po poprawieniu testów kursów [publish-ft]
