@@ -28,19 +28,29 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertIsNotNone(_recent_five_corner_profile(complete[:3]))
         self.assertIsNone(_recent_five_corner_profile(complete[:1]))
 
-    @patch("RogiFTDuble.source.cornerflick_team_ft_corner_history")
-    @patch("RogiFTDuble.source.load_all_matchday_results")
-    def test_team_history_is_not_used_to_reject_market_candidates(self, load_history, corner_history):
+    @patch("RogiFTDuble.source.ft_matchday_candidate_profile")
+    def test_team_history_is_required_and_used_for_candidate_score(self, profile):
         item = {
             "event_id": 321, "league": "Liga", "home": "Gospodarze",
             "away": "Goscie", "start_ts": 1795550000,
             "line": 9.5, "odds": 1.85,
         }
+        profile.return_value = (142.5, "próba FT 10+10, Over 8.5 70%")
         result = _candidate_ft_corner_stats(item)
         self.assertEqual(result["event_id"], 321)
-        self.assertEqual(result["quality_score"], 0.0)
-        corner_history.assert_not_called()
-        load_history.assert_not_called()
+        self.assertEqual(result["quality_score"], 142.5)
+        self.assertIn("Over 8.5", result["stats_detail"])
+        profile.assert_called_once_with("Liga", "Gospodarze", "Goscie", 1795550000)
+
+    @patch("RogiFTDuble.source.ft_matchday_candidate_profile")
+    def test_candidate_without_reliable_corner_history_is_rejected(self, profile):
+        item = {
+            "event_id": 322, "league": "Liga", "home": "Gospodarze",
+            "away": "Goscie", "start_ts": 1795550000,
+            "line": 9.5, "odds": 1.85,
+        }
+        profile.return_value = (None, "brak wystarczających danych")
+        self.assertIsNone(_candidate_ft_corner_stats(item))
 
     def test_top_six_league_detection(self):
         self.assertTrue(_is_top_six_league("Premier League"))
