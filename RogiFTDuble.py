@@ -20,8 +20,8 @@ import Main as source
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.90
-MAX_LEG_ODDS = 3.50
+MIN_LEG_ODDS = 1.60
+MAX_LEG_ODDS = 2.60
 MAX_DOUBLES_PER_DAY = 4
 NIGHT_START_HOUR = 22
 NIGHT_END_HOUR = 8
