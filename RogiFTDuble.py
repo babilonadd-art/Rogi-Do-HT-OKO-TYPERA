@@ -328,8 +328,7 @@ FT_STATS_MIN_COMBINED_AVG_TOP6 = 10.2
 FT_STATS_MIN_COMBINED_AVG_OTHER = 11.0
 FT_STATS_MIN_OVER85_HITS = 4  # each team: at least 4 of 5 recent match totals > 8.5
 TOP_SIX_LEAGUE_MARKERS = (
-    "premierleague", "laliga", "primera", "seriea", "bundesliga",
-    "ligue1", "eredivisie",
+    "premierleague", "laliga", "bundesliga", "ligue1", "eredivisie",
 )
 
 
@@ -352,7 +351,9 @@ def _recent_five_corner_profile(history):
 
 def _is_top_six_league(league):
     name = normalized_league_name(league)
-    return any(marker in name for marker in TOP_SIX_LEAGUE_MARKERS)
+    if name == "seriea" or name.endswith(("italyseriea", "italianseriea")):
+        return True
+    return any(name == marker or name.endswith(marker) for marker in TOP_SIX_LEAGUE_MARKERS)
 
 
 def _candidate_ft_corner_stats(item):
