@@ -315,9 +315,24 @@ def is_blocked_under_league(league):
     # Odrzucamy młodzieżówki/rezerwy również wtedy, gdy nazwa ligi zawiera
     # dopisek kraju lub sponsora.
     blocked_tokens = ("u18", "u19", "u20", "u21", "u23", "youth", "junior",
-                      "reserve", "reserves", "development", "friendlies", "friendly",
-                      "egypt", "egyptian", "egipt")
+                      "mlodziez", "reserve", "reserves", "rezerwy", "development",
+                      "friendlies", "friendly", "egypt", "egyptian", "egipt")
     return name in blocked or any(token in name for token in blocked_tokens)
+
+
+def is_blocked_youth_or_reserve_team(team):
+    """Reject youth/reserve sides even when the provider gives a generic league name."""
+    import re
+    value = str(team or "").casefold()
+    value = value.replace("ё", "е")
+    patterns = (
+        r"\\bu\\s*[- ]?\\s*(18|19|20|21|23)\\b",
+        r"\\bunder\\s*[- ]?\\s*(18|19|20|21|23)\\b",
+        r"\\b(u18|u19|u20|u21|u23)\\b",
+        r"\\b(reserves?|rezerwy|youth|junior(?:s)?)\\b",
+        r"(?:^|\\s)(?:ii|iii|b)\\s*$",
+    )
+    return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in patterns)
 
 
 _matchday_ft_rows = None
@@ -510,7 +525,10 @@ def _event_corner_candidate(event, earliest):
                         event_id, home, away)
         return None
     league = source.extract_league_name(event) or "Liga niepodana"
-    if is_blocked_under_league(league):
+    if (is_blocked_under_league(league)
+            or is_blocked_youth_or_reserve_team(home)
+            or is_blocked_youth_or_reserve_team(away)):
+        logging.info("Pomijam młodzież/rezerwy: %s - %s | %s", home, away, league)
         return None
     try:
         prices = source.superbet_ft_corners_over_prices(
