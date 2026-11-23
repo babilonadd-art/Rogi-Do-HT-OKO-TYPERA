@@ -739,7 +739,7 @@ def evaluate_ft_matchday_quality(league,home,away,start_ts):
     rows=load_matchday_results(league)
     if rows is None:
         return False,"brak danych Open Matchday FT dla ligi"
-    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).date().isoformat()
+    fixture_date=datetime.fromtimestamp(start_ts,timezone.utc).astimezone(TZ).date().isoformat()
     hh=recent_team_ft_corner_history(home,rows,fixture_date)
     ah=recent_team_ft_corner_history(away,rows,fixture_date)
     if len(hh)<FT_MIN_SAMPLE or len(ah)<FT_MIN_SAMPLE:
