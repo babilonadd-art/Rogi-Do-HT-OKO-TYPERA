@@ -321,13 +321,42 @@ def is_blocked_under_league(league):
 
 
 _matchday_ft_rows = None
-FT_STATS_MIN_SAMPLE = 3
+FT_STATS_MIN_SAMPLE = 4  # at least 4 usable matches out of the latest 5
+FT_STATS_WINDOW = 5
 FT_STATS_MIN_TEAM_AVG = 3.5
-FT_STATS_MIN_COMBINED_AVG = 10.8
+FT_STATS_MIN_COMBINED_AVG_TOP6 = 10.2
+FT_STATS_MIN_COMBINED_AVG_OTHER = 11.0
+FT_STATS_MIN_OVER85_HITS = 4  # each team: at least 4 of 5 recent match totals > 8.5
+TOP_SIX_LEAGUE_MARKERS = (
+    "premierleague", "laliga", "primera", "seriea", "bundesliga",
+    "ligue1", "eredivisie",
+)
+
+
+def _recent_five_corner_profile(history):
+    """Use up to five latest completed matches; require at least four real corner records."""
+    rows = [row for row in (history or [])[:FT_STATS_WINDOW]
+            if len(row) >= 3 and row[1] is not None and row[2] is not None]
+    if len(rows) < FT_STATS_MIN_SAMPLE:
+        return None
+    own_average = sum(float(row[1]) for row in rows) / len(rows)
+    over85_hits = sum(float(row[2]) >= 9 for row in rows)
+    return {
+        "sample": len(rows),
+        "own_average": own_average,
+        "over85_hits": over85_hits,
+        "over85_rate": over85_hits / len(rows),
+        "match_totals": [int(row[2]) for row in rows],
+    }
+
+
+def _is_top_six_league(league):
+    name = normalized_league_name(league)
+    return any(marker in name for marker in TOP_SIX_LEAGUE_MARKERS)
 
 
 def _candidate_ft_corner_stats(item):
-    """Require real recent FT corner history for both teams before a match can qualify."""
+    """Require recent FT corner history, 4/5 Over 8.5 hits and a league-tier average."""
     global _matchday_ft_rows
     fixture_date = datetime.fromtimestamp(
         int(item["start_ts"]), timezone.utc
@@ -341,8 +370,7 @@ def _candidate_ft_corner_stats(item):
     )
     history_source = "Cornerflick"
 
-    # Merge independent datasets instead of discarding partial Cornerflick history.
-    # Open Matchday is searched globally across competitions.
+    # Merge independent datasets when Cornerflick does not provide four usable records.
     if (len(home_history) < FT_STATS_MIN_SAMPLE
             or len(away_history) < FT_STATS_MIN_SAMPLE):
         if _matchday_ft_rows is None:
@@ -355,23 +383,29 @@ def _candidate_ft_corner_stats(item):
         fallback_away = source.season_team_ft_corner_history(
             item["away"], _matchday_ft_rows, fixture_date
         )
+
         def merge_history(*histories):
             merged = {}
             for history in histories:
                 for row in history or []:
-                    if len(row) < 3:
+                    if len(row) < 3 or row[1] is None or row[2] is None:
                         continue
                     key = (str(row[0]), int(row[1]), int(row[2]))
                     merged[key] = key
-            return sorted(merged.values(), key=lambda row: row[0], reverse=True)[:12]
+            return sorted(merged.values(), key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
+
         if len(home_history) < FT_STATS_MIN_SAMPLE:
             home_history = merge_history(home_history, fallback_home)
+        else:
+            home_history = sorted(home_history, key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
         if len(away_history) < FT_STATS_MIN_SAMPLE:
             away_history = merge_history(away_history, fallback_away)
+        else:
+            away_history = sorted(away_history, key=lambda row: row[0], reverse=True)[:FT_STATS_WINDOW]
         history_source = "Cornerflick + Open Matchday"
 
-    # If the fixture league has no coverage, look for the same club in
-    # other published Cornerflick competitions (domestic league/cup history).
+    # If league-level coverage is still insufficient, try the club's published
+    # Cornerflick history across other competitions.
     if (len(home_history) < FT_STATS_MIN_SAMPLE
             or len(away_history) < FT_STATS_MIN_SAMPLE):
         global_home = source.cornerflick_team_ft_corner_history_global(
@@ -386,18 +420,25 @@ def _candidate_ft_corner_stats(item):
             away_history = merge_history(away_history, global_away)
         history_source = "Cornerflick global + Open Matchday"
 
-    if (len(home_history) < FT_STATS_MIN_SAMPLE
-            or len(away_history) < FT_STATS_MIN_SAMPLE):
+    home_profile = _recent_five_corner_profile(home_history)
+    away_profile = _recent_five_corner_profile(away_history)
+    if home_profile is None or away_profile is None:
         logging.info(
-            "Odrzucono %s - %s: brak próbki FT rożnych (%s/%s, wymagane %s na zespół)",
-            item["home"], item["away"], len(home_history), len(away_history),
-            FT_STATS_MIN_SAMPLE
+            "Odrzucono %s - %s: niepełna historia FT rożnych (min. 4 z 5); próbka %s/%s",
+            item["home"], item["away"],
+            home_profile["sample"] if home_profile else 0,
+            away_profile["sample"] if away_profile else 0,
         )
         return None
 
-    home_avg = sum(row[1] for row in home_history[:12]) / min(len(home_history), 12)
-    away_avg = sum(row[1] for row in away_history[:12]) / min(len(away_history), 12)
+    home_avg = home_profile["own_average"]
+    away_avg = away_profile["own_average"]
     combined_avg = home_avg + away_avg
+    top_six = _is_top_six_league(item["league"])
+    required_average = (
+        FT_STATS_MIN_COMBINED_AVG_TOP6 if top_six
+        else FT_STATS_MIN_COMBINED_AVG_OTHER
+    )
 
     if home_avg < FT_STATS_MIN_TEAM_AVG or away_avg < FT_STATS_MIN_TEAM_AVG:
         logging.info(
@@ -405,10 +446,23 @@ def _candidate_ft_corner_stats(item):
             item["home"], item["away"], home_avg, away_avg
         )
         return None
-    if combined_avg < FT_STATS_MIN_COMBINED_AVG:
+    if home_profile["over85_hits"] < FT_STATS_MIN_OVER85_HITS:
         logging.info(
-            "Odrzucono %s - %s: średnia łączna FT %.2f < %.2f",
-            item["home"], item["away"], combined_avg, FT_STATS_MIN_COMBINED_AVG
+            "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
+            item["home"], home_profile["over85_hits"], home_profile["sample"]
+        )
+        return None
+    if away_profile["over85_hits"] < FT_STATS_MIN_OVER85_HITS:
+        logging.info(
+            "Odrzucono %s: Over 8.5 rożnych tylko %s/%s w ostatnich meczach",
+            item["away"], away_profile["over85_hits"], away_profile["sample"]
+        )
+        return None
+    if combined_avg < required_average:
+        logging.info(
+            "Odrzucono %s - %s: średnia łączna FT %.2f < %.2f (%s)",
+            item["home"], item["away"], combined_avg, required_average,
+            "Top 6" if top_six else "pozostałe ligi"
         )
         return None
 
@@ -417,13 +471,17 @@ def _candidate_ft_corner_stats(item):
         "home_avg": home_avg,
         "away_avg": away_avg,
         "combined_avg": combined_avg,
+        "home_over85": f'{home_profile["over85_hits"]}/{home_profile["sample"]}',
+        "away_over85": f'{away_profile["over85_hits"]}/{away_profile["sample"]}',
         "stats_source": history_source,
         "quality_score": combined_avg,
     })
     logging.info(
-        "Kandydat przeszedł analizę FT: %s - %s | próbka %s/%s | średnie własne %.2f/%.2f | razem %.2f | źródło %s",
-        item["home"], item["away"], len(home_history), len(away_history),
-        home_avg, away_avg, combined_avg, history_source
+        "Kandydat przeszedł analizę FT: %s - %s | próbka %s/%s | Over 8.5 %s/%s | "
+        "średnie własne %.2f/%.2f | razem %.2f (próg %.2f) | źródło %s",
+        item["home"], item["away"], home_profile["sample"], away_profile["sample"],
+        item["home_over85"], item["away_over85"],
+        home_avg, away_avg, combined_avg, required_average, history_source
     )
     return item
 
