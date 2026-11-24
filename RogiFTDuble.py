@@ -46,23 +46,48 @@ UNDER_CORNER_LEAGUE_BLOCKLIST = {
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
-def load_sent_event_ids():
+def load_sent_registry():
     try:
         with open(SENT_EVENT_IDS_FILE, "r", encoding="utf-8") as handle:
             values = json.load(handle)
-        return {int(value) for value in values}
+        if isinstance(values, list):
+            return {"event_ids": values, "doubles": []}
+        if isinstance(values, dict):
+            return {
+                "event_ids": values.get("event_ids", []),
+                "doubles": values.get("doubles", []),
+            }
     except FileNotFoundError:
-        return set()
+        pass
     except (ValueError, TypeError, json.JSONDecodeError):
         logging.exception("Nie można odczytać rejestru wysłanych zdarzeń FT")
-        return set()
+    return {"event_ids": [], "doubles": []}
 
 
-def save_sent_event_ids(event_ids):
-    values = load_sent_event_ids()
-    values.update(int(value) for value in event_ids)
+def load_sent_event_ids():
+    return {int(value) for value in load_sent_registry()["event_ids"]}
+
+
+def save_sent_event_ids(event_ids, bucket=None, quota_day=None, sent_at=None, message_id=None):
+    registry = load_sent_registry()
+    known = {int(value) for value in registry["event_ids"]}
+    new_ids = {int(value) for value in event_ids}
+    known.update(new_ids)
+    registry["event_ids"] = sorted(known)
+    if message_id is not None and not any(
+        str(row.get("telegram_message_id")) == str(message_id)
+        for row in registry["doubles"]
+    ):
+        registry["doubles"].append({
+            "telegram_message_id": int(message_id),
+            "bucket": str(bucket or "day"),
+            "quota_day": str(quota_day or ""),
+            "sent_at": str(sent_at or datetime.now(TZ).isoformat()),
+            "event_ids": sorted(new_ids),
+        })
     with open(SENT_EVENT_IDS_FILE, "w", encoding="utf-8") as handle:
-        json.dump(sorted(values), handle, ensure_ascii=False, indent=2)
+        json.dump(registry, handle, ensure_ascii=False, indent=2)
+
 
 
 def db_open():
@@ -541,14 +566,39 @@ def daily_quota_count(c, day, bucket="day", reset_day=None):
         "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (reset_key,)
     ).fetchone()
     if reset:
-        return int(c.execute(
+        db_count = int(c.execute(
             "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=? AND sent_at>?",
             (bucket, day, reset[0]),
         ).fetchone()[0])
-    return int(c.execute(
-        "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=?",
-        (bucket, day),
-    ).fetchone()[0])
+        db_event_ids = {int(row[0]) for row in c.execute(
+            """SELECT l.event_id FROM ft_double_legs l
+               JOIN ft_doubles d ON d.coupon_id=l.coupon_id
+               WHERE d.bucket=? AND d.quota_day=? AND d.sent_at>?""",
+            (bucket, day, reset[0]),
+        ).fetchall()}
+    else:
+        db_count = int(c.execute(
+            "SELECT COUNT(*) FROM ft_doubles WHERE bucket=? AND quota_day=?",
+            (bucket, day),
+        ).fetchone()[0])
+        db_event_ids = {int(row[0]) for row in c.execute(
+            """SELECT l.event_id FROM ft_double_legs l
+               JOIN ft_doubles d ON d.coupon_id=l.coupon_id
+               WHERE d.bucket=? AND d.quota_day=?""",
+            (bucket, day),
+        ).fetchall()}
+    # Count Telegram-confirmed doubles that could not be committed to SQLite
+    # after a concurrent Git rebase. Avoid double counting entries already in DB.
+    extra = 0
+    for row in load_sent_registry()["doubles"]:
+        if row.get("bucket") != bucket or row.get("quota_day") != day:
+            continue
+        if reset and str(row.get("sent_at") or "") <= str(reset[0]):
+            continue
+        event_ids = {int(value) for value in row.get("event_ids", [])}
+        if event_ids and not event_ids.issubset(db_event_ids):
+            extra += 1
+    return db_count + extra
 
 
 def reset_daily_quota(c, now):
@@ -684,7 +734,7 @@ def send_new_doubles(c, now):
                     (item["event_id"], coupon_id, item["league"], item["home"], item["away"],
                      item["start_ts"], item["line"], item["odds"]))
             save_publication_proof(c, coupon_id, proof)
-            save_sent_event_ids(item["event_id"] for item in pair)
+            save_sent_event_ids((item["event_id"] for item in pair), bucket=bucket, quota_day=quota_day, sent_at=now.isoformat(), message_id=proof["message_id"])
             c.commit()
             made += 1
             remaining -= 1
