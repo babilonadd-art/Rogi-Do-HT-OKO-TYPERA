@@ -51,26 +51,18 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install -r requirements.txt
-      - name: Pobierz i przygotuj nowy szablon z Issue #2
+      - name: Sprawdź źródłową grafikę oryginalnego byka (nie wysyłaj starego plakatu)
         run: |
-          if [ ! -f rogi_ft_template_new.png ]; then
-            curl --fail --location --retry 3 "https://github.com/user-attachments/assets/06aff966-7d7d-46f1-a174-d0037bbad350" --output /tmp/rogi-ft-issue-screenshot.png
-            python - <<'PY'
-          from PIL import Image
-          source = Image.open("/tmp/rogi-ft-issue-screenshot.png").convert("RGB")
-          if source.size != (720, 1640):
-              raise SystemExit(f"Nieoczekiwany rozmiar zrzutu Issue #2: {source.size}")
-          poster = source.crop((0, 445, 720, 1196))
-          if poster.size != (720, 751):
-              raise SystemExit(f"Nieprawidłowy wycinek plakatu: {poster.size}")
-          poster.save("rogi_ft_template_new.png", format="PNG", optimize=True)
-          PY
-          fi
           python - <<'PY'
           from PIL import Image
-          image = Image.open("rogi_ft_template_new.png")
-          assert image.size == (720, 751), image.size
-          print("Nowy szablon FT zweryfikowany:", image.size)
+          from pathlib import Path
+          source_path = Path("rogi_ft_template_new.png")
+          if not source_path.is_file():
+              raise SystemExit("Brak źródłowej grafiki z oryginalnym bykiem — nie pobieram starego plakatu z Issue.")
+          with Image.open(source_path) as source:
+              if source.size != (720, 751):
+                  raise SystemExit(f"Nieprawidłowy plik źródłowy byka: {source.size}")
+          print("Źródło byka OK. Generator wytnie wyłącznie byka; stary plakat nie jest wysyłany.")
           PY
       - name: Kontrola składni i testów
         run: |
