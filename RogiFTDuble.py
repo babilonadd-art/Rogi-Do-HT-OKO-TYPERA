@@ -25,7 +25,7 @@ MAX_LEG_ODDS = 2.60
 MAX_DOUBLES_PER_DAY = 4
 NIGHT_START_HOUR = 22
 NIGHT_END_HOUR = 8
-GRAPHIC_VERSION = "oko-typera-clean-ft-template-real-fixtures-v13"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
+GRAPHIC_VERSION = "oko-typera-rogift-clean-list-original-bull-v14"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
