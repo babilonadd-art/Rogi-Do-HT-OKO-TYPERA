@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 TZ = ZoneInfo("Europe/Warsaw")
 W, H = 1080, 1420
-SOURCE_ART = Path(__file__).resolve().parent / "rogi_ft_template_new.png"
+SOURCE_ART = Path(__file__).resolve().parent / "rogi_ft_bull.jpg"
 BG, PANEL = (5, 15, 10), (9, 29, 17)
 GREEN, LIME = (133, 255, 0), (190, 255, 0)
 WHITE, MUTED = (247, 250, 246), (190, 207, 193)
@@ -51,12 +51,11 @@ def calculate_coupon_totals(leg_odds, stake):
 
 
 def _bull_artwork():
-    # Fail closed: rogi_ft_template_new.png is not yet verified as the exact
-    # user-supplied bull artwork. Never synthesize or substitute a different bull.
-    raise RuntimeError(
-        "WYSYŁKA ZATRZYMANA: brak potwierdzonego, oryginalnego wycinka byka "
-        "z grafiki użytkownika. Nie wysyłaj zastępczego logo ani własnego plakatu."
-    )
+    # Exact bull crop extracted from the user's supplied reference image.
+    if not SOURCE_ART.is_file():
+        raise FileNotFoundError(f"Brak oryginalnego byka użytkownika: {SOURCE_ART}")
+    with Image.open(SOURCE_ART) as source:
+        return source.convert("RGB").copy()
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
