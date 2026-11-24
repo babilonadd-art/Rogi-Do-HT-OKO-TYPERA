@@ -51,14 +51,12 @@ def calculate_coupon_totals(leg_odds, stake):
 
 
 def _bull_artwork():
-    if not SOURCE_ART.is_file():
-        raise FileNotFoundError(f"Brak źródłowej grafiki z oryginalnym bykiem: {SOURCE_ART}")
-    with Image.open(SOURCE_ART) as source:
-        source = source.convert("RGB")
-        if source.size != (720, 751):
-            raise ValueError(f"Nieprawidłowy rozmiar grafiki źródłowej: {source.size}; oczekiwano 720x751")
-        # Wyłącznie byk, korona i zielone tło; bez starego napisu i pól kuponu.
-        return source.crop((213, 0, 489, 171)).copy()
+    # Fail closed: rogi_ft_template_new.png is not yet verified as the exact
+    # user-supplied bull artwork. Never synthesize or substitute a different bull.
+    raise RuntimeError(
+        "WYSYŁKA ZATRZYMANA: brak potwierdzonego, oryginalnego wycinka byka "
+        "z grafiki użytkownika. Nie wysyłaj zastępczego logo ani własnego plakatu."
+    )
 
 
 def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
