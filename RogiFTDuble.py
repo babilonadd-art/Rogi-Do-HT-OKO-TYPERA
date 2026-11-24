@@ -19,6 +19,7 @@ import Main as source
 
 TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
+SENT_EVENT_IDS_FILE = "ft_sent_event_ids.json"
 STAKE = 50.0
 MIN_LEG_ODDS = 1.60
 MAX_LEG_ODDS = 2.60
@@ -43,6 +44,25 @@ UNDER_CORNER_LEAGUE_BLOCKLIST = {
     "egypt", "egyptian", "egipt",
 }
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+def load_sent_event_ids():
+    try:
+        with open(SENT_EVENT_IDS_FILE, "r", encoding="utf-8") as handle:
+            values = json.load(handle)
+        return {int(value) for value in values}
+    except FileNotFoundError:
+        return set()
+    except (ValueError, TypeError, json.JSONDecodeError):
+        logging.exception("Nie można odczytać rejestru wysłanych zdarzeń FT")
+        return set()
+
+
+def save_sent_event_ids(event_ids):
+    values = load_sent_event_ids()
+    values.update(int(value) for value in event_ids)
+    with open(SENT_EVENT_IDS_FILE, "w", encoding="utf-8") as handle:
+        json.dump(sorted(values), handle, ensure_ascii=False, indent=2)
 
 
 def db_open():
@@ -581,7 +601,7 @@ def send_new_doubles(c, now):
         logging.info("Historia %s dubla %s | %s | kurs %.3f | %s | zdarzenia=%s",
                      bucket.upper(), coupon_id, sent_at, total_odds, status, legs)
 
-    already_used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()}
+    already_used = {int(row[0]) for row in c.execute("SELECT event_id FROM ft_double_legs").fetchall()} | load_sent_event_ids()
     candidates = [x for x in fetch_candidates(now) if x["event_id"] not in already_used]
     # Grupuj wszystkie znalezione mecze z okna 36 h według ich właściwej
     # puli i daty rozliczeniowej. Poprzednio odrzucaliśmy jutro i kolejne
@@ -664,6 +684,7 @@ def send_new_doubles(c, now):
                     (item["event_id"], coupon_id, item["league"], item["home"], item["away"],
                      item["start_ts"], item["line"], item["odds"]))
             save_publication_proof(c, coupon_id, proof)
+            save_sent_event_ids(item["event_id"] for item in pair)
             c.commit()
             made += 1
             remaining -= 1
