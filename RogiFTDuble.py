@@ -544,6 +544,29 @@ def reset_daily_quota(c, now):
     send_new_doubles(c, now)
 
 
+def used_leagues_for_quota(c, bucket, quota_day, reset_day=None):
+    """Return leagues used since the explicit quota reset, or all historical leagues."""
+    reset_key = reset_day or quota_day
+    reset_row = c.execute(
+        "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (reset_key,)
+    ).fetchone()
+    if reset_row:
+        rows = c.execute(
+            """SELECT DISTINCT l.league FROM ft_double_legs l
+               JOIN ft_doubles d ON d.coupon_id=l.coupon_id
+               WHERE d.bucket=? AND d.quota_day=? AND d.sent_at>?""",
+            (bucket, quota_day, reset_row[0]),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            """SELECT DISTINCT l.league FROM ft_double_legs l
+               JOIN ft_doubles d ON d.coupon_id=l.coupon_id
+               WHERE d.bucket=? AND d.quota_day=?""",
+            (bucket, quota_day),
+        ).fetchall()
+    return {normalized_league_name(row[0]) for row in rows}
+
+
 def send_new_doubles(c, now):
     today = now.date().isoformat()
     active_night_day = night_session_day(now)
@@ -579,27 +602,8 @@ def send_new_doubles(c, now):
         reset_key = today if quota_day == today else quota_day
         quota_count = daily_quota_count(c, quota_day, bucket, reset_day=reset_key)
         remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
-        # Explicit quota reset also unlocks leagues used by older picks.
-        # Keep their event IDs/history for duplicate protection, but do not let
-        # pre-reset leagues consume the fresh quota window.
-        reset_row = c.execute(
-            "SELECT reset_at FROM ft_daily_quota_resets WHERE day=?", (reset_key,)
-        ).fetchone()
-        if reset_row:
-            used_league_rows = c.execute(
-                """SELECT DISTINCT l.league FROM ft_double_legs l
-                   JOIN ft_doubles d ON d.coupon_id=l.coupon_id
-                   WHERE d.bucket=? AND d.quota_day=? AND d.sent_at>?""",
-                (bucket, quota_day, reset_row[0]),
-            ).fetchall()
-        else:
-            used_league_rows = c.execute(
-                """SELECT DISTINCT l.league FROM ft_double_legs l
-                   JOIN ft_doubles d ON d.coupon_id=l.coupon_id
-                   WHERE d.bucket=? AND d.quota_day=?""",
-                (bucket, quota_day),
-            ).fetchall()
-        used_leagues = {normalized_league_name(row[0]) for row in used_league_rows}
+        # A reset unlocks pre-reset leagues but preserves old event IDs/history.
+        used_leagues = used_leagues_for_quota(c, bucket, quota_day, reset_key)
         group.sort(key=lambda x: (-float(x.get("quality_score", 0)), x["start_ts"]))
         logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s, ligi już użyte=%s",
                      bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY,
