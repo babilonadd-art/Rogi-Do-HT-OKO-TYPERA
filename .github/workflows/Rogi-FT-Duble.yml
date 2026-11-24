@@ -51,32 +51,31 @@ jobs:
           python-version: "3.12"
       - name: Instalacja zależności
         run: pip install -r requirements.txt
-      - name: Sprawdź źródłową grafikę oryginalnego byka (nie wysyłaj starego plakatu)
+      - name: Sprawdź oryginalny wycinek byka
         run: |
           python - <<'PY'
           from PIL import Image
           from pathlib import Path
-          source_path = Path("rogi_ft_template_new.png")
+          source_path = Path("rogi_ft_bull.jpg")
           if not source_path.is_file():
-              raise SystemExit("Brak źródłowej grafiki z oryginalnym bykiem — nie pobieram starego plakatu z Issue.")
+              raise SystemExit("Brak oryginalnego wycinka byka z grafiki użytkownika.")
           with Image.open(source_path) as source:
-              if source.size != (720, 751):
-                  raise SystemExit(f"Nieprawidłowy plik źródłowy byka: {source.size}")
-          print("Źródło byka OK. Generator wytnie wyłącznie byka; stary plakat nie jest wysyłany.")
+              if source.format != "JPEG" or source.width < 100 or source.height < 60:
+                  raise SystemExit(f"Nieprawidłowy plik byka: {source.format} {source.size}")
+          print("Oryginalny wycinek byka użytkownika jest dostępny.")
           PY
       - name: Kontrola składni i testów
-        if: ${{ !contains(github.event.head_commit.message, '[reset-limit-ft]') }}
         run: |
-          python -m py_compile Main.py RogiFTDuble.py
+          python -m py_compile Main.py RogiFTDuble.py rogift_graphic.py
           python -m unittest discover -s tests -p "test_rogi_ft_*.py"
-      - name: Zapisz nowy plakat i usuń stary szablon z bieżącej wersji repo
+      - name: Usuń stary plakat z bieżącej wersji repo
         run: |
-          git rm -f "Neonowy plakat typsterski Rogi do HT.png" || true
-          git add rogi_ft_template_new.png
+          git rm -f "Neonowy plakat typsterski Rogi do HT.png" rogi_ft_template_new.png || true
+          git add rogi_ft_bull.jpg
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+users.noreply.github.com"
-            git commit -m "Install clean FT poster template and remove legacy poster"
+            git commit -m "Keep only user's original bull crop for FT graphics"
             git push origin HEAD:main
           fi
       - name: Wyszukiwanie i publikacja nowych dubli FT
