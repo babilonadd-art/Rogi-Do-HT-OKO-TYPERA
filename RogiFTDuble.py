@@ -1271,3 +1271,5 @@ if __name__ == "__main__":
 # Uruchom skan FT po wyczyszczeniu historii i limitów. [publish-ft]
 
 # Ręczne uruchomienie skanu publikującego po poprawieniu testów kursów [publish-ft]
+
+# Ręczne żądanie użytkownika 2026-11-24: wyczyść wyłącznie historię w bazie FT i limity; nie usuwaj postów Telegram. [clear-history-ft]
