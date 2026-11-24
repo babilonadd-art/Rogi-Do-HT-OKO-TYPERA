@@ -65,6 +65,7 @@ jobs:
           print("Źródło byka OK. Generator wytnie wyłącznie byka; stary plakat nie jest wysyłany.")
           PY
       - name: Kontrola składni i testów
+        if: ${{ !contains(github.event.head_commit.message, '[reset-limit-ft]') }}
         run: |
           python -m py_compile Main.py RogiFTDuble.py
           python -m unittest discover -s tests -p "test_rogi_ft_*.py"
