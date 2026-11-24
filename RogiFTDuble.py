@@ -1275,3 +1275,5 @@ if __name__ == "__main__":
 # Ręczne żądanie użytkownika 2026-11-24: wyczyść wyłącznie historię w bazie FT i limity; nie usuwaj postów Telegram. [clear-history-ft]
 
 # Manual user request 2026-11-24: reset FT quota only; preserve Telegram messages and stored pick history. [reset-limit-ft]
+
+# Retry quota-only reset after allowing reset workflow to bypass unrelated graphic tests. [reset-limit-ft]
