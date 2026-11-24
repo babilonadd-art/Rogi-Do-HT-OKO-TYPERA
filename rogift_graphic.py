@@ -92,8 +92,9 @@ def render_coupon_image(legs, total_odds, stake, coupon_no=1, tax_rate=.12,
     draw = ImageDraw.Draw(im)
     center(draw, (40, 245, W-40, 325), "ROGI FT DUBLE", font(64), GREEN,
            stroke_width=2, stroke_fill=(0,0,0))
-    if night:
-        center(draw, (40, 325, W-40, 378), "NOCNE TYPY", font(30), WHITE)
+    section_title = f"DUBEL {coupon_no}" + (" • NOCNE TYPY" if night else "")
+    center(draw, (40, 325, W-40, 378), section_title,
+           fit(draw, section_title, 980, 34, 22), WHITE)
 
     for index, (home, away, league, line, odds, kickoff) in enumerate(rows, 1):
         y = 390 + (index-1)*440
