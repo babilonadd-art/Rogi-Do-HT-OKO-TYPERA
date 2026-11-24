@@ -135,6 +135,7 @@ class StrategyRulesTests(unittest.TestCase):
 
         db = sqlite3.connect(':memory:')
         db.execute('CREATE TABLE ft_doubles(coupon_id TEXT, day TEXT, sent_at TEXT, bucket TEXT, quota_day TEXT)')
+        db.execute('CREATE TABLE ft_double_legs(event_id INTEGER, coupon_id TEXT)')
         db.execute('CREATE TABLE ft_daily_quota_resets(day TEXT PRIMARY KEY, reset_at TEXT)')
         day = '2026-11-17'
         db.executemany(
