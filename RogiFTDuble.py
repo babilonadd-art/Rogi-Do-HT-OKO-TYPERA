@@ -602,27 +602,18 @@ def send_new_doubles(c, now):
         reset_key = today if quota_day == today else quota_day
         quota_count = daily_quota_count(c, quota_day, bucket, reset_day=reset_key)
         remaining = max(0, MAX_DOUBLES_PER_DAY - quota_count)
-        # A reset unlocks pre-reset leagues but preserves old event IDs/history.
-        used_leagues = used_leagues_for_quota(c, bucket, quota_day, reset_key)
         group.sort(key=lambda x: (-float(x.get("quality_score", 0)), x["start_ts"]))
-        logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s, ligi już użyte=%s",
-                     bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY,
-                     len(group), len(used_leagues))
+        logging.info("Pula %s (%s): wykorzystano %s/%s, kandydaci=%s",
+                     bucket.upper(), quota_day, quota_count, MAX_DOUBLES_PER_DAY, len(group))
         made = 0
         while remaining and len(group) >= LEGS_PER_DOUBLE:
-            first_index = next(
-                (i for i, item in enumerate(group)
-                 if normalized_league_name(item["league"]) not in used_leagues),
-                None,
-            )
-            if first_index is None:
-                logging.info("Brak nowych lig do kolejnego dubla %s (%s)", bucket.upper(), quota_day)
-                break
-            first = group.pop(first_index)
+            # Każdy dubel musi łączyć dwie różne ligi. Ta sama liga może
+            # pojawić się w kolejnym duble tego dnia — ogranicza ją limit 4,
+            # nie sztuczna blokada całej puli.
+            first = group.pop(0)
             second_index = next(
                 (i for i, item in enumerate(group)
-                 if normalized_league_name(item["league"]) not in used_leagues
-                 and normalized_league_name(item["league"]) != normalized_league_name(first["league"])),
+                 if normalized_league_name(item["league"]) != normalized_league_name(first["league"])),
                 None,
             )
             if second_index is None:
@@ -676,7 +667,6 @@ def send_new_doubles(c, now):
             c.commit()
             made += 1
             remaining -= 1
-            used_leagues.update(normalized_league_name(item["league"]) for item in pair)
         total_made += made
         logging.info("Nowe %s duble dla %s: %s; limit puli: %s",
                      bucket.upper(), quota_day, made, MAX_DOUBLES_PER_DAY)
