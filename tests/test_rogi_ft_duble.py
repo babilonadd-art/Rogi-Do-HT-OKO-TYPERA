@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 import Main
 import cornerflick_source
-from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _candidate_ft_corner_stats, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, fixture_bucket, night_session_day
+from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _candidate_ft_corner_stats, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, used_leagues_for_quota, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
 
 
@@ -95,6 +95,38 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(fixture_bucket(day_kickoff), ('day', '2026-11-21'))
         self.assertEqual(night_session_day(datetime(2026, 11, 21, 3, 0, tzinfo=tz)), '2026-11-20')
         self.assertEqual(night_session_day(datetime(2026, 11, 21, 10, 0, tzinfo=tz)), '2026-11-21')
+
+    def test_quota_reset_unlocks_old_leagues_but_keeps_pre_reset_history(self):
+        import sqlite3
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE ft_doubles(coupon_id TEXT, sent_at TEXT, bucket TEXT, quota_day TEXT)")
+        db.execute("CREATE TABLE ft_double_legs(coupon_id TEXT, league TEXT)")
+        db.execute("CREATE TABLE ft_daily_quota_resets(day TEXT PRIMARY KEY, reset_at TEXT)")
+        db.execute("INSERT INTO ft_doubles VALUES('old','2026-11-24T08:00:00+01:00','day','2026-11-24')")
+        db.execute("INSERT INTO ft_double_legs VALUES('old','Premier League')")
+        db.execute("INSERT INTO ft_daily_quota_resets VALUES('2026-11-24','2026-11-24T09:00:00+01:00')")
+        self.assertEqual(used_leagues_for_quota(db,'day','2026-11-24','2026-11-24'), set())
+        db.execute("INSERT INTO ft_doubles VALUES('new','2026-11-24T09:05:00+01:00','day','2026-11-24')")
+        db.execute("INSERT INTO ft_double_legs VALUES('new','La Liga')")
+        self.assertEqual(used_leagues_for_quota(db,'day','2026-11-24','2026-11-24'), {'laliga'})
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM ft_doubles").fetchone()[0], 2)
+        db.close()
+
+    def test_graphic_uses_the_exact_user_supplied_bull_asset(self):
+        from PIL import Image
+        from rogift_graphic import _bull_artwork, render_coupon_image
+        bull = _bull_artwork()
+        self.assertGreater(bull.width, 100)
+        self.assertGreater(bull.height, 60)
+        legs = [
+            {"home":"Arsenal","away":"Borussia Dortmund","league":"Liga Mistrzów",
+             "start_ts":1795550000,"line":9.5,"odds":1.72},
+            {"home":"Como","away":"AEK Ateny","league":"Liga Konferencji",
+             "start_ts":1795553600,"line":9.5,"odds":1.70},
+        ]
+        output = render_coupon_image(legs, 1.72*1.70, 50)
+        with Image.open(output) as image:
+            self.assertEqual(image.size, (1080, 1420))
 
     def test_quota_reset_preserves_old_history_and_unlocks_new_doubles(self):
         import sqlite3
