@@ -1,6 +1,7 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock, call, ANY
 import Main
+import RogiFTDuble as rogi
 import cornerflick_source
 from RogiFTDuble import MIN_LEG_ODDS, MAX_LEG_ODDS, MAX_DOUBLES_PER_DAY, LEGS_PER_DOUBLE, FT_LINES, _placeholder_team, _recent_five_corner_profile, _candidate_ft_corner_stats, _is_top_six_league, is_blocked_under_league, is_blocked_youth_or_reserve_team, daily_quota_count, used_leagues_for_quota, fixture_bucket, night_session_day
 from Main import superbet_event_is_prematch
@@ -75,6 +76,62 @@ class StrategyRulesTests(unittest.TestCase):
 
     def test_daily_cap_is_two_doubles(self):
         self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 4)
+
+    @patch("RogiFTDuble.send_new_doubles")
+    @patch("RogiFTDuble.settle_doubles")
+    @patch("RogiFTDuble.db_open")
+    @patch("RogiFTDuble.os.getenv")
+    def test_scan_mode_settles_before_scanning_new_doubles(self, getenv, db_open, settle, send_new):
+        env = {"TELEGRAM_BOT_TOKEN": "test-token", "TELEGRAM_CHAT_ID": "test-chat", "BOT_MODE": "scan"}
+        getenv.side_effect = lambda key, default=None: env.get(key, default)
+        db = Mock()
+        db_open.return_value = db
+        parent = Mock()
+        parent.attach_mock(settle, "settle")
+        parent.attach_mock(send_new, "send_new")
+        rogi.main()
+        self.assertEqual(parent.mock_calls, [
+            call.settle(db, ANY),
+            call.send_new(db, ANY),
+        ])
+        db.close.assert_called_once()
+
+    def test_settlement_does_not_use_sofascore_fallback(self):
+        from datetime import datetime, timedelta
+        with patch("RogiFTDuble.DB", ":memory:"):
+            db = rogi.db_open()
+        now = datetime.now(rogi.TZ)
+        start_ts = int((now - timedelta(hours=4)).timestamp())
+        try:
+            db.execute(
+                "INSERT INTO ft_doubles(coupon_id,day,sent_at,total_odds,stake,status,bucket,quota_day) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                ("settlement-test", now.date().isoformat(), now.isoformat(), 3.2, 50.0,
+                 "PENDING", "day", now.date().isoformat()),
+            )
+            for event_id, home, away in (
+                (901, "Home Test", "Away Test"),
+                (902, "Home Test 2", "Away Test 2"),
+            ):
+                db.execute(
+                    "INSERT INTO ft_double_legs(event_id,coupon_id,league,home,away,start_ts,line,odds,status) "
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
+                    (event_id, "settlement-test", "Test League", home, away, start_ts, 9.5, 1.8, "PENDING"),
+                )
+            db.commit()
+            with patch("RogiFTDuble.source.cornerflick_ft_corner_total", return_value=None) as cornerflick, \\
+                 patch("RogiFTDuble.source.matchday_ft_corner_total", return_value=None) as matchday, \\
+                 patch("RogiFTDuble.source.sofascore_ft_corner_total") as sofascore:
+                rogi.settle_doubles(db, now)
+            self.assertEqual(cornerflick.call_count, 2)
+            self.assertEqual(matchday.call_count, 2)
+            sofascore.assert_not_called()
+            self.assertEqual(
+                db.execute("SELECT status FROM ft_doubles WHERE coupon_id='settlement-test'").fetchone()[0],
+                "PENDING",
+            )
+        finally:
+            db.close()
 
     def test_future_fixtures_keep_their_own_day_or_night_quota(self):
         from datetime import datetime

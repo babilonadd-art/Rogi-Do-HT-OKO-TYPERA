@@ -1144,10 +1144,6 @@ def settle_doubles(c, now):
         total = source.cornerflick_ft_corner_total(league, home, away, start_ts)
         result_source = "Cornerflick"
         if total is None:
-            total = source.sofascore_ft_corner_total(league, home, away, start_ts)
-            if total is not None:
-                result_source = "SofaScore"
-        if total is None:
             total = source.matchday_ft_corner_total(league, home, away, start_ts)
             if total is not None:
                 result_source = "Open Matchday"
@@ -1304,7 +1300,9 @@ def main():
         if mode == "clear-history":
             clear_all_history(c)
         elif mode in {"summary", "settle"}:
-            logging.warning("Rozliczanie jest wyłączone. Bot wyłącznie wyszukuje i publikuje nowe duble.")
+            settle_doubles(c, now)
+            if mode == "summary":
+                send_overall_report(c, now)
             return
         elif mode == "repost-pending":
             repost_pending_doubles(c, now)
@@ -1326,8 +1324,9 @@ def main():
                              item["league"], item["home"], item["away"], item["line"],
                              item["odds"], kickoff.isoformat())
         else:
-            # Automatyczny i zwykły tryb scan tylko szuka oraz publikuje nowe duble.
-            # Nie sprawdza wyników i nie rozlicza kuponów.
+            # Normalny skan najpierw rozlicza wyłącznie potwierdzone wyniki FT,
+            # potem szuka i publikuje nowe duble.
+            settle_doubles(c, now)
             send_new_doubles(c, now)
     finally:
         c.close()
@@ -1336,7 +1335,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Bot FT: wyłącznie wyszukiwanie i publikacja nowych dubli.
+# Bot FT: skanowanie, publikacja dubli i rozliczanie potwierdzonych wyników FT.
 
 # Clear all previous FT picks from persistent SQLite history [clear-history-ft].
 
