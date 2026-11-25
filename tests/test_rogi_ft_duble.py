@@ -8,10 +8,10 @@ from Main import superbet_event_is_prematch
 
 class StrategyRulesTests(unittest.TestCase):
     def test_rules_are_ft_over_only_and_minimum_odds(self):
-        self.assertEqual(MIN_LEG_ODDS, 1.60)
+        self.assertEqual(MIN_LEG_ODDS, 1.65)
         self.assertEqual(MAX_LEG_ODDS, 2.60)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
-        self.assertEqual(MAX_DOUBLES_PER_DAY, 4)
+        self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
         self.assertEqual(FT_LINES, (9.5,))
 
     def test_recent_five_accepts_two_or_more_real_corner_records(self):
@@ -73,8 +73,8 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertFalse(_placeholder_team("Kuwejt"))
         self.assertFalse(_placeholder_team("Honduras"))
 
-    def test_daily_cap_is_four_doubles(self):
-        self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 8)
+    def test_daily_cap_is_two_doubles(self):
+        self.assertEqual(MAX_DOUBLES_PER_DAY * LEGS_PER_DOUBLE, 4)
 
     def test_future_fixtures_keep_their_own_day_or_night_quota(self):
         from datetime import datetime
