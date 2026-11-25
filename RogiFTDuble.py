@@ -21,18 +21,32 @@ TZ = ZoneInfo("Europe/Warsaw")
 DB = "rogift_duble.db"
 SENT_EVENT_IDS_FILE = "ft_sent_event_ids.json"
 STAKE = 50.0
-MIN_LEG_ODDS = 1.60
+MIN_LEG_ODDS = 1.65
 MAX_LEG_ODDS = 2.60
-MAX_DOUBLES_PER_DAY = 4
+MAX_DOUBLES_PER_DAY = 2
 NIGHT_START_HOUR = 22
 NIGHT_END_HOUR = 8
 GRAPHIC_VERSION = "oko-typera-rogift-clean-list-original-bull-v14"  # [replace-graphics-ft]  # uruchomienie rozliczenia FT po aktualizacji harmonogramu  # [settle-ft]
 LEGS_PER_DOUBLE = 2
 MIN_HOURS_BEFORE_KICKOFF = 0
 # Test the common full-match totals in ascending order; use the first qualifying line.
-MIN_FT_CORNERS_LINE = 9.5
+MIN_FT_CORNERS_LINE = 8.5
 MAX_FT_CORNERS_LINE = 9.5
-FT_LINES = (9.5,)
+# Najpierw sprawdzamy wyższą linię; każda ma osobny minimalny kurs.
+FT_LINES = (9.5, 8.5)
+FT_LINE_MIN_ODDS = {8.5: 1.65, 9.5: 1.80}
+
+# Dozwolone ligi wskazane w specyfikacji użytkownika.
+FT_ALLOWED_LEAGUE_MARKERS = (
+    "championship", "leagueone", "eredivisie", "eerste divisie",
+    "2 bundesliga", "2. bundesliga", "a-league", "a league", "eliteserien",
+)
+
+
+def is_allowed_ft_league(league):
+    name = normalized_league_name(league)
+    return any(normalized_league_name(marker) in name for marker in FT_ALLOWED_LEAGUE_MARKERS)
+
 
 # Twarda blokada rozgrywek, które nie mają trafiać do kuponów.
 # Nazwy są normalizowane; dodatkowe ligi można dopisać przez zmienną
@@ -474,10 +488,11 @@ def _event_corner_candidate(event, earliest):
                         event_id, home, away)
         return None
     league = source.extract_league_name(event) or "Liga niepodana"
-    if (is_blocked_under_league(league)
+    if (not is_allowed_ft_league(league)
+            or is_blocked_under_league(league)
             or is_blocked_youth_or_reserve_team(home)
             or is_blocked_youth_or_reserve_team(away)):
-        logging.info("Pomijam młodzież/rezerwy: %s - %s | %s", home, away, league)
+        logging.info("Pomijam ligę spoza whitelisty lub młodzież/rezerwy: %s - %s | %s", home, away, league)
         return None
     try:
         prices = source.superbet_ft_corners_over_prices(
@@ -487,7 +502,7 @@ def _event_corner_candidate(event, earliest):
             float(line): float(price)
             for line, price in prices.items()
             if float(line) >= MIN_FT_CORNERS_LINE
-            and MIN_LEG_ODDS <= float(price) <= MAX_LEG_ODDS
+            and FT_LINE_MIN_ODDS.get(float(line), 99.0) <= float(price) <= MAX_LEG_ODDS
         }
     except Exception:
         logging.exception("Superbet: błąd pobierania rynku rożnych FT dla event_id=%s", event_id)
