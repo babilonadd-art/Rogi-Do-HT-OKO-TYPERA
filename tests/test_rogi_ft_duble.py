@@ -119,9 +119,11 @@ class StrategyRulesTests(unittest.TestCase):
                     (event_id, "settlement-test", "Test League", home, away, start_ts, 9.5, 1.8, "PENDING"),
                 )
             db.commit()
-            with patch("RogiFTDuble.source.cornerflick_ft_corner_total", return_value=None) as cornerflick, \\
-                 patch("RogiFTDuble.source.matchday_ft_corner_total", return_value=None) as matchday, \\
-                 patch("RogiFTDuble.source.sofascore_ft_corner_total") as sofascore:
+            with (
+                patch("RogiFTDuble.source.cornerflick_ft_corner_total", return_value=None) as cornerflick,
+                patch("RogiFTDuble.source.matchday_ft_corner_total", return_value=None) as matchday,
+                patch("RogiFTDuble.source.sofascore_ft_corner_total") as sofascore,
+            ):
                 rogi.settle_doubles(db, now)
             self.assertEqual(cornerflick.call_count, 2)
             self.assertEqual(matchday.call_count, 2)
