@@ -12,7 +12,7 @@ class StrategyRulesTests(unittest.TestCase):
         self.assertEqual(MAX_LEG_ODDS, 2.60)
         self.assertEqual(LEGS_PER_DOUBLE, 2)
         self.assertEqual(MAX_DOUBLES_PER_DAY, 2)
-        self.assertEqual(FT_LINES, (9.5,))
+        self.assertEqual(FT_LINES, (9.5, 8.5))
 
     def test_recent_five_accepts_two_or_more_real_corner_records(self):
         complete = [
