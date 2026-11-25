@@ -1,6 +1,15 @@
 name: ROGI FT — DUBLE PREMATCH
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "Main.py"
+      - "RogiFTDuble.py"
+      - "cornerflick_source.py"
+      - "team_league_resolver.py"
+      - "tests/test_rogi_ft_*.py"
+      - ".github/workflows/Rogi-FT-Duble.yml"
   schedule:
     - cron: "*/5 * * * *" # wyszukiwanie nowych dubli co 5 minut
   workflow_dispatch:
